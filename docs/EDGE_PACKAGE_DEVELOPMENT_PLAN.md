@@ -8,13 +8,13 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 所有端侧包必须：
 
-- 从 `edge_device_config` 读取唯一设备 ID/IP，不在代码中硬编码身份。
+- 从 `epgeneral_device_config` 读取唯一设备 ID/IP，不在代码中硬编码身份。
 - 保持现有 MQTT、UDP、RTSP v1 wire contract 和端口。
 - 通过配置校验、资源上限、来源校验、幂等 request ID、超时和安全清理处理异常。
 - 在没有真实传感器或执行器时提供可替换的 ROS 适配边界，便于 localhost/模拟测试。
 - 使用 systemd、roslaunch 或等价方式实现可重复启动、停止、日志和重启清理。
 
-## 2. 公共基础包：`edge_device_config`
+## 2. 公共基础包：`epgeneral_device_config`
 
 **当前状态**：已提供 device ID/IP 共享配置。
 
@@ -27,7 +27,7 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：缺失、重复、非法 IP、未知能力和 frame 配置在启动时明确失败；合法旧配置可迁移且不会丢失身份。
 
-## 3. `MQTAV` v0.3.0
+## 3. `mqtav` v0.3.0
 
 **当前状态**：ROS1 MAVROS 状态/电池采集、MQTT presence/heartbeat/status、QoS 1、Last Will、日志和纯 Python 测试已实现；文档同时存在 Melodic/Noetic 基线冲突。
 
@@ -41,7 +41,7 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：参考设备每秒发布 heartbeat/status；地面站可区分 MQTT 在线、warning、offline/error；设备 IP 不一致只产生告警，不自动改写地面站配置。
 
-## 4. `ros_udp_telemetry` v0.2.1
+## 4. `epgeneral_udp_telemetry` v0.2.1
 
 **当前状态**：动态 ROS 字段、Pose/IMU 平滑、20/5/1 Hz、描述哈希和纯 Python 测试已实现；ROS 动态订阅尚未在 Noetic 目标设备验证。
 
@@ -55,7 +55,7 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：20/5/1 Hz 输出与配置一致；输入话题中断后状态变为 unavailable/unknown；端侧重启不会被地面站旧序列状态误判。
 
-## 5. `ros_map_stream` v0.1.0
+## 5. `epgeneral_map_stream` v0.1.0
 
 **当前状态**：`ccs-map-stream-v1`、PointCloud2/位姿同步、zlib/CRC32、分片、资源限制和 session 状态机已通过纯 Python/localhost 测试；真实 ROS 雷达和里程计尚未验证。
 
@@ -71,7 +71,7 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：参考设备能连续上传点云和同步位姿；话题超时发送 session error；缺片/CRC/非有限点不会产生半帧；重启和重复命令幂等。
 
-## 6. `ros_task_control` v0.1.0
+## 6. `epgeneral_task_control` v0.1.0
 
 **当前状态**：UDP 14563/14564、任务分片、CRC/zlib、XML 原子保存、UTC 调度、ACK/心跳/状态、强类型 ROS 消息和状态机已实现；真实运动控制适配器缺失。
 
@@ -79,7 +79,7 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 1. 在 Noetic 构建 `TaskExecutionCommand.msg` 和 `TaskExecutionFeedback.msg`，验证 ROS topic 和消息字段。
 2. 为一台参考设备实现设备专属运动控制适配器：读取 XML、执行航点、回传 scheduled/running/terminal 状态、航点和位置。
-3. `ros_task_control` 只协调协议、持久化和安全状态，不直接解锁飞控、不直接调用 MAVROS。
+3. `epgeneral_task_control` 只协调协议、持久化和安全状态，不直接解锁飞控、不直接调用 MAVROS。
 4. 验证 prepare/chunk/commit 的 task/subtask/revision/device/frame/CRC/航点约束。
 5. 验证 execute 的 UTC 容忍范围、NTP 偏差、同设备并发拒绝、cancel/stop 幂等和进程重启安全清理。
 6. 适配器反馈超时、错误状态或节点退出时，发布 STOP/CANCEL 并向地面站发送 failed/错误码。
@@ -87,7 +87,7 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：参考设备可完成至少一个两航点任务；地面站收到 1 Hz heartbeat、状态变化和航点进度；用户停止后设备进入安全终态；适配器失联不会继续运动。
 
-## 7. `usb_cam_rtsp` v0.1.0
+## 7. `epgeneral_usb_cam_rtsp` v0.1.0
 
 **当前状态**：ROS USB camera + GStreamer RTSP Server C++ 节点、固定 8554 mount point 和配置文件已存在；真实 Noetic/GStreamer/摄像头未验收。
 
