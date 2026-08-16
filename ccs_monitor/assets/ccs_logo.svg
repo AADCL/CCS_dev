@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <title>CCS telemetry network mark</title>
+  <rect x="7" y="7" width="114" height="114" rx="30" fill="#0E1720" stroke="#2A4A57" stroke-width="4"/>
+  <path d="M37 42L64 27L91 42L91 73L64 91L37 73V42Z" fill="#12352F" stroke="#37C5A0" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M37 42L64 57L91 42M64 57V91" stroke="#8DE2C7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="37" cy="42" r="8" fill="#8DE2C7" stroke="#0E1720" stroke-width="4"/>
+  <circle cx="91" cy="42" r="8" fill="#8DE2C7" stroke="#0E1720" stroke-width="4"/>
+  <circle cx="64" cy="91" r="8" fill="#37C5A0" stroke="#0E1720" stroke-width="4"/>
+  <circle cx="64" cy="57" r="7" fill="#F0F5FA" stroke="#0E1720" stroke-width="4"/>
+  <path d="M22 93C29 104 40 111 53 114M106 93C99 104 88 111 75 114" stroke="#2A4A57" stroke-width="4" stroke-linecap="round"/>
+</svg>

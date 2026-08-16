@@ -1,0 +1,274 @@
+from __future__ import annotations
+
+import time
+import logging
+from collections import deque
+from dataclasses import dataclass, replace
+from datetime import datetime
+from typing import Callable
+
+from PySide6.QtCore import QTimer, Signal, Slot
+
+from .data_source import SimulatedDeviceSource
+from .models import (
+    ConnectionStatus,
+    DeviceLogEntry,
+    DeviceLogLevel,
+    DeviceProfile,
+    DeviceSnapshot,
+    HealthStatus,
+    LocalizationStatus,
+    TaskStatus,
+    utc_now,
+)
+from .mqtt_config import MqttMonitoringConfig
+from .mqtt_protocol import (
+    MqttEvent,
+    MqttHeartbeatEvent,
+    MqttMessageParser,
+    MqttPresenceEvent,
+    MqttProtocolError,
+    MqttStatusEvent,
+)
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class HeartbeatTracker:
+    last_heartbeat_monotonic: float | None = None
+    disconnect_started_monotonic: float | None = None
+    warned: bool = False
+    errored: bool = False
+
+
+class MqttDeviceSource(SimulatedDeviceSource):
+    module_status_changed = Signal(str, bool)
+    protocol_warning = Signal(str)
+
+    def __init__(
+        self,
+        config: MqttMonitoringConfig,
+        repository=None,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], datetime] = utc_now,
+        start_watchdog: bool = True,
+        parent=None,
+    ) -> None:
+        self.monitor_config = config
+        self._clock = clock
+        self._wall_clock = wall_clock
+        self._parser = MqttMessageParser(config.topic_root)
+        super().__init__(repository=repository, parent=parent)
+        self._logs = {
+            device.device_id: deque(maxlen=config.log_capacity)
+            for device in self._devices
+        }
+        self._trackers = {device.device_id: HeartbeatTracker() for device in self._devices}
+        self._sequences: dict[tuple[str, str], int] = {}
+        self.module_status_message = "MQTT 监测模块正在启动"
+        self.module_healthy = False
+        self._watchdog = QTimer(self)
+        self._watchdog.timeout.connect(self.check_heartbeats)
+        if start_watchdog:
+            interval_ms = max(1, round(1000 / config.heartbeat_check_hz))
+            self._watchdog.start(interval_ms)
+
+    def _snapshot_from_profile(self, profile: DeviceProfile) -> DeviceSnapshot:
+        return DeviceSnapshot(
+            device_id=profile.device_id,
+            device_name=profile.device_name,
+            device_type=profile.device_type,
+            battery_percent=None,
+            localization_status=LocalizationStatus.UNKNOWN,
+            task_status=TaskStatus.UNKNOWN,
+            connection_status=ConnectionStatus.OFFLINE,
+            updated_at=self._wall_clock(),
+            ip_address=profile.ip_address,
+            availability=profile.availability,
+            last_tested_at=profile.last_tested_at,
+            health_status=HealthStatus.UNKNOWN,
+            flight_mode="unknown",
+            mission_status_raw="unknown",
+            status_card_ids=profile.status_card_ids,
+        )
+
+    def create_device(self, profile: DeviceProfile) -> DeviceSnapshot:
+        self._profiles = self.repository.create(profile)
+        self._devices = self._merge_profiles(self._profiles)
+        created = self.device(profile.device_id)
+        if created is None:
+            raise RuntimeError("设备创建后未能重新加载")
+        self._logs[created.device_id] = deque(maxlen=self.monitor_config.log_capacity)
+        self._trackers[created.device_id] = HeartbeatTracker()
+        self.devices_updated.emit(self.snapshots())
+        return created
+
+    def delete_devices(self, device_ids: set[str]) -> None:
+        super().delete_devices(device_ids)
+        folded = {device_id.casefold() for device_id in device_ids}
+        self._trackers = {
+            key: value for key, value in self._trackers.items() if key.casefold() not in folded
+        }
+        self._sequences = {
+            key: value for key, value in self._sequences.items() if key[0].casefold() not in folded
+        }
+
+    def logs(self, device_id: str) -> list[DeviceLogEntry]:
+        return list(self._logs.get(device_id, ()))
+
+    def append_external_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None:
+        self._append_log(device_id, level, message)
+
+    @Slot(str, bytes)
+    def process_message(self, topic: str, payload: bytes) -> None:
+        try:
+            event = self._parser.parse(topic, payload)
+        except MqttProtocolError as exc:
+            self._warn(f"MQTT 消息已丢弃：{exc}")
+            return
+        self.handle_event(event)
+
+    def handle_event(self, event: MqttEvent) -> None:
+        device = self.device(event.device_id)
+        if device is None:
+            self._warn(f"忽略未登记设备：{event.device_id}")
+            return
+        if event.ip_address != device.ip_address:
+            self._append_log(device.device_id, DeviceLogLevel.WARNING, f"消息 IP {event.ip_address} 与配置 IP {device.ip_address} 不一致")
+        if event.sequence is not None:
+            key = (event.device_id, event.message_type)
+            previous = self._sequences.get(key)
+            if previous is not None and event.sequence <= previous:
+                self._append_log(event.device_id, DeviceLogLevel.WARNING, f"丢弃乱序 {event.message_type} 帧 sequence={event.sequence}")
+                self.devices_updated.emit(self.snapshots())
+                return
+            self._sequences[key] = event.sequence
+        if isinstance(event, MqttPresenceEvent):
+            self._handle_presence(device, event)
+        elif isinstance(event, MqttHeartbeatEvent):
+            self._handle_heartbeat(device, event)
+        elif isinstance(event, MqttStatusEvent):
+            self._handle_status(device, event)
+
+    def _handle_presence(self, device: DeviceSnapshot, event: MqttPresenceEvent) -> None:
+        tracker = self._trackers[device.device_id]
+        if event.status == "online":
+            self._append_log(device.device_id, DeviceLogLevel.INFO, "MQTT presence：设备已连接 Broker")
+        else:
+            tracker.disconnect_started_monotonic = self._clock()
+            tracker.warned = True
+            tracker.errored = False
+            self._replace_device(replace(device, connection_status=ConnectionStatus.WARNING, updated_at=self._wall_clock()))
+            self._append_log(device.device_id, DeviceLogLevel.WARNING, "MQTT presence：设备连接中断")
+        self.devices_updated.emit(self.snapshots())
+
+    def _handle_heartbeat(self, device: DeviceSnapshot, event: MqttHeartbeatEvent) -> None:
+        tracker = self._trackers[device.device_id]
+        was_degraded = tracker.warned or tracker.errored or (
+            tracker.last_heartbeat_monotonic is not None and device.connection_status != ConnectionStatus.ONLINE
+        )
+        tracker.last_heartbeat_monotonic = self._clock()
+        tracker.disconnect_started_monotonic = None
+        tracker.warned = False
+        tracker.errored = False
+        self._replace_device(
+            replace(
+                device,
+                connection_status=ConnectionStatus.ONLINE,
+                last_heartbeat_at=self._wall_clock(),
+                updated_at=self._wall_clock(),
+            )
+        )
+        self._append_log(device.device_id, DeviceLogLevel.INFO, f"心跳包接收 sequence={event.sequence}")
+        if was_degraded:
+            self._append_log(device.device_id, DeviceLogLevel.INFO, "设备心跳恢复，连接已恢复")
+        self.devices_updated.emit(self.snapshots())
+
+    def _handle_status(self, device: DeviceSnapshot, event: MqttStatusEvent) -> None:
+        health = (
+            HealthStatus.UNKNOWN
+            if event.fcu_connected is None
+            else HealthStatus.NORMAL if event.fcu_connected else HealthStatus.ATTENTION
+        )
+        task_status = normalize_mission_status(event.mission_status)
+        self._replace_device(
+            replace(
+                device,
+                battery_percent=event.battery_percentage,
+                task_status=task_status,
+                health_status=health,
+                flight_mode=event.flight_mode,
+                armed=event.armed,
+                system_status=event.system_status,
+                battery_voltage=event.battery_voltage,
+                battery_current=event.battery_current,
+                mission_status_raw=event.mission_status,
+                updated_at=self._wall_clock(),
+            )
+        )
+        self._append_log(device.device_id, DeviceLogLevel.INFO, f"数据帧接收 sequence={event.sequence}")
+        self.devices_updated.emit(self.snapshots())
+
+    @Slot()
+    def check_heartbeats(self) -> None:
+        now = self._clock()
+        changed = False
+        for device_id, tracker in self._trackers.items():
+            started = tracker.disconnect_started_monotonic
+            if started is None:
+                started = tracker.last_heartbeat_monotonic
+            if started is None:
+                continue
+            elapsed = now - started
+            device = self.device(device_id)
+            if device is None:
+                continue
+            if elapsed > self.monitor_config.error_timeout_seconds and not tracker.errored:
+                tracker.errored = True
+                tracker.warned = True
+                self._replace_device(replace(device, connection_status=ConnectionStatus.OFFLINE, updated_at=self._wall_clock()))
+                self._append_log(device_id, DeviceLogLevel.ERROR, f"心跳中断超过 {self.monitor_config.error_timeout_seconds:g}s，设备离线")
+                changed = True
+            elif elapsed > self.monitor_config.warning_timeout_seconds and not tracker.warned:
+                tracker.warned = True
+                self._replace_device(replace(device, connection_status=ConnectionStatus.WARNING, updated_at=self._wall_clock()))
+                self._append_log(device_id, DeviceLogLevel.WARNING, f"心跳中断超过 {self.monitor_config.warning_timeout_seconds:g}s")
+                changed = True
+        if changed:
+            self.devices_updated.emit(self.snapshots())
+
+    @Slot(str, bool)
+    def set_module_status(self, message: str, healthy: bool) -> None:
+        self.module_status_message = message
+        self.module_healthy = healthy
+        self.module_status_changed.emit(message, healthy)
+
+    def _replace_device(self, updated: DeviceSnapshot) -> None:
+        self._devices = [updated if item.device_id == updated.device_id else item for item in self._devices]
+
+    def _append_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None:
+        entries = self._logs.setdefault(device_id, deque(maxlen=self.monitor_config.log_capacity))
+        if not isinstance(entries, deque):
+            entries = deque(entries, maxlen=self.monitor_config.log_capacity)
+            self._logs[device_id] = entries
+        entries.append(DeviceLogEntry(self._wall_clock(), level, message))
+
+    def _warn(self, message: str) -> None:
+        LOGGER.warning(message)
+        self.protocol_warning.emit(message)
+
+
+def normalize_mission_status(value: str | None) -> TaskStatus:
+    normalized = (value or "unknown").strip().lower()
+    aliases = {
+        TaskStatus.EXECUTING: {"running", "active", "executing"},
+        TaskStatus.STANDBY: {"idle", "standby"},
+        TaskStatus.PAUSED: {"paused"},
+        TaskStatus.COMPLETED: {"done", "succeeded", "completed"},
+    }
+    for status, values in aliases.items():
+        if normalized in values:
+            return status
+    return TaskStatus.UNKNOWN

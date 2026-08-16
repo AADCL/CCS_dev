@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "protocol_id": "ccs-map-stream-v1",
+  "network": {
+    "bind_host": "0.0.0.0",
+    "data_port": 14562,
+    "device_control_port": 14561,
+    "max_datagram_bytes": 1400
+  },
+  "stream": {
+    "cloud_rate_hz": 5.0,
+    "voxel_size_m": 0.10,
+    "compression": "zlib",
+    "point_format": "xyz_f32_le"
+  },
+  "timeouts": {
+    "command_retry_seconds": 0.5,
+    "command_max_attempts": 5,
+    "frame_timeout_seconds": 1.0,
+    "warning_timeout_seconds": 2.0,
+    "error_timeout_seconds": 5.0
+  },
+  "limits": {
+    "max_frame_points": 200000,
+    "max_decompressed_bytes": 2400000,
+    "max_accumulated_voxels": 5000000,
+    "max_preview_points": 300000
+  }
+}

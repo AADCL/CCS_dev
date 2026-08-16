@@ -1,0 +1,14 @@
+<launch>
+  <arg name="device_config_file" default="$(find edge_device_config)/config/device.yaml" />
+  <arg name="video_config_file" default="$(find usb_cam_rtsp)/config/video.yaml" />
+
+  <rosparam command="load" file="$(arg device_config_file)" ns="edge_device" />
+
+  <node pkg="usb_cam" type="usb_cam_node" name="usb_cam" output="screen">
+    <rosparam command="load" file="$(arg video_config_file)" />
+  </node>
+
+  <node pkg="usb_cam_rtsp" type="usb_cam_rtsp_node" name="usb_cam_rtsp" output="screen">
+    <rosparam command="load" file="$(arg video_config_file)" />
+  </node>
+</launch>

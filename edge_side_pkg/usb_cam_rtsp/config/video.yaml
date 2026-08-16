@@ -1,0 +1,14 @@
+video_device: "/dev/video0"
+image_width: 640
+image_height: 480
+framerate: 30
+pixel_format: "yuyv"
+camera_frame_id: "usb_cam"
+io_method: "mmap"
+image_topic: "/usb_cam/image_raw"
+
+rtsp_bind_address: "0.0.0.0"
+rtsp_port: 8554
+rtsp_mount_point: "/usb_cam"
+bitrate_kbps: 2000
+frame_timeout_seconds: 5.0

@@ -1,0 +1,70 @@
+schema_version: 1
+protocol_id: "ccs-udp-telemetry-v1"
+network:
+  destination_host: "192.168.151.100"
+  destination_port: 14560
+  max_datagram_bytes: 16384
+descriptors:
+  - name: global_pose
+    display_name: "全局位姿"
+    type: pose
+    level: 1
+    source:
+      topic: /mavros/local_position/pose
+      message_type: geometry_msgs/PoseStamped
+      mapping: {position: pose.position, orientation: pose.orientation}
+  - name: vision_pose
+    display_name: "视觉传感器位姿"
+    type: pose
+    level: 1
+    source:
+      topic: /vision_pose/pose
+      message_type: geometry_msgs/PoseStamped
+      mapping: {position: pose.position, orientation: pose.orientation}
+  - name: imu
+    display_name: "IMU"
+    type: imu
+    level: 1
+    source:
+      topic: /mavros/imu/data
+      message_type: sensor_msgs/Imu
+      mapping: {orientation: orientation, angular_velocity: angular_velocity, linear_acceleration: linear_acceleration}
+  - name: livox_pointcloud
+    display_name: "雷达点云"
+    type: pointcloud_status
+    level: 2
+    source: {topic: /livox/lidar, timeout_seconds: 1.0}
+  - name: livox_driver
+    display_name: "Livox 驱动"
+    type: availability
+    level: 3
+    source: {topic: /livox/lidar, timeout_seconds: 3.0}
+  - name: fastlio2
+    display_name: "FAST-LIO2 定位状态"
+    type: availability
+    level: 3
+    source: {topic: /Odometry, timeout_seconds: 3.0}
+  - name: pgm_mapping
+    display_name: "PGM 地图生成状态"
+    type: availability
+    level: 3
+    source: {topic: /map_pgm, timeout_seconds: 3.0}
+  - name: octomap_mapping
+    display_name: "八叉树地图生成状态"
+    type: availability
+    level: 3
+    source: {topic: /octomap_binary, timeout_seconds: 3.0}
+  - name: occupancy_grid_mapping
+    display_name: "占据栅格图生成状态"
+    type: availability
+    level: 3
+    source: {topic: /map, timeout_seconds: 3.0}
+  - name: mapping_mode
+    display_name: "当前建图模式"
+    type: text_status
+    level: 3
+    source:
+      topic: /mapping_mode
+      message_type: std_msgs/String
+      timeout_seconds: 3.0
+      mapping: {value: data}

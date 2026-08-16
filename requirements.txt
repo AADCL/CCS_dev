@@ -1,0 +1,8 @@
+PySide6>=6.6,<7
+amqtt>=0.11,<1
+paho-mqtt>=2,<3
+PyYAML>=6,<7
+msgpack>=1,<2
+numpy>=1.24,<3
+vispy>=0.14,<1
+pypcd4>=1.3,<2

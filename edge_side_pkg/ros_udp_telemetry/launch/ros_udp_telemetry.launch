@@ -1,0 +1,12 @@
+<launch>
+  <arg name="telemetry_config_file" default="$(find ros_udp_telemetry)/config/telemetry.yaml" />
+  <arg name="device_config_file" default="$(find edge_device_config)/config/device.yaml" />
+  <arg name="destination_host" default="192.168.151.100" />
+  <arg name="destination_port" default="14560" />
+  <node pkg="ros_udp_telemetry" type="ros_udp_telemetry_node.py" name="ros_udp_telemetry" output="screen">
+    <param name="telemetry_config_file" value="$(arg telemetry_config_file)" />
+    <param name="device_config_file" value="$(arg device_config_file)" />
+    <param name="destination_host" value="$(arg destination_host)" />
+    <param name="destination_port" value="$(arg destination_port)" />
+  </node>
+</launch>

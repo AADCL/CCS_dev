@@ -1,0 +1,8 @@
+<launch>
+  <arg name="task_config_file" default="$(find ros_task_control)/config/task_control.yaml" />
+  <arg name="device_config_file" default="$(find edge_device_config)/config/device.yaml" />
+  <node pkg="ros_task_control" type="ros_task_control_node.py" name="ros_task_control" output="screen">
+    <param name="task_config_file" value="$(arg task_config_file)" />
+    <param name="device_config_file" value="$(arg device_config_file)" />
+  </node>
+</launch>

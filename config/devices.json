@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "devices": [
+    {
+      "device_id": "UAV_001",
+      "device_name": "测试无人机01",
+      "device_type": "UAV",
+      "ip_address": "192.168.151.250",
+      "availability": "available",
+      "last_tested_at": "2026-07-31T13:24:57.466250+00:00",
+      "status_cards": [
+        "livox_driver",
+        "fastlio2",
+        "pgm_mapping",
+        "octomap_mapping",
+        "occupancy_grid_mapping",
+        "mapping_mode"
+      ]
+    }
+  ]
+}

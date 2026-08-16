@@ -1,0 +1,49 @@
+schema_version: 1
+protocol_id: "ccs-map-stream-v1"
+
+network:
+  bind_host: "0.0.0.0"
+  control_port: 14561
+  ground_station_ip: "192.168.151.100"
+  data_port: 14562
+  max_datagram_bytes: 1400
+
+ros:
+  cloud:
+    topic: "/livox/lidar"
+    message_type: "sensor_msgs/PointCloud2"
+  pose:
+    topic: "/Odometry"
+    message_type: "nav_msgs/Odometry"
+    position_path: "pose.pose.position"
+    orientation_path: "pose.pose.orientation"
+  frames:
+    map: "map"
+    body: "body"
+    sensor: "livox_frame"
+  body_from_sensor:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    qx: 0.0
+    qy: 0.0
+    qz: 0.0
+    qw: 1.0
+
+sync:
+  tolerance_seconds: 0.05
+  pose_buffer_size: 100
+
+preprocess:
+  min_range_m: 0.30
+  max_range_m: 100.0
+  min_voxel_size_m: 0.05
+  max_cloud_rate_hz: 5.0
+
+timeouts:
+  input_timeout_seconds: 3.0
+  command_cache_seconds: 60.0
+
+limits:
+  max_frame_points: 200000
+  max_decompressed_bytes: 2400000

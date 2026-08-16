@@ -1,0 +1,13 @@
+string request_id
+string task_id
+string subtask_id
+string device_id
+string execution_id
+uint32 revision
+string state
+int32 waypoint_index
+int32 waypoint_count
+float64 progress
+geometry_msgs/Point position
+string error_code
+string message
