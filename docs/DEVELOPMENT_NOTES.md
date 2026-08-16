@@ -4,7 +4,7 @@
 
 ### 端侧任务协调
 
-- 新增 `ros_task_control` v0.1.0，严格接收 `ccs-task-control-v1`，按 task/subtask/revision 重组并校验 zlib JSON，再使用 ID 哈希目录原子保存单一 XML 事实来源。
+- 新增 `epgeneral_task_control` v0.1.0，严格接收 `ccs-task-control-v1`，按 task/subtask/revision 重组并校验 zlib JSON，再使用 ID 哈希目录原子保存单一 XML 事实来源。
 - execution 状态机等待设备控制适配器的 scheduled feedback 后才确认 execute ACK；运行期间回传 1 Hz 心跳、状态和航点进度，超时或重启发布安全 STOP/CANCEL。
 - 包定义强类型 ROS command/feedback 消息，不直接操作 MAVROS。Windows 测试验证协议、XML、状态机和 localhost UDP；真实 Melodic 设备控制适配器仍需目标设备联调。
 
@@ -62,8 +62,8 @@
 
 ### 验证边界
 
-- Windows localhost 测试覆盖真实 UDP start/ACK/cloud/stop/ACK 和最终仓储提交。端侧 `ros_map_stream` v0.1.0 已实现 `ccs-map-stream-v1` 并通过独立协议、处理、会话与 UDP 契约测试；真实 ROS Melodic 雷达/里程计联调仍需在目标设备执行。
-- 新增端侧 `ros_map_stream` v0.1.0；地面站版本仍为 v0.8.0，其余端侧 ROS 包版本不变。
+- Windows localhost 测试覆盖真实 UDP start/ACK/cloud/stop/ACK 和最终仓储提交。端侧 `epgeneral_map_stream` v0.1.0 已实现 `ccs-map-stream-v1` 并通过独立协议、处理、会话与 UDP 契约测试；真实 ROS Melodic 雷达/里程计联调仍需在目标设备执行。
+- 新增端侧 `epgeneral_map_stream` v0.1.0；地面站版本仍为 v0.8.0，其余端侧 ROS 包版本不变。
 
 ## v0.7.1
 
@@ -141,8 +141,8 @@
 
 ### catkin Python 导入修复
 
-- 报错进程路径位于工作空间 `src/ros_udp_telemetry/scripts`，而不是 catkin 生成的 `devel/lib/ros_udp_telemetry`，说明 roslaunch 使用了源码脚本且当前 Python 路径没有已构建包。
-- 启动脚本在检测到相邻 `../src/ros_udp_telemetry` 时，将该目录加入 `sys.path`；安装后的 catkin relay 不存在该相邻结构，因此仍使用 devel/install 的标准 Python 路径。
+- 报错进程路径位于工作空间 `src/epgeneral_udp_telemetry/scripts`，而不是 catkin 生成的 `devel/lib/epgeneral_udp_telemetry`，说明 roslaunch 使用了源码脚本且当前 Python 路径没有已构建包。
+- 启动脚本在检测到相邻 `../src/epgeneral_udp_telemetry` 时，将该目录加入 `sys.path`；安装后的 catkin relay 不存在该相邻结构，因此仍使用 devel/install 的标准 Python 路径。
 - CMake 在 `find_package(PythonInterp 3.6)` 后将解释器写回 cache，防止 Melodic 的 Python 2 缓存与 `catkin_python_setup` 生成路径不一致。
 - 新增独立子进程测试，清除包源码 PYTHONPATH 后直接加载入口脚本，验证其能够自行定位模块；CMake 同时通过 `catkin_add_nosetests` 注册包内测试。
 
@@ -186,7 +186,7 @@
 
 ### 端侧 ROS 采集
 
-- `ros_udp_telemetry` 面向 ROS Melodic/Python 3.6.9，利用 `roslib.message.get_message_class` 动态加载 Pose/IMU 类型，状态监测使用 `rospy.AnyMsg`，因此可同时服务 MAVROS 和普通 ROS 设备。
+- `epgeneral_udp_telemetry` 面向 ROS Melodic/Python 3.6.9，利用 `roslib.message.get_message_class` 动态加载 Pose/IMU 类型，状态监测使用 `rospy.AnyMsg`，因此可同时服务 MAVROS 和普通 ROS 设备。
 - 一级采样窗口对位置、角速度和加速度求均值；四元数先按参考四元数调整符号，再归一化平均并转换为 roll/pitch/yaw。
 - 各等级由独立 ROS Timer 固定以 20/5/1 Hz聚合发送。窗口无新样本时复用最近输出并更新 sample age；点云仅由回调时间估算接收频率。
 - 地面站 JSON 与端侧 YAML 分别部署，根测试读取两端配置并验证描述哈希完全一致。
@@ -206,13 +206,13 @@
 
 ### 端侧目录与共享配置
 
-- `edge_side_pkg` 是端侧部署容器，当前包含 `edge_device_config`、`MQTAV`、`usb_cam_rtsp`、`ros_udp_telemetry` 和 `ros_map_stream` 五个 ROS 包。
-- `edge_device_config/config/device.yaml` 是设备 ID/IP 的唯一端侧来源，根测试与 `config/devices.json` 做一致性校验。
-- MQTAV `v0.3.0` 将设备身份加载与 MQTT/ROS 运行配置拆开，新增 `--device-config-file`；保留 Python 3.6.9 与 ROS Melodic 兼容实现。
+- `edge_side_pkg` 是端侧部署容器，当前包含 `epgeneral_device_config`、`mqtav`、`epgeneral_usb_cam_rtsp`、`epgeneral_udp_telemetry` 和 `epgeneral_map_stream` 五个 ROS 包。
+- `epgeneral_device_config/config/device.yaml` 是设备 ID/IP 的唯一端侧来源，根测试与 `config/devices.json` 做一致性校验。
+- mqtav `v0.3.0` 将设备身份加载与 MQTT/ROS 运行配置拆开，新增 `--device-config-file`；保留 Python 3.6.9 与 ROS Melodic 兼容实现。
 
 ### USB 摄像头 RTSP 推流
 
-- `usb_cam_rtsp` 使用 C++、`image_transport`、`cv_bridge` 和 GStreamer RTSP Server，订阅 `/usb_cam/image_raw`。
+- `epgeneral_usb_cam_rtsp` 使用 C++、`image_transport`、`cv_bridge` 和 GStreamer RTSP Server，订阅 `/usb_cam/image_raw`。
 - ROS 回调只负责把最新 BGR8 帧复制到受 mutex 保护的单帧缓存；GStreamer `appsrc` 在 RTSP 客户端请求时取最新帧，队列限制为 2 帧并丢弃旧帧，避免慢客户端阻塞相机。
 - 编码管线为 `videoconvert -> x264enc(tune=zerolatency) -> rtph264pay`，默认 `640x480/30 FPS/2000 kbps`，服务 `0.0.0.0:8554/usb_cam`。
 - WallTimer 检查首次收帧和断帧超时，RTSP 客户端连接/断开、编码错误和关闭均写 ROS 日志。
@@ -225,7 +225,7 @@
 
 ### 运行架构与依赖
 
-- 地面站版本从 `0.1.0` 升至 `0.2.0`，MQTAV 协议未变，机载 ROS1 包保持 `0.1.0`。
+- 地面站版本从 `0.1.0` 升至 `0.2.0`，mqtav 协议未变，机载 ROS1 包保持 `0.1.0`。
 - `MqttBrokerService` 使用 `amqtt`，在 daemon asyncio 线程中启动 TCP Broker；匿名认证通过 `AnonymousAuthPlugin` 显式配置。
 - `MqttSubscriber` 使用 Paho v2 callback API 和网络线程。连接成功后订阅三个通配主题，回调只复制 topic/payload 并发出 Qt signal。
 - `MqttMonitoringRuntime` 负责生命周期编排：Broker 成功后才启动订阅器，退出时先停止 Paho，再通知 Broker 事件循环并等待线程结束。跨线程停止标记覆盖事件循环尚未创建的立即退出竞态；绑定失败只更新模块故障状态，不结束 QApplication。
@@ -251,7 +251,7 @@
 - 首页、设备和地图页面的构造参数改为 `DeviceDataSource` 协议。页面只订阅 `devices_updated`，Paho 和 Broker 线程不直接访问控件。
 - 设备卡增加飞行模式；详情页增加最后心跳、飞行模式、解锁、MAVLink system status、电池电压/电流和原始任务值，并支持未知健康状态。
 - 设备页监听 `module_status_changed`，区分订阅正常和 Broker/订阅故障样式。
-- 测试使用真实临时端口启动 Broker 并由 Paho 发布 MQTAV 信封，同时覆盖端口占用、干净关闭、可控时钟状态机、乱序、未知设备、日志上限和 Qt 页面字段联动。
+- 测试使用真实临时端口启动 Broker 并由 Paho 发布 mqtav 信封，同时覆盖端口占用、干净关闭、可控时钟状态机、乱序、未知设备、日志上限和 Qt 页面字段联动。
 
 ## v0.1.0
 

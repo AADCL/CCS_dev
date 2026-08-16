@@ -63,7 +63,7 @@
 
 ### W4：任务真实执行闭环
 
-- 实现参考设备的 `TaskExecutionCommand`/`TaskExecutionFeedback` 适配器，不让 `ros_task_control` 直接操作飞控。
+- 实现参考设备的 `TaskExecutionCommand`/`TaskExecutionFeedback` 适配器，不让 `epgeneral_task_control` 直接操作飞控。
 - 验证 prepare/chunk/commit/execute/cancel/stop 及 revision、CRC、缺片补发和幂等逻辑。
 - 验证 UTC scheduled、scheduled/running/completed/stopped/failed 状态和航点进度。
 - 在适配器失联、反馈超时、节点重启和用户停止时发送安全 STOP/CANCEL，并释放地面站设备锁。

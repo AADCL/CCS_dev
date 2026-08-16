@@ -2,7 +2,7 @@
 
 文档版本：`v0.9.1`，更新日期：2026-08-13。
 
-地面站 v0.9.1 的 `ccs-task-control-v1` 字段、端口及兼容要求保持不变；新增端侧 `ros_task_control` v0.1.0 实现该既有协议及 ROS 执行适配边界。
+地面站 v0.9.1 的 `ccs-task-control-v1` 字段、端口及兼容要求保持不变；新增端侧 `epgeneral_task_control` v0.1.0 实现该既有协议及 ROS 执行适配边界。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -10,15 +10,15 @@
 
 | 通道 | 方向 | 地址/端口 | 协议版本 | 当前端侧实现 |
 | --- | --- | --- | --- | --- |
-| MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | MQTAV v0.3.0 |
-| UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | ros_udp_telemetry v0.2.1 |
-| RTSP 视频 | 地面站拉取端侧 | TCP 8554 `/usb_cam` | H.264/RTP/RTSP | usb_cam_rtsp v0.1.0 |
-| UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | ros_map_stream v0.1.0 |
-| UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | ros_map_stream v0.1.0 |
-| UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v1` | ros_task_control v0.1.0 |
-| UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v1` | ros_task_control v0.1.0 |
+| MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | mqtav v0.3.0 |
+| UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.2.1 |
+| RTSP 视频 | 地面站拉取端侧 | TCP 8554 `/usb_cam` | H.264/RTP/RTSP | epgeneral_usb_cam_rtsp v0.1.0 |
+| UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
+| UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
+| UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
+| UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 
-端侧身份由 `edge_side_pkg/edge_device_config/config/device.yaml` 提供，`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。MQTT、遥测、建图和任务协议中的 `device_id` 均使用该 ID。
+端侧身份由 `edge_side_pkg/EPGeneral_device_config/config/device.yaml` 提供，`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。MQTT、遥测、建图和任务协议中的 `device_id` 均使用该 ID。
 
 ## MQTT presence、heartbeat、status
 
@@ -101,7 +101,7 @@ heartbeat 为 1 Hz，`level=None` 且 payload 为空。合法心跳使 UDP 链�
 | `occupancy_grid_mapping` | availability | 3 | 同 availability |
 | `mapping_mode` | text_status | 3 | availability 字段加 `value`，最长 128 字符 |
 
-`status` 只允许 `available`、`unavailable`、`unknown`。所有浮点数必须有限。点云内容禁止放入 14560，只发送接收元数据。配置对应关系：地面站 `config/udp_telemetry.json` 定义公共名称/类型/等级；端侧 `ros_udp_telemetry/config/telemetry.yaml` 额外定义 ROS topic、message type、字段路径和超时。公共 descriptor 不一致将导致哈希拒收。
+`status` 只允许 `available`、`unavailable`、`unknown`。所有浮点数必须有限。点云内容禁止放入 14560，只发送接收元数据。配置对应关系：地面站 `config/udp_telemetry.json` 定义公共名称/类型/等级；端侧 `epgeneral_udp_telemetry/config/telemetry.yaml` 额外定义 ROS topic、message type、字段路径和超时。公共 descriptor 不一致将导致哈希拒收。
 
 ## RTSP 视频
 
@@ -229,11 +229,11 @@ p_map = T_map_body * T_body_sensor * p_sensor
 
 | 地面站 | 端侧 | 必须一致/可达内容 |
 | --- | --- | --- |
-| `config/devices.json` | `edge_device_config/config/device.yaml` | device ID、IP |
-| `config/mqtt.json` | `MQTAV/config/config.yaml` | Broker IP/端口、topic root、QoS、频率 |
-| `config/udp_telemetry.json` | `ros_udp_telemetry/config/telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
-| 固定 RTSP 推导 | `usb_cam_rtsp/config/video.yaml` | 端侧 8554、`/usb_cam`、H.264 |
-| `config/map_building.json` | `ros_map_stream/config/mapping.yaml` | protocol ID、14561/14562、包长、压缩、格式、速率、体素和资源上限 |
+| `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP |
+| `config/mqtt.json` | `mqtav/config/config.yaml` | Broker IP/端口、topic root、QoS、频率 |
+| `config/udp_telemetry.json` | `epgeneral_udp_telemetry/config/telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
+| 固定 RTSP 推导 | `epgeneral_usb_cam_rtsp/config/video.yaml` | 端侧 8554、`/usb_cam`、H.264 |
+| `config/map_building.json` | `epgeneral_map_stream/config/mapping.yaml` | protocol ID、14561/14562、包长、压缩、格式、速率、体素和资源上限 |
 
 ## 端侧建图实现检查清单
 
@@ -246,13 +246,13 @@ p_map = T_map_body * T_body_sensor * p_sensor
 - stop 后停止发送，释放 ROS subscriber、位姿缓存和会话资源；控制 socket 保持监听以接受下一次 start，进程退出时再关闭。
 - 在 localhost/局域网测试乱序、重复、缺片、CRC 错误、点云/位姿超时、重复命令和干净退出。
 
-当前结论：地面站 v0.8.0 与端侧 `ros_map_stream` v0.1.0 已实现上述协议。自动测试覆盖协议、处理、会话与 localhost UDP 契约；ROS Melodic 真机上的雷达、里程计和局域网联调仍需在部署设备执行。
+当前结论：地面站 v0.8.0 与端侧 `epgeneral_map_stream` v0.1.0 已实现上述协议。自动测试覆盖协议、处理、会话与 localhost UDP 契约；ROS Melodic 真机上的雷达、里程计和局域网联调仍需在部署设备执行。
 
 ## UDP 地图任务控制接口（ccs-task-control-v1）
 
 ### 兼容性与网络
 
-- 地面站版本：v0.9.1；端侧任务协调包：`ros_task_control v0.1.0`。协议 schema 保持 1。
+- 地面站版本：v0.9.1；端侧任务协调包：`epgeneral_task_control v0.1.0`。协议 schema 保持 1。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
 - 可信内网明文 MessagePack，schema 1；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。
@@ -384,8 +384,8 @@ UDP 14560 全局位姿仍是地面站地图实时标记来源；14564 进度是�
 - 使用 NTP 校时，按 `scheduled_at` 启动；同一设备拒绝重叠执行。
 - 以 1 Hz 发送 heartbeat，并在状态变化和航点推进时发送状态/进度至来源地面站 14564。
 - 正确处理 cancel/stop、进程重启、重复命令、缺片、修订不匹配和执行故障。
-- `ros_task_control` 将成功提交轨迹原子保存为 XML，并通过 `TaskExecutionCommand`/`TaskExecutionFeedback` 与设备专属控制节点交互；它不直接解锁飞控或调用 MAVROS。
-- 默认 ROS 话题为 `/ros_task_control/execution_command` 和 `/ros_task_control/execution_feedback`。command 携带 action、全部 ID、revision、XML 路径、frame 和 UTC 时间；feedback 必须回传相同 ID/revision/request ID、状态、进度和位置。
+- `epgeneral_task_control` 将成功提交轨迹原子保存为 XML，并通过 `TaskExecutionCommand`/`TaskExecutionFeedback` 与设备专属控制节点交互；它不直接解锁飞控或调用 MAVROS。
+- 默认 ROS 话题为 `/epgeneral_task_control/execution_command` 和 `/epgeneral_task_control/execution_feedback`。command 携带 action、全部 ID、revision、XML 路径、frame 和 UTC 时间；feedback 必须回传相同 ID/revision/request ID、状态、进度和位置。
 - XML 根节点为 `trajectory`，保存 task/subtask/device/revision/CRC；metadata 保存任务名、map/frame、速度和延迟；waypoints 按连续 index 保存 ID 与 XYZ。
 - 当前仓库已包含协议与协调包并完成自动测试；设备专属运动控制适配节点和真实 ROS Melodic 联调不在该包范围内。
 
@@ -393,4 +393,4 @@ UDP 14560 全局位姿仍是地面站地图实时标记来源；14564 进度是�
 
 | 地面站 | 端侧 | 对应内容 |
 | --- | --- | --- |
-| `config/task_system.json` | `ros_task_control/config/task_control.yaml` | `ccs-task-control-v1`、14563/14564、包长、分片、任务限制与 UTC 调度 |
+| `config/task_system.json` | `epgeneral_task_control/config/task_control.yaml` | `ccs-task-control-v1`、14563/14564、包长、分片、任务限制与 UTC 调度 |

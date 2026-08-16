@@ -5,7 +5,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE = ROOT / "edge_side_pkg" / "usb_cam_rtsp"
+PACKAGE = ROOT / "edge_side_pkg" / "EPGeneral_usb_cam_rtsp"
 
 
 class EdgeVideoConfigTests(unittest.TestCase):
@@ -20,10 +20,10 @@ class EdgeVideoConfigTests(unittest.TestCase):
         self.assertGreater(config["bitrate_kbps"], 0)
 
     def test_launch_uses_shared_device_config_and_usb_cam(self):
-        launch = (PACKAGE / "launch" / "usb_cam_rtsp.launch").read_text(encoding="utf-8")
-        self.assertIn("$(find edge_device_config)/config/device.yaml", launch)
+        launch = (PACKAGE / "launch" / "epgeneral_usb_cam_rtsp.launch").read_text(encoding="utf-8")
+        self.assertIn("$(find epgeneral_device_config)/config/device.yaml", launch)
         self.assertIn('pkg="usb_cam"', launch)
-        self.assertIn('pkg="usb_cam_rtsp"', launch)
+        self.assertIn('pkg="epgeneral_usb_cam_rtsp"', launch)
 
 
 if __name__ == "__main__":
