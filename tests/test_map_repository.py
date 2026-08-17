@@ -163,7 +163,7 @@ class MapRepositoryTests(unittest.TestCase):
         self.assertEqual(committed.point_count, 2)
         self.assertEqual(committed.trajectory_path, "trajectory.csv")
         stored = json.loads((self.root / committed.directory_name / "map.json").read_text(encoding="utf-8"))
-        self.assertEqual(stored["schema_version"], 3)
+        self.assertEqual(stored["schema_version"], 4)
         archive_path = Path(self.temp_dir.name) / "mapping.zip"
         self.repository.export_zip(definition.map_id, archive_path)
         with zipfile.ZipFile(archive_path) as archive:

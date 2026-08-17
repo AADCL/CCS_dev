@@ -1,9 +1,9 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.10.0`，更新日期：2026-08-17。
+文档版本：`v0.11.1`，更新日期：2026-08-17。
 
-地面站 v0.10.0 仅新增本地设备类型展示模板并修复主题，MQTT、RTSP 与 UDP 14560–14564 的字段、端口及兼容要求均保持不变。模板图标、地图形状和功能卡片不会下发到端侧。
-地面站 v0.10.0 的 `ccs-task-control-v1` 字段、端口及兼容要求保持不变；端侧 `epgeneral_task_control` v0.1.0 实现该既有协议及 ROS 执行适配边界。
+地面站 v0.11.1 仅调整本地三维地图拖动灵敏度，不改变任何端侧接口。v0.11.0 在不改变端口和 schema 的前提下，为 `ccs-map-stream-v1` 的 `start_mapping` 增加三个可选联合建图字段。MQTT、RTSP、UDP 14560 和任务 UDP 14563/14564 均保持不变。
+端侧 `epgeneral_map_stream` v0.1.0 可忽略新增字段并继续按独立会话上传；主从外参、预览融合和最终算法插件均由地面站执行。本版本不修改任何端侧包代码或版本。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -141,11 +141,25 @@ heartbeat 为 1 Hz，`level=None` 且 payload 为空。合法心跳使 UDP 链�
   "voxel_size_m": 0.10,
   "compression": "zlib",
   "point_format": "xyz_f32_le",
-  "coordinate_contract": "sensor+map_body+body_sensor"
+  "coordinate_contract": "sensor+map_body+body_sensor",
+  "job_id": "<可选：地面站联合建图任务 ID>",
+  "role": "primary",
+  "primary_device_id": "UAV_001"
 }
 ```
 
 地面站每 500 ms 重发，最多 5 次。端侧不得协商高于请求值的点云频率、点数或包长；可以在 ACK 中用 `actual_parameters` 报告更低速率/更大体素。端侧开始 ROS 订阅、同步和发送后返回 accepted ACK。
+
+`job_id`、`role` 和 `primary_device_id` 为 v0.11.0 的可选兼容字段。`role` 只允许 `primary|secondary`。同一联合任务中每台设备仍使用独立 `session_id`、sequence、frame ID 和 ACK 重试；端侧不得把不同设备的数据合并到一个会话。旧端侧可以忽略这些字段。
+
+### 多设备会话与外参
+
+- 地面站必须等待参与设备全部确认 start，才将逻辑任务标记为建图中。
+- 每台设备继续上传自身局部地图坐标中的 `map <- body` 和 `body <- sensor`；端侧不负责跨设备外参融合。
+- 用户录入的外参方向固定为 `primary_map <- secondary_map`，XYZ 单位为米，roll/pitch/yaw 单位为度。
+- 地面站先复原各设备局部点云，再使用外参转换到主坐标系。实时预览使用内置体素融合，停止后由选定地面站插件生成正式 PCD。
+- 从设备超过 5 秒无完整帧后进入降级态，由用户决定剔除或中止。主设备失效时不得自动切换主坐标系。
+- 端侧后续若实现联合任务显示，只需读取可选字段；不得更改 `cloud_chunk`、zlib、CRC32、XYZ float32 或同步位姿契约。
 
 ### 下行 stop_mapping
 
@@ -254,7 +268,7 @@ p_map = T_map_body * T_body_sensor * p_sensor
 
 ### 兼容性与网络
 
-- 地面站版本：v0.10.0；端侧任务协调包：`epgeneral_task_control v0.1.0`。协议 schema 保持 1。
+- 地面站版本：v0.11.1；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
 - 可信内网明文 MessagePack，schema 1；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。

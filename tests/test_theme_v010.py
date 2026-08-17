@@ -3,7 +3,11 @@ from __future__ import annotations
 import re
 import unittest
 
-from ccs_monitor.styles import BASE_STYLE, ThemeMode, build_stylesheet, theme_palette
+from PySide6.QtGui import QPalette
+
+from ccs_monitor.styles import (
+    BASE_STYLE, ThemeMode, build_qt_palette, build_stylesheet, theme_palette,
+)
 
 
 class DayThemeTests(unittest.TestCase):
@@ -23,3 +27,21 @@ class DayThemeTests(unittest.TestCase):
         style = build_stylesheet(ThemeMode.DAY)
         self.assertIn(f"background: {palette.selected_background}", style)
         self.assertIn(f"color: {palette.text_strong}", style)
+
+    def test_native_popup_palette_matches_each_theme(self) -> None:
+        for mode in (ThemeMode.NIGHT, ThemeMode.DAY):
+            colors = theme_palette(mode)
+            palette = build_qt_palette(mode)
+            self.assertEqual(palette.color(QPalette.ColorRole.Window).name(), colors.background.lower())
+            self.assertEqual(palette.color(QPalette.ColorRole.Base).name(), colors.input_background.lower())
+            self.assertEqual(
+                palette.color(QPalette.ColorRole.Highlight).name(),
+                colors.selected_background.lower(),
+            )
+
+    def test_secondary_popups_and_dialog_views_have_explicit_surfaces(self) -> None:
+        style = build_stylesheet(ThemeMode.NIGHT)
+        self.assertIn("QMenu, QComboBoxPrivateContainer", style)
+        self.assertIn("QDialog QListWidget", style)
+        self.assertIn("QListWidget#secondaryList", style)
+        self.assertIn("QComboBox QAbstractItemView::item", style)

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from PySide6.QtCore import QSettings
+from PySide6.QtGui import QColor, QPalette
 
 
 class ThemeMode(str, Enum):
@@ -286,6 +287,34 @@ def build_stylesheet(mode: ThemeMode | str) -> str:
     return _replace_style_colors(BASE_STYLE, theme_palette(mode))
 
 
+def build_qt_palette(mode: ThemeMode | str) -> QPalette:
+    """Cover native popup/container surfaces that Qt stylesheets do not own."""
+    colors = theme_palette(mode)
+    palette = QPalette()
+    roles = {
+        QPalette.ColorRole.Window: colors.background,
+        QPalette.ColorRole.WindowText: colors.text,
+        QPalette.ColorRole.Base: colors.input_background,
+        QPalette.ColorRole.AlternateBase: colors.surface_alt,
+        QPalette.ColorRole.ToolTipBase: colors.elevated,
+        QPalette.ColorRole.ToolTipText: colors.text_strong,
+        QPalette.ColorRole.Text: colors.text,
+        QPalette.ColorRole.Button: colors.surface_alt,
+        QPalette.ColorRole.ButtonText: colors.text,
+        QPalette.ColorRole.BrightText: colors.text_strong,
+        QPalette.ColorRole.Highlight: colors.selected_background,
+        QPalette.ColorRole.HighlightedText: colors.text_strong,
+        QPalette.ColorRole.PlaceholderText: colors.muted,
+        QPalette.ColorRole.Link: colors.primary,
+    }
+    for role, value in roles.items():
+        palette.setColor(QPalette.ColorGroup.All, role, QColor(value))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(colors.muted))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(colors.muted))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Base, QColor(colors.surface_alt))
+    return palette
+
+
 BASE_STYLE = """
 QWidget {
     color: #e7edf5;
@@ -293,6 +322,44 @@ QWidget {
 }
 QMainWindow, QDialog, QWidget#root, QWidget#pageContent {
     background: #0b1118;
+}
+QMenu, QComboBoxPrivateContainer {
+    color: #dfe8f2;
+    background: #111a24;
+    border: 1px solid #2a3d4d;
+    padding: 2px;
+}
+QMenu::item {
+    background: transparent;
+    padding: 7px 18px;
+}
+QMenu::item:selected {
+    color: #f2f8f6;
+    background: #20564b;
+}
+QDialog QListWidget, QDialog QTreeWidget, QDialog QTableWidget,
+QListWidget#secondaryList {
+    color: #dfe8f2;
+    background: #111a24;
+    alternate-background-color: #15222d;
+    border: 1px solid #263747;
+    outline: none;
+    selection-color: #f2f8f6;
+    selection-background-color: #20564b;
+}
+QDialog QListWidget::item, QDialog QTreeWidget::item,
+QListWidget#secondaryList::item {
+    background: transparent;
+    padding: 7px 8px;
+}
+QDialog QListWidget::item:hover, QDialog QTreeWidget::item:hover,
+QListWidget#secondaryList::item:hover {
+    background: #172733;
+}
+QDialog QListWidget::item:selected, QDialog QTreeWidget::item:selected,
+QListWidget#secondaryList::item:selected {
+    color: #f2f8f6;
+    background: #20564b;
 }
 QWidget#deviceGrid, QWidget#mapGrid {
     background: #0b1118;
@@ -559,7 +626,20 @@ QLineEdit:focus, QComboBox:focus {
 QComboBox QAbstractItemView {
     background: #111a24;
     color: #dfe8f2;
+    border: 1px solid #2a3d4d;
+    outline: none;
+    selection-color: #f2f8f6;
     selection-background-color: #24564d;
+}
+QComboBox QAbstractItemView::item {
+    background: #111a24;
+    min-height: 24px;
+    padding: 3px 8px;
+}
+QComboBox QAbstractItemView::item:hover,
+QComboBox QAbstractItemView::item:selected {
+    color: #f2f8f6;
+    background: #20564b;
 }
 QPushButton {
     background: #1b2a38;

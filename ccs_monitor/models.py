@@ -71,6 +71,14 @@ class MapMarkerShape(str, Enum):
     SPHERE = "sphere"
 
 
+class MapBuildMode(str, Enum):
+    EMPTY = "empty"
+    IMPORTED = "imported"
+    SINGLE = "single"
+    MULTI = "multi"
+    FUSION = "fusion"
+
+
 @dataclass(frozen=True)
 class DeviceStatusCardDefinition:
     card_id: str
@@ -245,6 +253,7 @@ class MapDefinition:
     trajectory_path: str | None = None
     directory_name: str = ""
     error_message: str | None = None
+    build_provenance: "MapBuildProvenance | None" = None
 
 
 @dataclass(frozen=True)
@@ -288,6 +297,52 @@ class MapBuildingResultMetadata:
     dropped_frames: int
     received_points: int
     fused_points: int
+
+
+@dataclass(frozen=True)
+class MapTransform:
+    source_id: str
+    is_primary: bool = False
+    translation_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rotation_rpy_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+@dataclass(frozen=True)
+class MapFusionAlgorithm:
+    algorithm_id: str
+    display_name: str
+    version: str
+    script_path: str
+    sha256: str
+    enabled: bool = True
+    is_default: bool = False
+    builtin: bool = False
+    default_options: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MapBuildProvenance:
+    mode: MapBuildMode
+    job_id: str
+    primary_source_id: str | None = None
+    source_ids: tuple[str, ...] = ()
+    transforms: tuple[MapTransform, ...] = ()
+    algorithm_id: str | None = None
+    algorithm_version: str | None = None
+    algorithm_sha256: str | None = None
+    excluded_device_ids: tuple[str, ...] = ()
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class MapFusionJob:
+    job_id: str
+    output_name: str
+    source_map_ids: tuple[str, ...]
+    primary_map_id: str
+    transforms: tuple[MapTransform, ...]
+    algorithm_id: str
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "algorithms": [
+    {
+      "algorithm_id": "builtin_voxel_merge",
+      "display_name": "内置体素融合",
+      "version": "1.0.0",
+      "script_path": "builtin:voxel_merge",
+      "sha256": "17e337afd149adf08c94c133ef0182f8d94be1edff150282525792a87b51f9ac",
+      "enabled": true,
+      "is_default": true,
+      "builtin": true,
+      "default_options": {
+        "voxel_size_m": 0.1
+      }
+    }
+  ]
+}

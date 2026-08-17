@@ -4,30 +4,44 @@
     {
       "type_id": "UGV",
       "display_name": "无人地面车",
-      "icon_path": null,
+      "icon_path": "D:\\Projects\\AI_assisted\\CCS_dev\\data\\device_type_assets\\ugv_4c1f34e72b.svg",
       "map_marker_shape": "cube",
-      "default_status_cards": ["livox_driver", "fastlio2", "pgm_mapping", "octomap_mapping", "occupancy_grid_mapping", "mapping_mode"]
+      "default_status_cards": [
+        "livox_driver",
+        "fastlio2",
+        "pgm_mapping",
+        "octomap_mapping",
+        "occupancy_grid_mapping",
+        "mapping_mode"
+      ]
     },
     {
       "type_id": "UAV",
       "display_name": "无人机",
-      "icon_path": null,
+      "icon_path": "D:\\Projects\\AI_assisted\\CCS_dev\\data\\device_type_assets\\uav_2a3f2225fb.svg",
       "map_marker_shape": "arrow",
-      "default_status_cards": ["livox_driver", "fastlio2", "pgm_mapping", "octomap_mapping", "occupancy_grid_mapping", "mapping_mode"]
+      "default_status_cards": [
+        "livox_driver",
+        "fastlio2",
+        "pgm_mapping",
+        "octomap_mapping",
+        "occupancy_grid_mapping",
+        "mapping_mode"
+      ]
     },
     {
-      "type_id": "AMR",
-      "display_name": "自主移动机器人",
-      "icon_path": null,
-      "map_marker_shape": "cube",
-      "default_status_cards": ["livox_driver", "fastlio2", "pgm_mapping", "octomap_mapping", "occupancy_grid_mapping", "mapping_mode"]
-    },
-    {
-      "type_id": "USV",
-      "display_name": "无人水面艇",
-      "icon_path": null,
+      "type_id": "QRD",
+      "display_name": "四足机器人",
+      "icon_path": "D:\\Projects\\AI_assisted\\CCS_dev\\data\\device_type_assets\\qrd_6e3de5472a.svg",
       "map_marker_shape": "arrow",
-      "default_status_cards": ["livox_driver", "fastlio2", "pgm_mapping", "octomap_mapping", "occupancy_grid_mapping", "mapping_mode"]
+      "default_status_cards": [
+        "livox_driver",
+        "fastlio2",
+        "pgm_mapping",
+        "octomap_mapping",
+        "occupancy_grid_mapping",
+        "mapping_mode"
+      ]
     }
   ]
 }

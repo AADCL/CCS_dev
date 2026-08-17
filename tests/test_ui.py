@@ -12,6 +12,7 @@ PYSIDE_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 if PYSIDE_AVAILABLE:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QSettings, Qt
+    from PySide6.QtGui import QPalette
     from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
     from ccs_monitor.data_source import SimulatedDeviceSource, simulated_overview
@@ -39,7 +40,9 @@ if PYSIDE_AVAILABLE:
     from ccs_monitor.mqtt_data_source import MqttDeviceSource
     from ccs_monitor.ping_service import PingResult
     from ccs_monitor.widgets import DeviceCard
-    from ccs_monitor.styles import ThemeMode, build_stylesheet, load_theme_mode, save_theme_mode
+    from ccs_monitor.styles import (
+        ThemeMode, build_stylesheet, load_theme_mode, save_theme_mode, theme_palette,
+    )
 
 
 @unittest.skipUnless(PYSIDE_AVAILABLE, "PySide6 is not installed")
@@ -79,12 +82,20 @@ class UiTests(unittest.TestCase):
         self.window.apply_theme(ThemeMode.NIGHT, persist=False)
         self.app.processEvents()
         self.assertEqual(self.window.theme_mode, ThemeMode.NIGHT)
+        self.assertEqual(
+            self.app.palette().color(QPalette.ColorRole.Base).name(),
+            theme_palette(ThemeMode.NIGHT).input_background.lower(),
+        )
         night_style = build_stylesheet(ThemeMode.NIGHT)
         day_style = build_stylesheet(ThemeMode.DAY)
         self.assertNotEqual(night_style, day_style)
         self.window.theme_toggle_button.click()
         self.app.processEvents()
         self.assertEqual(self.window.theme_mode, ThemeMode.DAY)
+        self.assertEqual(
+            self.app.palette().color(QPalette.ColorRole.Base).name(),
+            theme_palette(ThemeMode.DAY).input_background.lower(),
+        )
         self.assertEqual(self.window.current_page_index, 4)
         self.assertEqual(self.window.theme_toggle_button.text(), "切换夜间")
         self.window.theme_toggle_button.click()

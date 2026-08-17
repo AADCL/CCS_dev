@@ -24,6 +24,7 @@ from .pages import CommandDashboardPage, DevicesPage, HomePage, MapPage, TaskPag
 from .task_repository import TaskRepository
 from .styles import (
     ThemeMode,
+    build_qt_palette,
     build_stylesheet,
     load_theme_mode,
     save_theme_mode,
@@ -64,6 +65,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"多异构智能体指挥与控制系统 · v{__version__}")
         self.setMinimumSize(800, 600)
         self.resize(1280, 820)
+        QApplication.instance().setPalette(build_qt_palette(self.theme_mode))
         QApplication.instance().setStyleSheet(build_stylesheet(self.theme_mode))
         self._build()
         self.apply_theme(self.theme_mode, persist=False)
@@ -152,6 +154,7 @@ class MainWindow(QMainWindow):
     def apply_theme(self, mode: ThemeMode | str, persist: bool = True) -> None:
         self.theme_mode = ThemeMode(mode)
         self.theme_palette = theme_palette(self.theme_mode)
+        QApplication.instance().setPalette(build_qt_palette(self.theme_mode))
         QApplication.instance().setStyleSheet(build_stylesheet(self.theme_mode))
         for page in (self.home_page, self.devices_page, self.map_page, self.task_page, self.command_page):
             set_theme = getattr(page, "set_theme", None)
