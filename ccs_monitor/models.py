@@ -65,6 +65,12 @@ class MapStatus(str, Enum):
     ERROR = "error"
 
 
+class MapMarkerShape(str, Enum):
+    ARROW = "arrow"
+    CUBE = "cube"
+    SPHERE = "sphere"
+
+
 @dataclass(frozen=True)
 class DeviceStatusCardDefinition:
     card_id: str
@@ -82,6 +88,15 @@ DEVICE_STATUS_CARD_DEFINITIONS = (
 )
 DEVICE_STATUS_CARD_CATALOG = {item.card_id: item for item in DEVICE_STATUS_CARD_DEFINITIONS}
 DEFAULT_DEVICE_STATUS_CARDS = tuple(item.card_id for item in DEVICE_STATUS_CARD_DEFINITIONS)
+
+
+@dataclass(frozen=True)
+class DeviceTypeTemplate:
+    type_id: str
+    display_name: str
+    icon_path: str | None = None
+    map_marker_shape: MapMarkerShape = MapMarkerShape.SPHERE
+    default_status_card_ids: tuple[str, ...] = DEFAULT_DEVICE_STATUS_CARDS
 
 
 def utc_now() -> datetime:
@@ -113,6 +128,10 @@ class DeviceSnapshot:
     mission_status_raw: str = "unknown"
     last_heartbeat_at: datetime | None = None
     status_card_ids: tuple[str, ...] = DEFAULT_DEVICE_STATUS_CARDS
+    device_type_name: str = ""
+    device_icon_path: str | None = None
+    map_marker_shape: MapMarkerShape = MapMarkerShape.SPHERE
+    status_cards_inherited: bool = False
 
     def __post_init__(self) -> None:
         if not self.device_id:
@@ -142,7 +161,7 @@ class DeviceProfile:
     ip_address: str
     availability: DeviceAvailability = DeviceAvailability.UNKNOWN
     last_tested_at: datetime | None = None
-    status_card_ids: tuple[str, ...] = DEFAULT_DEVICE_STATUS_CARDS
+    status_card_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -302,6 +321,8 @@ class DeviceMapMarker:
     y: float
     z: float
     status: str = "unknown"
+    marker_shape: MapMarkerShape = MapMarkerShape.SPHERE
+    yaw: float = 0.0
 
 
 @dataclass(frozen=True)

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from ..data_source import DeviceDataSource
 from ..device_config import DeviceConfigError
-from ..device_dialogs import NewDeviceDialog
+from ..device_dialogs import DeviceTypeTemplateDialog, NewDeviceDialog
 from ..models import ConnectionStatus, DeviceSnapshot
 from ..widgets import DeviceCard
 from ..styles import ThemeMode, ThemePalette, theme_palette
@@ -111,6 +111,9 @@ class DevicesPage(QWidget):
         self.delete_button.setVisible(False)
         self.delete_button.setEnabled(False)
         self.delete_button.clicked.connect(self._delete_selected_devices)
+        self.types_button = QPushButton("类型模板")
+        self.types_button.clicked.connect(self._open_type_templates)
+        management.addWidget(self.types_button)
         management.addWidget(self.new_button)
         management.addWidget(self.edit_button)
         management.addWidget(self.delete_button)
@@ -118,6 +121,8 @@ class DevicesPage(QWidget):
         if self.source.read_only:
             self.new_button.setEnabled(False)
             self.edit_button.setEnabled(False)
+        if getattr(getattr(self.source, "type_repository", None), "read_only", False):
+            self.types_button.setEnabled(False)
 
         self.metrics_grid = QGridLayout()
         self.metrics_grid.setHorizontalSpacing(12)
@@ -266,7 +271,9 @@ class DevicesPage(QWidget):
         self.update()
 
     def _open_new_device_dialog(self) -> None:
-        dialog = NewDeviceDialog(self.source.has_device_id, self)
+        dialog = NewDeviceDialog(
+            self.source.has_device_id, self, templates=self.source.device_type_templates()
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
@@ -281,6 +288,11 @@ class DevicesPage(QWidget):
         self.delete_button.setVisible(self.edit_mode)
         self.delete_button.setEnabled(False)
         self.new_button.setEnabled(not self.edit_mode and not self.source.read_only)
+        self._render_cards()
+
+    def _open_type_templates(self) -> None:
+        DeviceTypeTemplateDialog(self.source, self).exec()
+        self._populate_filters()
         self._render_cards()
 
     def _set_delete_selection(self, device_id: str, checked: bool) -> None:
@@ -333,7 +345,9 @@ class DevicesPage(QWidget):
 
     def _update_status_cards(self, device_id: str, status_card_ids: object) -> None:
         try:
-            self.source.update_device_status_cards(device_id, tuple(status_card_ids))
+            self.source.update_device_status_cards(
+                device_id, None if status_card_ids is None else tuple(status_card_ids)
+            )
         except (DeviceConfigError, ValueError) as exc:
             QMessageBox.critical(self, "状态卡片保存失败", str(exc))
 

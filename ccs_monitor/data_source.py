@@ -8,6 +8,7 @@ from typing import Protocol
 from PySide6.QtCore import QObject, Signal
 
 from .device_config import DeviceConfigRepository
+from .device_types import DeviceTypeTemplateRepository
 from .models import (
     ConnectionStatus,
     DeviceAvailability,
@@ -15,9 +16,11 @@ from .models import (
     DeviceLogLevel,
     DeviceProfile,
     DeviceSnapshot,
+    DeviceTypeTemplate,
     HealthStatus,
     LocalizationStatus,
     MapDefinition,
+    MapMarkerShape,
     SystemOverview,
     TaskExecutionSummary,
     TaskStatus,
@@ -44,7 +47,12 @@ class DeviceDataSource(Protocol):
     def logs(self, device_id: str) -> list[DeviceLogEntry]: ...
     def has_device_id(self, device_id: str) -> bool: ...
     def append_external_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None: ...
-    def update_device_status_cards(self, device_id: str, status_card_ids: tuple[str, ...]) -> None: ...
+    def update_device_status_cards(self, device_id: str, status_card_ids: tuple[str, ...] | None) -> None: ...
+    def device_type_templates(self) -> list[DeviceTypeTemplate]: ...
+    def device_type_template(self, type_id: str) -> DeviceTypeTemplate | None: ...
+    def create_device_type_template(self, template: DeviceTypeTemplate, icon_source=None) -> DeviceTypeTemplate: ...
+    def update_device_type_template(self, template: DeviceTypeTemplate, icon_source=None) -> DeviceTypeTemplate: ...
+    def delete_device_type_template(self, type_id: str) -> None: ...
 
 
 class SimulatedDeviceSource(QObject):
@@ -55,22 +63,27 @@ class SimulatedDeviceSource(QObject):
     def __init__(
         self,
         repository: DeviceConfigRepository | None = None,
+        type_repository: DeviceTypeTemplateRepository | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
+        self.type_repository = type_repository or DeviceTypeTemplateRepository()
+        self._templates = self.type_repository.load()
         self.repository = repository or DeviceConfigRepository(DEFAULT_CONFIG_PATH)
+        self.repository.valid_device_types = lambda: {item.type_id for item in self._templates}
         self._profiles = self.repository.load()
+        self.type_repository.referenced_type_ids = lambda: {item.device_type for item in self._profiles}
         self._runtime = self._runtime_fixtures()
         self._devices = self._merge_profiles(self._profiles)
         self._logs = {device.device_id: self._build_logs(device) for device in self._devices}
 
     @property
     def config_error(self) -> str | None:
-        return self.repository.error_message
+        return self.repository.error_message or self.type_repository.error_message
 
     @property
     def read_only(self) -> bool:
-        return self.repository.read_only
+        return self.repository.read_only or self.type_repository.read_only
 
     def snapshots(self) -> list[DeviceSnapshot]:
         return list(self._devices)
@@ -114,20 +127,68 @@ class SimulatedDeviceSource(QObject):
         entries = self._logs.setdefault(device_id, [])
         entries.append(DeviceLogEntry(utc_now(), level, message))
 
-    def update_device_status_cards(self, device_id: str, status_card_ids: tuple[str, ...]) -> None:
+    def update_device_status_cards(self, device_id: str, status_card_ids: tuple[str, ...] | None) -> None:
         self._profiles = self.repository.update_status_cards(device_id, status_card_ids)
         profile = next(item for item in self._profiles if item.device_id.casefold() == device_id.casefold())
         self._devices = [
-            replace(device, status_card_ids=profile.status_card_ids)
+            self._apply_profile_presentation(device, profile)
             if device.device_id.casefold() == device_id.casefold() else device
             for device in self._devices
         ]
         self.devices_updated.emit(self.snapshots())
 
+    def device_type_templates(self) -> list[DeviceTypeTemplate]:
+        return list(self._templates)
+
+    def device_type_template(self, type_id: str) -> DeviceTypeTemplate | None:
+        return next((item for item in self._templates if item.type_id.casefold() == type_id.casefold()), None)
+
+    def create_device_type_template(self, template: DeviceTypeTemplate, icon_source=None) -> DeviceTypeTemplate:
+        created = self.type_repository.create(template, icon_source)
+        self._templates = self.type_repository.all()
+        self._devices = self._refresh_presentations()
+        self.devices_updated.emit(self.snapshots())
+        return created
+
+    def update_device_type_template(self, template: DeviceTypeTemplate, icon_source=None) -> DeviceTypeTemplate:
+        updated = self.type_repository.update(template, icon_source)
+        self._templates = self.type_repository.all()
+        self._devices = self._refresh_presentations()
+        self.devices_updated.emit(self.snapshots())
+        return updated
+
+    def delete_device_type_template(self, type_id: str) -> None:
+        self.type_repository.delete(type_id)
+        self._templates = self.type_repository.all()
+        self._devices = self._refresh_presentations()
+        self.devices_updated.emit(self.snapshots())
+
     def _merge_profiles(self, profiles: list[DeviceProfile]) -> list[DeviceSnapshot]:
         return [self._snapshot_from_profile(profile) for profile in profiles]
 
+    def _refresh_presentations(self) -> list[DeviceSnapshot]:
+        profiles = {item.device_id.casefold(): item for item in self._profiles}
+        return [self._apply_profile_presentation(device, profiles[device.device_id.casefold()]) for device in self._devices]
+
+    def _apply_profile_presentation(self, device: DeviceSnapshot, profile: DeviceProfile) -> DeviceSnapshot:
+        template = self.device_type_template(profile.device_type)
+        resolved_cards = profile.status_card_ids if profile.status_card_ids is not None else (
+            template.default_status_card_ids if template is not None else ()
+        )
+        return replace(
+            device,
+            status_card_ids=resolved_cards,
+            device_type_name=template.display_name if template else profile.device_type,
+            device_icon_path=template.icon_path if template else None,
+            map_marker_shape=template.map_marker_shape if template else MapMarkerShape.SPHERE,
+            status_cards_inherited=profile.status_card_ids is None,
+        )
+
     def _snapshot_from_profile(self, profile: DeviceProfile) -> DeviceSnapshot:
+        template = self.device_type_template(profile.device_type)
+        resolved_cards = profile.status_card_ids if profile.status_card_ids is not None else (
+            template.default_status_card_ids if template is not None else ()
+        )
         runtime = self._runtime.get(profile.device_id, {})
         connection = runtime.get(
             "connection_status",
@@ -154,7 +215,11 @@ class SimulatedDeviceSource(QObject):
             availability=profile.availability,
             last_tested_at=profile.last_tested_at,
             health_status=health,
-            status_card_ids=profile.status_card_ids,
+            status_card_ids=resolved_cards,
+            device_type_name=template.display_name if template else profile.device_type,
+            device_icon_path=template.icon_path if template else None,
+            map_marker_shape=template.map_marker_shape if template else MapMarkerShape.SPHERE,
+            status_cards_inherited=profile.status_card_ids is None,
         )
 
     @staticmethod

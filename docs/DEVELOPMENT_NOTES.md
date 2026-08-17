@@ -1,5 +1,23 @@
 # 开发笔记
 
+## v0.10.0
+
+### 类型模板与迁移
+
+- `DeviceTypeTemplateRepository` 独立持久化 schema 1 模板，ID 使用稳定大写标识。模板包含显示名称、应用内图标路径、`arrow/cube/sphere` 地图形状和默认状态卡片；配置损坏时进入只读状态且不覆盖原文件。
+- `devices.json` schema 升至 3，并兼容读取 schema 1/2。旧版数组迁移为显式覆盖；schema 3 的 `null` 表示动态继承模板，空数组表示明确隐藏全部状态卡。
+- 设备数据源负责把模板解析成 `DeviceSnapshot` 展示字段。模板更新只 replace 图标、名称、形状和卡片，不重建 MQTT 运行时字段。
+
+### 图标与地图标记
+
+- 上传图标先校验扩展名、5 MiB 上限和 Qt 可解码性，再复制到 `data/device_type_assets`。模板删除或替换后，未引用资产移入 `.trash`。
+- `PointCloudViewer` 统一渲染设备标记：箭头按 UDP yaw 绕 Z 轴旋转，立方体使用 VisPy mesh，球体及渲染异常使用圆形 marker 回退。任务页和指控大屏只传 `DeviceMapMarker`，不读取模板文件。
+
+### 日间主题
+
+- 补齐 `BASE_STYLE` 中全部夜间硬编码颜色到 `ThemePalette` 的语义映射，覆盖设备选中态、地图按钮、任务编辑器 viewport/表格/输入/滚动条/splitter 及大屏按钮状态。
+- 自动测试枚举 `BASE_STYLE` 颜色，防止新增夜间颜色未提供日间映射。离屏截图覆盖 800×600 和 1440×900；无 OpenGL 时验证回退页面与其余控件布局。
+
 ## v0.9.1
 
 ### 端侧任务协调

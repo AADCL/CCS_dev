@@ -1,6 +1,7 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.9.1**  
+当前地面站版本：**v0.10.0**
+
 端侧包版本：MQTAV **v0.3.0**、ros_udp_telemetry **v0.2.1**、usb_cam_rtsp **v0.1.0**、ros_map_stream **v0.1.0**、ros_task_control **v0.1.0**
 
 ## 功能介绍
@@ -8,7 +9,7 @@
 本仓库包含基于 PySide6 的多异构智能体指挥与控制地面站，以及部署到 ROS 端侧设备的配套功能包。系统面向可信局域网中的无人机、无人车、移动机器人和无人船。
 
 - **系统总览**：统计在线/离线设备、地图和任务执行记录。
-- **设备管理**：支持搜索、筛选、新建、批量删除、详情查看和配置持久化。
+- **设备管理**：支持搜索、筛选、新建、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
 - **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
 - **视频监控**：按需拉取 `rtsp://<设备IP>:8554/usb_cam` H.264 视频流。
 - **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载、三维复原，以及 UDP 14561/14562 单设备实时建图和点云融合。
@@ -23,7 +24,8 @@
 ```text
 CCS_dev/
 ├── ccs_monitor/                   # 地面站 PySide6 应用
-├── config/                        # 设备、MQTT、遥测 UDP 与建图 UDP 配置
+├── config/                        # 设备、设备类型、MQTT、遥测与控制配置
+├── data/device_type_assets/       # 设备类型图标及 .trash 回收目录
 ├── data/map_server/               # 地图元数据、PCD 与 .trash 回收目录
 ├── edge_side_pkg/
 │   ├── edge_device_config/        # 共享设备 ID/IP，v0.1.0
@@ -97,7 +99,8 @@ python -m pip install -r requirements.txt
 
 启动前核对：
 
-- `config/devices.json`：设备 ID、名称、类型、IP 和状态卡片。
+- `config/devices.json`：设备 ID、名称、类型、IP 和设备级状态卡覆盖。
+- `config/device_types.json`：类型显示名称、图标路径、地图形状和默认状态卡片。
 - `config/mqtt.json`：MQTT Broker 与心跳阈值。
 - `config/udp_telemetry.json`：UDP 14560 描述项与分级频率。
 - `config/map_building.json`：实时建图 14561/14562 参数。
@@ -186,9 +189,11 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 ### 设备页面
 
 - 使用搜索与类型/状态条件筛选设备。
-- 点击“新建”填写名称、类型、ID 和 IP，测试连接后保存；ID 会检查重复并统一为大写。
+- 点击“类型模板”新增或编辑设备类型，上传 PNG/JPEG/SVG 图标，选择箭头、立方体或球体地图形状，并绑定默认功能卡片。被设备引用的模板不能删除。
+- 点击“新建”从类型模板中选择类型，填写名称、ID 和 IP，测试连接后保存；ID 会检查重复并统一为大写。
 - 点击“编辑”批量选择并删除设备；双击设备卡进入详情。
 - 详情页显示 MQTT、UDP、电量、任务、飞行模式、位姿、IMU、点云和设备状态卡。
+- 详情页的状态卡可跟随类型模板动态更新，也可切换为设备自定义覆盖；空自定义表示明确不显示卡片。
 - 日志支持 info/warning/error 筛选；视频开关按需连接 RTSP，离开页面自动释放播放器。
 
 ### 地图页面
@@ -251,6 +256,10 @@ MQTT 与 UDP 是独立链路。检查 `destination_host`、ROS 话题频率和 U
 
 新建设备不会自动修改端侧配置。将 ID/IP 同步到 `edge_device_config/config/device.yaml` 并重启端侧节点。
 
+### 类型图标无法上传或地图仍显示圆点
+
+图标仅支持可正常解码的 PNG、JPEG、SVG，单文件不超过 5 MiB。成功上传后会复制到 `data/device_type_assets`；不要只保留外部源文件。三维环境不支持 OpenGL 或某个 mesh 创建失败时，地图会自动回退为圆点，不影响遥测与任务运行。
+
 ### RTSP 无画面
 
 检查设备 IP、TCP 8554、`/dev/video0` 权限和 `rostopic hz /usb_cam/image_raw`。可用 GStreamer 验证：
@@ -281,6 +290,9 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.10.0 · 2026-08-17**
+<small>新增设备类型模板、共享图标与地图形状，并系统修复日间主题页面配色。</small>
 
 **v0.9.1 · 2026-08-12**
 <small>统一任务二级页面的深色主题与组件渲染。</small>

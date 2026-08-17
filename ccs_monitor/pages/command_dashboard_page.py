@@ -1118,6 +1118,7 @@ class CommandDashboardPage(QWidget):
                     markers.append(DeviceMapMarker(
                         device.device_id, device.device_name,
                         pose_item.x, pose_item.y, pose_item.z, "online",
+                        device.map_marker_shape, pose_item.yaw,
                     ))
         self.viewer.set_device_markers(markers)
         self._update_console_status()

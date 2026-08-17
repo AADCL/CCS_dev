@@ -1,8 +1,8 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.9.1`，更新日期：2026-08-13。
+文档版本：`v0.10.0`，更新日期：2026-08-17。
 
-地面站 v0.9.1 的 `ccs-task-control-v1` 字段、端口及兼容要求保持不变；新增端侧 `ros_task_control` v0.1.0 实现该既有协议及 ROS 执行适配边界。
+地面站 v0.10.0 仅新增本地设备类型展示模板并修复主题，MQTT、RTSP 与 UDP 14560–14564 的字段、端口及兼容要求均保持不变。模板图标、地图形状和功能卡片不会下发到端侧。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -229,7 +229,7 @@ p_map = T_map_body * T_body_sensor * p_sensor
 
 | 地面站 | 端侧 | 必须一致/可达内容 |
 | --- | --- | --- |
-| `config/devices.json` | `edge_device_config/config/device.yaml` | device ID、IP |
+| `config/devices.json` | `edge_device_config/config/device.yaml` | device ID、IP；本地 `device_types.json` 不参与端侧协议 |
 | `config/mqtt.json` | `MQTAV/config/config.yaml` | Broker IP/端口、topic root、QoS、频率 |
 | `config/udp_telemetry.json` | `ros_udp_telemetry/config/telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
 | 固定 RTSP 推导 | `usb_cam_rtsp/config/video.yaml` | 端侧 8554、`/usb_cam`、H.264 |
@@ -252,7 +252,7 @@ p_map = T_map_body * T_body_sensor * p_sensor
 
 ### 兼容性与网络
 
-- 地面站版本：v0.9.1；端侧任务协调包：`ros_task_control v0.1.0`。协议 schema 保持 1。
+- 地面站版本：v0.10.0；端侧任务协调包：`ros_task_control v0.1.0`。协议 schema 保持 1。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
 - 可信内网明文 MessagePack，schema 1；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。

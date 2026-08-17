@@ -37,6 +37,7 @@ from ..models import (
     DeviceSnapshot,
     MapCreatorDevice,
     MapDefinition,
+    MapMarkerShape,
     MapStatus,
     PoseTelemetry,
     UdpLinkStatus,
@@ -343,6 +344,7 @@ class PointCloudViewer(QWidget):
         self._points_visual = None
         self._live_points_visual = None
         self._marker_visual = None
+        self._shape_visuals: list[object] = []
         self._pgm_visual = None
         self._device_axis_visual = None
         self._trail_visual = None
@@ -648,10 +650,55 @@ class PointCloudViewer(QWidget):
     def _render_markers(self) -> None:
         if self._marker_visual is None:
             return
-        positions = np.asarray([(m.x, m.y, m.z) for m in self.markers], dtype=np.float32)
+        for visual in self._shape_visuals:
+            try:
+                visual.parent = None
+            except Exception:
+                pass
+        self._shape_visuals.clear()
+        fallback = []
+        for marker in self.markers:
+            try:
+                self._shape_visuals.append(self._create_marker_mesh(marker))
+            except Exception:
+                fallback.append((marker.x, marker.y, marker.z))
+        positions = np.asarray(fallback, dtype=np.float32)
         if not len(positions):
             positions = np.empty((0, 3), dtype=np.float32)
-        self._marker_visual.set_data(positions, face_color=self.theme_palette.warning, edge_color=self.theme_palette.text_strong, size=9)
+        self._marker_visual.set_data(positions, face_color=self.theme_palette.warning, edge_color=self.theme_palette.text_strong, size=12)
+
+    def _create_marker_mesh(self, marker: DeviceMapMarker):
+        from vispy import scene
+        from vispy.geometry import create_box, create_sphere
+        from vispy.visuals.transforms import MatrixTransform
+
+        if marker.marker_shape == MapMarkerShape.CUBE:
+            mesh_data = create_box(width=0.8, height=0.8, depth=0.8)
+            visual = scene.visuals.Mesh(
+                vertices=mesh_data.get_vertices(), faces=mesh_data.get_faces(),
+                color=self.theme_palette.warning, parent=self._view.scene,
+            )
+        elif marker.marker_shape == MapMarkerShape.ARROW:
+            vertices = np.asarray([
+                (0.75, 0.0, 0.0), (-0.45, 0.42, 0.0), (-0.25, 0.0, 0.0),
+                (-0.45, -0.42, 0.0),
+            ], dtype=np.float32)
+            faces = np.asarray([(0, 1, 2), (0, 2, 3)], dtype=np.uint32)
+            visual = scene.visuals.Mesh(
+                vertices=vertices, faces=faces, color=self.theme_palette.warning,
+                parent=self._view.scene,
+            )
+        else:
+            mesh_data = create_sphere(rows=8, cols=12, radius=0.45)
+            visual = scene.visuals.Mesh(
+                vertices=mesh_data.get_vertices(), faces=mesh_data.get_faces(),
+                color=self.theme_palette.warning, parent=self._view.scene,
+            )
+        transform = MatrixTransform()
+        transform.rotate(float(marker.yaw), (0, 0, 1))
+        transform.translate((marker.x, marker.y, marker.z))
+        visual.transform = transform
+        return visual
 
     def set_selected_device_pose(self, pose: PoseTelemetry | None) -> None:
         self.selected_device_pose = pose

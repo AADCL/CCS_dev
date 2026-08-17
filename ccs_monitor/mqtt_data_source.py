@@ -18,6 +18,7 @@ from .models import (
     DeviceSnapshot,
     HealthStatus,
     LocalizationStatus,
+    MapMarkerShape,
     TaskStatus,
     utc_now,
 )
@@ -76,6 +77,10 @@ class MqttDeviceSource(SimulatedDeviceSource):
             self._watchdog.start(interval_ms)
 
     def _snapshot_from_profile(self, profile: DeviceProfile) -> DeviceSnapshot:
+        template = self.device_type_template(profile.device_type)
+        resolved_cards = profile.status_card_ids if profile.status_card_ids is not None else (
+            template.default_status_card_ids if template is not None else ()
+        )
         return DeviceSnapshot(
             device_id=profile.device_id,
             device_name=profile.device_name,
@@ -91,7 +96,11 @@ class MqttDeviceSource(SimulatedDeviceSource):
             health_status=HealthStatus.UNKNOWN,
             flight_mode="unknown",
             mission_status_raw="unknown",
-            status_card_ids=profile.status_card_ids,
+            status_card_ids=resolved_cards,
+            device_type_name=template.display_name if template else profile.device_type,
+            device_icon_path=template.icon_path if template else None,
+            map_marker_shape=template.map_marker_shape if template else MapMarkerShape.SPHERE,
+            status_cards_inherited=profile.status_card_ids is None,
         )
 
     def create_device(self, profile: DeviceProfile) -> DeviceSnapshot:

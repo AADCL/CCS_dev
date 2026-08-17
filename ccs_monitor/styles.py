@@ -140,6 +140,39 @@ def _replace_style_colors(style: str, palette: ThemePalette) -> str:
         "#071018": palette.chart_background,
         "#071118": palette.chart_background,
         "#081119": palette.dashboard_background,
+        "#070d13": palette.chart_background,
+        "#0d151d": palette.surface_alt,
+        "#0d161f": palette.input_background,
+        "#101c26": palette.surface_alt,
+        "#111820": palette.surface_alt,
+        "#12241f": palette.selected_background,
+        "#125a5d": palette.primary_strong,
+        "#15313c": palette.dashboard_border,
+        "#153b45": palette.hover_background,
+        "#162633": palette.hover_background,
+        "#173642": palette.dashboard_border,
+        "#1b2835": palette.surface_alt,
+        "#1b5360": palette.dashboard_border,
+        "#243b4c": palette.hover_background,
+        "#25323d": palette.border,
+        "#268392": palette.border_strong,
+        "#2a4b59": palette.border_strong,
+        "#2bc4b8": palette.primary,
+        "#2c7967": palette.border_strong,
+        "#385266": palette.border_strong,
+        "#5e6b79": palette.muted,
+        "#647383": palette.muted,
+        "#6a5125": palette.warning,
+        "#708496": palette.border_strong,
+        "#724046": palette.error,
+        "#8e9cad": palette.muted,
+        "#91a3b5": palette.muted,
+        "#9aead1": palette.primary_strong,
+        "#edb64d": palette.warning,
+        "#ee4f9a": palette.error,
+        "#ef8585": palette.error,
+        "#efc477": palette.warning,
+        "#f0b84a": palette.warning,
         "#09131b": palette.dashboard_panel,
         "#0a1d25": palette.input_background,
         "#0b1624": palette.page_background,
@@ -446,6 +479,10 @@ QFrame#deviceCard {
 QFrame#deviceCard[selected='true'] {
     border: 1px solid #37c5a0;
     background: #12241f;
+}
+QFrame#deviceCard[selected='true'] QLabel#deviceName,
+QFrame#deviceCard[selected='true'] QLabel#fieldValue {
+    color: #f1f5fa;
 }
 QFrame#deviceCard:hover {
     border: 1px solid #4a6b83;
@@ -956,6 +993,11 @@ QPushButton#dashboardPrimaryButton {
 }
 QPushButton#dashboardPrimaryButton:hover {
     background: #125a5d;
+}
+QWidget#commandDashboard QPushButton:disabled {
+    color: #5e6b79;
+    background: #111820;
+    border-color: #25323d;
 }
 QLabel#dashboardConsoleStatus {
     color: #7e9baa;

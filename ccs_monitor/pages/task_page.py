@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from ..data_source import DeviceDataSource
 from ..map_repository import MapRepository, MapRepositoryError
-from ..models import DeviceMapMarker, MapDefinition, MapStatus
+from ..models import DeviceMapMarker, MapDefinition, MapMarkerShape, MapStatus
 from ..task_conflicts import TaskConflictDetector
 from ..task_map import GridPointValidator
 from ..task_models import (
@@ -614,7 +614,13 @@ class TaskEditorPage(QWidget):
             snapshot = self.telemetry_store.telemetry(subtask.device_id)
             pose = snapshot.global_pose
             if pose is not None and (pose.sample_age_seconds is None or pose.sample_age_seconds <= 2.0):
-                markers.append(DeviceMapMarker(subtask.device_id, subtask.device_name, pose.x, pose.y, pose.z, snapshot.udp_link_status.value))
+                device = self.source.device(subtask.device_id)
+                markers.append(DeviceMapMarker(
+                    subtask.device_id, subtask.device_name, pose.x, pose.y, pose.z,
+                    snapshot.udp_link_status.value,
+                    device.map_marker_shape if device else MapMarkerShape.SPHERE,
+                    pose.yaw,
+                ))
         self.viewer.set_execution_markers(markers)
 
 
