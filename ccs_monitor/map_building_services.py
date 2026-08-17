@@ -4,33 +4,32 @@ import socket
 import threading
 import time
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Iterable
 
 from PySide6.QtCore import QObject, Signal
 
 from .map_building import (
-    CloudFrameAssembler,
-    MapBuildingEnvelope,
-    MapBuildingProtocol,
-    MapBuildingProtocolError,
-    MapBuildingSessionSnapshot,
+    CloudFrameAssembler, MapBuildingEnvelope, MapBuildingJobSnapshot,
+    MapBuildingProtocol, MapBuildingProtocolError, MapBuildingSessionSnapshot,
     VoxelMapAccumulator,
 )
 from .map_building_config import MapBuildingConfig
+from .map_fusion import MapFusionRepository, MapFusionRunner, transform_points
 from .map_repository import MapRepository, MapRepositoryError
-from .models import DeviceSnapshot, MapBuildingResultMetadata, MapDefinition
+from .models import (
+    DeviceSnapshot, MapBuildMode, MapBuildProvenance, MapBuildingResultMetadata,
+    MapDefinition, MapFusionAlgorithm, MapTransform,
+)
 
 
 @dataclass
-class _ActiveSession:
-    definition: MapDefinition
+class _DeviceSession:
     device: DeviceSnapshot
+    transform: MapTransform
     session_id: str
     request_id: str
-    started_at: datetime
-    started_monotonic: float
     assembler: CloudFrameAssembler
     accumulator: VoxelMapAccumulator
     state: str = "negotiating"
@@ -43,14 +42,24 @@ class _ActiveSession:
     complete_frames: int = 0
     dropped_frames: int = 0
     last_sequence: int = -1
-    seen_cloud_sequences: set[int] | None = None
-    trajectory: list[tuple[object, ...]] | None = None
-    last_preview_at: float = 0.0
+    seen_cloud_sequences: set[int] = field(default_factory=set)
+    trajectory: list[tuple[object, ...]] = field(default_factory=list)
     last_checkpoint_at: float = 0.0
+    excluded: bool = False
 
-    def __post_init__(self) -> None:
-        self.seen_cloud_sequences = set()
-        self.trajectory = []
+
+@dataclass
+class _ActiveJob:
+    definition: MapDefinition
+    job_id: str
+    primary_device_id: str
+    algorithm: MapFusionAlgorithm
+    sessions: dict[str, _DeviceSession]
+    started_at: datetime
+    started_monotonic: float
+    state: str = "negotiating"
+    message: str = "正在与所有端侧设备协商"
+    last_preview_at: float = 0.0
 
 
 class MapBuildingService(QObject):
@@ -59,19 +68,21 @@ class MapBuildingService(QObject):
     completed = Signal(object)
     failed = Signal(str)
     availability_changed = Signal(bool, str)
+    job_updated = Signal(object)
+    device_session_updated = Signal(object)
+    degraded = Signal(object)
 
-    def __init__(
-        self,
-        config: MapBuildingConfig,
-        repository: MapRepository,
-        *,
-        clock: Callable[[], float] = time.monotonic,
-        socket_factory: Callable[..., socket.socket] = socket.socket,
-        parent: QObject | None = None,
-    ) -> None:
+    def __init__(self, config: MapBuildingConfig, repository: MapRepository,
+                 fusion_repository: MapFusionRepository | None = None,
+                 fusion_runner: MapFusionRunner | None = None, *,
+                 clock: Callable[[], float] = time.monotonic,
+                 socket_factory: Callable[..., socket.socket] = socket.socket,
+                 parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.config = config
         self.repository = repository
+        self.fusion_repository = fusion_repository or MapFusionRepository()
+        self.fusion_runner = fusion_runner or MapFusionRunner()
         self.clock = clock
         self.socket_factory = socket_factory
         self.protocol = MapBuildingProtocol(config)
@@ -79,19 +90,39 @@ class MapBuildingService(QObject):
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
         self._lock = threading.RLock()
-        self._session: _ActiveSession | None = None
+        self._job: _ActiveJob | None = None
         self.available = False
         self.module_message = "UDP 建图模块尚未启动"
 
     @property
     def active(self) -> bool:
         with self._lock:
-            return self._session is not None
+            return self._job is not None
+
+    @property
+    def current_job_snapshot(self) -> MapBuildingJobSnapshot | None:
+        with self._lock:
+            return self._job_snapshot(self._job) if self._job else None
 
     @property
     def current_snapshot(self) -> MapBuildingSessionSnapshot | None:
         with self._lock:
-            return self._snapshot(self._session) if self._session else None
+            job = self._job
+            if job is None:
+                return None
+            snapshot = self._job_snapshot(job)
+            primary = next(
+                (item for item in snapshot.device_sessions
+                 if item.device_id.casefold() == job.primary_device_id.casefold()),
+                snapshot.device_sessions[0],
+            )
+            return MapBuildingSessionSnapshot(
+                map_id=snapshot.map_id, device_id=primary.device_id,
+                session_id=job.job_id, state=snapshot.state, message=snapshot.message,
+                started_at=snapshot.started_at, complete_frames=snapshot.complete_frames,
+                dropped_frames=snapshot.dropped_frames, received_points=snapshot.received_points,
+                fused_points=snapshot.fused_points, last_data_at=snapshot.last_data_at,
+            )
 
     def start(self) -> None:
         if self._running.is_set():
@@ -133,74 +164,162 @@ class MapBuildingService(QObject):
         self.available = False
 
     def start_mapping(self, definition: MapDefinition, device: DeviceSnapshot) -> str:
+        return self.start_job(
+            definition, [device], device.device_id,
+            [MapTransform(device.device_id, True)], self.fusion_repository.default_algorithm(),
+        )
+
+    def start_job(self, definition: MapDefinition, devices: Iterable[DeviceSnapshot],
+                  primary_device_id: str, transforms: Iterable[MapTransform],
+                  algorithm: MapFusionAlgorithm | str | None = None) -> str:
         if not self.available or self._socket is None:
             raise RuntimeError(self.module_message)
-        if not device.ip_address:
-            raise ValueError("设备缺少有效 IP 地址")
+        device_list = list(devices)
+        if not device_list:
+            raise ValueError("至少选择一台建图设备")
+        ids = [item.device_id.casefold() for item in device_list]
+        if len(set(ids)) != len(ids):
+            raise ValueError("建图设备不能重复")
+        if any(not item.ip_address for item in device_list):
+            raise ValueError("所有建图设备都必须配置有效 IP 地址")
+        primary_folded = primary_device_id.casefold()
+        if primary_folded not in ids:
+            raise ValueError("主设备必须属于建图设备")
+        transform_map = {item.source_id.casefold(): item for item in transforms}
+        if set(transform_map) != set(ids):
+            raise ValueError("每台设备都必须配置且只能配置一组外参")
+        primary_transform = transform_map[primary_folded]
+        if (not primary_transform.is_primary
+                or primary_transform.translation_m != (0.0, 0.0, 0.0)
+                or primary_transform.rotation_rpy_deg != (0.0, 0.0, 0.0)
+                or sum(item.is_primary for item in transform_map.values()) != 1):
+            raise ValueError("主设备必须是唯一使用单位变换的坐标系")
+        selected_algorithm = self._resolve_algorithm(algorithm)
         with self._lock:
-            if self._session is not None:
-                raise RuntimeError("已有建图会话正在运行")
+            if self._job is not None:
+                raise RuntimeError("已有建图任务正在运行")
             now = datetime.now(timezone.utc)
-            session_id = uuid.uuid4().hex
-            session = _ActiveSession(
-                definition=definition,
-                device=device,
-                session_id=session_id,
-                request_id=uuid.uuid4().hex,
-                started_at=now,
-                started_monotonic=self.clock(),
-                assembler=CloudFrameAssembler(self.config, self.clock),
-                accumulator=VoxelMapAccumulator(
-                    self.config.voxel_size_m,
-                    self.config.max_accumulated_voxels,
-                    self.config.max_preview_points,
-                ),
+            started = self.clock()
+            job_id = uuid.uuid4().hex
+            sessions: dict[str, _DeviceSession] = {}
+            for device in device_list:
+                session_id = job_id if len(device_list) == 1 else uuid.uuid4().hex
+                sessions[device.device_id.casefold()] = _DeviceSession(
+                    device=device, transform=transform_map[device.device_id.casefold()],
+                    session_id=session_id, request_id=uuid.uuid4().hex,
+                    assembler=CloudFrameAssembler(self.config, self.clock),
+                    accumulator=VoxelMapAccumulator(
+                        self.config.voxel_size_m, self.config.max_accumulated_voxels,
+                        self.config.max_preview_points,
+                    ), last_checkpoint_at=started,
+                )
+            job = _ActiveJob(
+                definition, job_id, primary_device_id, selected_algorithm,
+                sessions, now, started,
             )
-            session.last_checkpoint_at = session.started_monotonic
-            self._session = session
+            self._job = job
             try:
-                self._send_command(session, force=True)
+                for session in sessions.values():
+                    self._send_command(job, session, force=True)
             except OSError:
-                self._session = None
+                self._job = None
                 raise
-            self._emit_snapshot(session)
-            return session_id
+            self._emit_job(job)
+            return job_id
 
     def stop_mapping(self, reason: str = "用户结束建图") -> None:
+        self.stop_job(reason)
+
+    def stop_job(self, reason: str = "用户结束建图") -> None:
         with self._lock:
-            session = self._session
-            if session is None:
+            job = self._job
+            if job is None:
                 return
-            session.state = "saving"
-            session.message = "正在结束端侧会话并保存"
-            session.command = "stop_mapping"
-            session.request_id = uuid.uuid4().hex
-            session.command_attempts = 0
-            self._send_command(session, force=True, reason=reason)
-            self._emit_snapshot(session)
+            included = [item for item in job.sessions.values() if not item.excluded]
+            if not included:
+                self._interrupt_job_locked(job, "没有可保存的建图设备")
+                return
+            job.state = "saving"
+            job.message = "正在结束所有端侧会话并融合"
+            for session in included:
+                session.state = "saving"
+                session.message = "正在结束端侧会话"
+                session.command = "stop_mapping"
+                session.request_id = uuid.uuid4().hex
+                session.command_attempts = 0
+                self._send_command(job, session, force=True, reason=reason)
+            self._emit_job(job)
+
+    def continue_without_device(self, device_id: str) -> None:
+        with self._lock:
+            job = self._job
+            if job is None:
+                raise RuntimeError("没有活动建图任务")
+            session = job.sessions.get(device_id.casefold())
+            if session is None:
+                raise ValueError("设备不属于当前建图任务")
+            if session.device.device_id.casefold() == job.primary_device_id.casefold():
+                raise ValueError("主设备掉线时不能降级继续，请中止任务")
+            session.excluded = True
+            session.state = "excluded"
+            session.message = "已从联合建图中剔除"
+            remaining = [item for item in job.sessions.values() if not item.excluded]
+            job.state = "mapping"
+            job.message = f"已剔除 {session.device.device_name}，剩余 {len(remaining)} 台设备"
+            self._emit_job(job)
 
     def interrupt_mapping(self, reason: str = "建图会话中断") -> None:
         with self._lock:
-            session = self._session
-            if session is None:
-                return
-            try:
-                self._send_stop_once(session, reason)
-                self._checkpoint(session, state="interrupted", message=reason)
-            except Exception as exc:
-                self.failed.emit(f"保留临时建图结果失败：{exc}")
-            session.state = "interrupted"
-            session.message = reason
-            self._emit_snapshot(session)
-            self._session = None
+            if self._job is not None:
+                self._interrupt_job_locked(self._job, reason)
 
     def save_interrupted_session(self, map_id: str, session_id: str) -> MapDefinition:
         sessions = self.repository.interrupted_sessions(map_id)
         payload = next((item for item in sessions if item.get("session_id") == session_id), None)
         if payload is None:
             raise MapRepositoryError("临时建图会话不存在")
-        metadata = self._metadata_from_payload(payload)
-        return self.repository.commit_mapping_result(map_id, session_id, metadata)
+        return self.repository.commit_mapping_result(map_id, session_id, self._metadata_from_payload(payload))
+
+    def save_interrupted_job(self, map_id: str, job_id: str,
+                             algorithm_id: str | None = None) -> MapDefinition:
+        jobs = self.repository.interrupted_mapping_jobs(map_id)
+        payload = next((item for item in jobs if item.get("job_id") == job_id), None)
+        if payload is None:
+            raise MapRepositoryError("临时联合建图任务不存在")
+        definition = self.repository.map_by_id(map_id)
+        if definition is None:
+            raise MapRepositoryError("地图不存在")
+        algorithm = self._resolve_algorithm(algorithm_id or str(payload["algorithm_id"]))
+        root = self.repository.mapping_session_directory(map_id, job_id)
+        excluded = {str(item) for item in payload.get("excluded_device_ids", [])}
+        transforms_by_id = {
+            str(item["source_id"]): MapTransform(
+                str(item["source_id"]), bool(item.get("is_primary", False)),
+                tuple(float(value) for value in item["translation_m"]),
+                tuple(float(value) for value in item["rotation_rpy_deg"]),
+            )
+            for item in payload.get("transforms", [])
+        }
+        device_ids = [
+            str(item) for item in payload.get("devices", [])
+            if str(item) not in excluded and (root / str(item) / "partial.pcd").is_file()
+        ]
+        if not device_ids or any(item not in transforms_by_id for item in device_ids):
+            raise MapRepositoryError("临时联合建图任务的设备或外参不完整")
+        output = root / "plugin-output.pcd"
+        self.fusion_runner.run(
+            algorithm, [root / item / "partial.pcd" for item in device_ids],
+            definition.frame_id, [transforms_by_id[item] for item in device_ids], output,
+        )
+        started_at = datetime.fromisoformat(str(payload["started_at"]))
+        provenance = MapBuildProvenance(
+            MapBuildMode.MULTI if len(payload.get("devices", [])) > 1 else MapBuildMode.SINGLE,
+            job_id, str(payload["primary_device_id"]), tuple(device_ids),
+            tuple(transforms_by_id[item] for item in device_ids), algorithm.algorithm_id,
+            algorithm.version, algorithm.sha256, tuple(sorted(excluded)),
+            started_at, datetime.now(timezone.utc),
+        )
+        return self.repository.commit_fusion_to_existing(map_id, job_id, output, provenance)
 
     def _run(self) -> None:
         while self._running.is_set():
@@ -223,117 +342,143 @@ class MapBuildingService(QObject):
     def _handle_datagram(self, datagram: bytes, peer_ip: str) -> None:
         envelope = self.protocol.decode(datagram)
         with self._lock:
-            session = self._session
-            if session is None:
+            job = self._job
+            if job is None or envelope.map_id != job.definition.map_id:
                 return
+            session = job.sessions.get(envelope.device_id.casefold())
+            if session is None or envelope.session_id != session.session_id:
+                raise MapBuildingProtocolError("数据报设备或会话标识不一致")
             if peer_ip != session.device.ip_address:
                 raise MapBuildingProtocolError("数据报来源 IP 与设备配置不一致")
-            if (
-                envelope.map_id != session.definition.map_id
-                or envelope.device_id.casefold() != session.device.device_id.casefold()
-                or envelope.session_id != session.session_id
-            ):
-                raise MapBuildingProtocolError("数据报地图、设备或会话标识不一致")
             if envelope.message_type == "cloud_chunk":
-                assert session.seen_cloud_sequences is not None
                 if envelope.sequence in session.seen_cloud_sequences:
                     return
                 session.seen_cloud_sequences.add(envelope.sequence)
                 if len(session.seen_cloud_sequences) > 100000:
                     floor = max(session.seen_cloud_sequences) - 50000
-                    session.seen_cloud_sequences = {item for item in session.seen_cloud_sequences if item >= floor}
-                self._handle_cloud(session, envelope)
+                    session.seen_cloud_sequences = {
+                        item for item in session.seen_cloud_sequences if item >= floor
+                    }
+                self._handle_cloud(job, session, envelope)
                 return
             if envelope.sequence <= session.last_sequence:
                 return
             session.last_sequence = envelope.sequence
             if envelope.message_type == "command_ack":
-                self._handle_ack(session, envelope)
-            elif envelope.message_type == "session_heartbeat":
-                if session.state not in {"saving", "completed"}:
-                    session.state = "mapping"
-                    session.message = "端侧建图会话在线"
-                    self._emit_snapshot(session)
+                self._handle_ack(job, session, envelope)
+            elif envelope.message_type == "session_heartbeat" and session.state not in {"saving", "stopped"}:
+                session.message = "端侧建图会话在线"
+                self._emit_job(job)
             elif envelope.message_type == "session_status":
                 state = envelope.payload["state"]
                 if state == "error":
-                    self._interrupt_locked(session, envelope.payload.get("reason") or "端侧传感器错误")
+                    self._mark_degraded(job, session, envelope.payload.get("reason") or "端侧传感器错误")
                 elif state == "stopped" and session.state == "saving":
-                    self._finalize(session)
+                    session.state = "stopped"
+                    self._finalize_if_ready(job)
 
-    def _handle_ack(self, session: _ActiveSession, envelope: MapBuildingEnvelope) -> None:
+    def _handle_ack(self, job: _ActiveJob, session: _DeviceSession,
+                    envelope: MapBuildingEnvelope) -> None:
         payload = envelope.payload
         if payload["request_id"] != session.request_id or payload["command"] != session.command:
             return
         if not payload["accepted"]:
-            self._interrupt_locked(session, payload.get("reason") or "端侧拒绝建图指令")
+            self._mark_degraded(job, session, payload.get("reason") or "端侧拒绝建图指令")
             return
         if session.command == "start_mapping":
-            session.state = "mapping"
-            session.message = "建图中"
-            self._emit_snapshot(session)
+            session.state = "ready"
+            session.message = "端侧已就绪"
+            active = [item for item in job.sessions.values() if not item.excluded]
+            if active and all(item.state in {"ready", "mapping", "warning"} for item in active):
+                job.state = "mapping"
+                job.message = f"{len(active)} 台设备联合建图中" if len(active) > 1 else "建图中"
+                for item in active:
+                    if item.state == "ready":
+                        item.state = "mapping"
+                        item.message = "建图中"
         else:
-            self._finalize(session)
+            session.state = "stopped"
+            session.message = "端侧已停止"
+            self._finalize_if_ready(job)
+        self._emit_job(job)
 
-    def _handle_cloud(self, session: _ActiveSession, envelope: MapBuildingEnvelope) -> None:
+    def _handle_cloud(self, job: _ActiveJob, session: _DeviceSession,
+                      envelope: MapBuildingEnvelope) -> None:
         completed = session.assembler.push(envelope)
         if completed is None:
             return
         points, trajectory = completed
         session.accumulator.add(points)
-        assert session.trajectory is not None
         session.trajectory.append(trajectory)
         session.complete_frames += 1
         now = self.clock()
         session.last_complete_frame_at = now
         session.last_data_at = datetime.now(timezone.utc)
-        if session.state not in {"saving"}:
+        if job.state != "negotiating" and session.state not in {"saving", "excluded"}:
             session.state = "mapping"
             session.message = "建图中"
-        if now - session.last_preview_at >= 1.0 / self.config.cloud_rate_hz:
-            session.last_preview_at = now
-            self.preview_updated.emit(
-                session.session_id,
-                session.accumulator.preview(),
-                session.accumulator.bounds(),
-            )
-        self._emit_snapshot(session)
+        if now - job.last_preview_at >= 1.0 / min(self.config.cloud_rate_hz, 5.0):
+            job.last_preview_at = now
+            self._emit_preview(job)
+        self._emit_job(job)
+
+    def _emit_preview(self, job: _ActiveJob) -> None:
+        combined = VoxelMapAccumulator(
+            self.config.voxel_size_m, self.config.max_accumulated_voxels,
+            self.config.max_preview_points,
+        )
+        for session in job.sessions.values():
+            points = session.accumulator.points()
+            if session.excluded or not len(points):
+                continue
+            combined.add(transform_points(points, session.transform))
+        if len(combined.points()):
+            self.preview_updated.emit(job.job_id, combined.preview(), combined.bounds())
 
     def _tick(self) -> None:
         with self._lock:
-            session = self._session
-            if session is None:
+            job = self._job
+            if job is None:
                 return
             now = self.clock()
-            expired = session.assembler.expire()
-            if expired:
-                session.dropped_frames += expired
-                self._emit_snapshot(session)
-            if session.command_attempts < self.config.command_max_attempts and (
-                session.state == "negotiating" or session.state == "saving"
-            ) and now - session.last_command_at >= self.config.command_retry_seconds:
-                self._send_command(session)
-            elif session.command_attempts >= self.config.command_max_attempts:
-                if session.state == "negotiating":
-                    self._interrupt_locked(session, "端侧未确认开始建图指令")
-                    return
-                if session.state == "saving":
-                    self._finalize(session)
-                    return
-            reference = session.last_complete_frame_at or session.started_monotonic
-            silence = now - reference
-            if session.state in {"mapping", "warning"} and silence >= self.config.error_timeout_seconds:
-                self._interrupt_locked(session, "超过 5 秒未收到完整点云帧")
-                return
-            if session.state == "mapping" and silence >= self.config.warning_timeout_seconds:
-                session.state = "warning"
-                session.message = "点云链路警告"
-                self._emit_snapshot(session)
-            if now - session.last_checkpoint_at >= 5.0 and session.complete_frames:
-                self._checkpoint(session, state=session.state, message=session.message)
-                session.last_checkpoint_at = now
+            for session in list(job.sessions.values()):
+                if session.excluded or session.state in {"stopped", "failed"}:
+                    continue
+                expired = session.assembler.expire()
+                if expired:
+                    session.dropped_frames += expired
+                if session.state in {"negotiating", "saving"}:
+                    if (session.command_attempts < self.config.command_max_attempts
+                            and now - session.last_command_at >= self.config.command_retry_seconds):
+                        self._send_command(job, session)
+                    elif session.command_attempts >= self.config.command_max_attempts:
+                        if session.state == "saving":
+                            session.state = "stopped"
+                            self._finalize_if_ready(job)
+                        elif len(job.sessions) == 1:
+                            self._interrupt_job_locked(job, "端侧未确认开始建图指令")
+                            return
+                        else:
+                            self._mark_degraded(job, session, "端侧未确认开始建图指令")
+                    continue
+                reference = session.last_complete_frame_at or job.started_monotonic
+                silence = now - reference
+                if (session.state in {"mapping", "warning", "ready"}
+                        and silence >= self.config.error_timeout_seconds):
+                    if len(job.sessions) == 1:
+                        self._interrupt_job_locked(job, "超过 5 秒未收到完整点云帧")
+                        return
+                    self._mark_degraded(job, session, "超过 5 秒未收到完整点云帧")
+                elif session.state == "mapping" and silence >= self.config.warning_timeout_seconds:
+                    session.state = "warning"
+                    session.message = "点云链路警告"
+                if now - session.last_checkpoint_at >= 5.0 and session.complete_frames:
+                    self._checkpoint_job_device(job, session, "mapping", job.message)
+                    session.last_checkpoint_at = now
+            self._emit_job(job)
 
-    def _send_command(self, session: _ActiveSession, *, force: bool = False, reason: str = "") -> None:
+    def _send_command(self, job: _ActiveJob, session: _DeviceSession, *,
+                      force: bool = False, reason: str = "") -> None:
         if not force and session.command_attempts >= self.config.command_max_attempts:
             return
         if session.command == "start_mapping":
@@ -346,17 +491,15 @@ class MapBuildingService(QObject):
                 "compression": self.config.compression,
                 "point_format": self.config.point_format,
                 "coordinate_contract": "sensor+map_body+body_sensor",
+                "job_id": job.job_id,
+                "role": "primary" if session.transform.is_primary else "secondary",
+                "primary_device_id": job.primary_device_id,
             }
         else:
             payload = {"request_id": session.request_id, "reason": reason or "用户结束建图"}
         envelope = MapBuildingEnvelope(
-            map_id=session.definition.map_id,
-            device_id=session.device.device_id,
-            session_id=session.session_id,
-            message_type=session.command,
-            sequence=session.command_attempts,
-            sent_at_ns=time.time_ns(),
-            payload=payload,
+            job.definition.map_id, session.device.device_id, session.session_id,
+            session.command, session.command_attempts, time.time_ns(), payload,
         )
         assert self._socket is not None
         self._socket.sendto(
@@ -366,93 +509,155 @@ class MapBuildingService(QObject):
         session.command_attempts += 1
         session.last_command_at = self.clock()
 
-    def _send_stop_once(self, session: _ActiveSession, reason: str) -> None:
+    def _send_stop_once(self, job: _ActiveJob, session: _DeviceSession, reason: str) -> None:
         if self._socket is None:
             return
         envelope = MapBuildingEnvelope(
-            session.definition.map_id,
-            session.device.device_id,
-            session.session_id,
-            "stop_mapping",
-            session.command_attempts + 1,
-            time.time_ns(),
+            job.definition.map_id, session.device.device_id, session.session_id,
+            "stop_mapping", session.command_attempts + 1, time.time_ns(),
             {"request_id": uuid.uuid4().hex, "reason": reason},
         )
-        self._socket.sendto(self.protocol.encode(envelope), (session.device.ip_address, self.config.device_control_port))
-
-    def _finalize(self, session: _ActiveSession) -> None:
-        if session.accumulator.points().size == 0:
-            self._interrupt_locked(session, "未收到可保存的完整点云帧")
-            return
-        session.state = "saving"
-        session.message = "正在保存最终点云"
-        self._emit_snapshot(session)
-        try:
-            self._checkpoint(session, state="completed", message="建图完成")
-            metadata = MapBuildingResultMetadata(
-                session_id=session.session_id,
-                device_id=session.device.device_id,
-                started_at=session.started_at,
-                ended_at=datetime.now(timezone.utc),
-                protocol_id=self.config.protocol_id,
-                voxel_size_m=self.config.voxel_size_m,
-                complete_frames=session.complete_frames,
-                dropped_frames=session.dropped_frames,
-                received_points=session.accumulator.received_points,
-                fused_points=len(session.accumulator.points()),
-            )
-            definition = self.repository.commit_mapping_result(
-                session.definition.map_id, session.session_id, metadata
-            )
-        except Exception as exc:
-            session.state = "failed"
-            session.message = str(exc)
-            self._emit_snapshot(session)
-            self.failed.emit(str(exc))
-            self._session = None
-            return
-        session.state = "completed"
-        session.message = "建图完成"
-        self._emit_snapshot(session)
-        self.completed.emit(definition)
-        self._session = None
-
-    def _interrupt_locked(self, session: _ActiveSession, reason: str) -> None:
-        try:
-            if session.complete_frames:
-                self._checkpoint(session, state="interrupted", message=reason)
-        except Exception as exc:
-            reason = f"{reason}；临时结果保存失败：{exc}"
-        session.state = "interrupted"
-        session.message = reason
-        self._emit_snapshot(session)
-        self.failed.emit(reason)
-        self._session = None
-
-    def _checkpoint(self, session: _ActiveSession, *, state: str, message: str) -> None:
-        if not session.complete_frames:
-            return
-        payload = self._session_payload(session, state, message)
-        self.repository.write_mapping_checkpoint(
-            session.definition.map_id,
-            session.session_id,
-            payload,
-            session.accumulator.points(),
-            session.trajectory or (),
+        self._socket.sendto(
+            self.protocol.encode(envelope),
+            (session.device.ip_address, self.config.device_control_port),
         )
 
-    def _session_payload(self, session: _ActiveSession, state: str, message: str) -> dict[str, object]:
-        ended_at = datetime.now(timezone.utc)
+    def _finalize_if_ready(self, job: _ActiveJob) -> None:
+        included = [item for item in job.sessions.values() if not item.excluded]
+        if included and all(item.state == "stopped" for item in included):
+            self._finalize_job(job)
+
+    def _finalize_job(self, job: _ActiveJob) -> None:
+        included = [
+            item for item in job.sessions.values()
+            if not item.excluded and item.complete_frames
+        ]
+        if not included:
+            self._interrupt_job_locked(job, "未收到可保存的完整点云帧")
+            return
+        job.state = "saving"
+        job.message = "正在执行最终融合算法"
+        self._emit_job(job)
+        try:
+            for session in included:
+                self._checkpoint_job_device(job, session, "completed", "采集完成")
+            root = self.repository.mapping_session_directory(job.definition.map_id, job.job_id)
+            output = root / "plugin-output.pcd"
+            transforms = [session.transform for session in included]
+            inputs = [root / session.device.device_id / "partial.pcd" for session in included]
+            self.fusion_runner.run(
+                job.algorithm, inputs, job.definition.frame_id, transforms, output,
+            )
+            ended_at = datetime.now(timezone.utc)
+            provenance = MapBuildProvenance(
+                MapBuildMode.MULTI if len(job.sessions) > 1 else MapBuildMode.SINGLE,
+                job.job_id, job.primary_device_id,
+                tuple(item.device.device_id for item in included), tuple(transforms),
+                job.algorithm.algorithm_id, job.algorithm.version, job.algorithm.sha256,
+                tuple(item.device.device_id for item in job.sessions.values() if item.excluded),
+                job.started_at, ended_at,
+            )
+            legacy_metadata = None
+            if len(job.sessions) == 1:
+                only = included[0]
+                legacy_metadata = MapBuildingResultMetadata(
+                    job.job_id, only.device.device_id, job.started_at, ended_at,
+                    self.config.protocol_id, self.config.voxel_size_m,
+                    only.complete_frames, only.dropped_frames,
+                    only.accumulator.received_points, len(only.accumulator.points()),
+                )
+            definition = self.repository.commit_fusion_to_existing(
+                job.definition.map_id, job.job_id, output, provenance, legacy_metadata,
+            )
+        except Exception as exc:
+            job.state = "failed"
+            job.message = f"融合失败，临时结果已保留：{exc}"
+            self._emit_job(job)
+            self.failed.emit(job.message)
+            self._job = None
+            return
+        job.state = "completed"
+        job.message = "联合建图完成"
+        self._emit_job(job)
+        self.completed.emit(definition)
+        self._job = None
+
+    def _mark_degraded(self, job: _ActiveJob, session: _DeviceSession, reason: str) -> None:
+        if session.state == "failed":
+            return
+        session.state = "failed"
+        session.message = reason
+        job.state = "degraded"
+        job.message = f"设备 {session.device.device_name} 中断，请选择剔除后继续或中止"
+        self._emit_job(job)
+        self.degraded.emit(self._job_snapshot(job))
+
+    def _interrupt_job_locked(self, job: _ActiveJob, reason: str) -> None:
+        errors: list[str] = []
+        for session in job.sessions.values():
+            try:
+                self._send_stop_once(job, session, reason)
+                if session.complete_frames:
+                    if len(job.sessions) == 1:
+                        self._checkpoint_legacy(job, session, "interrupted", reason)
+                    else:
+                        self._checkpoint_job_device(job, session, "interrupted", reason)
+            except Exception as exc:
+                errors.append(str(exc))
+            session.state = "interrupted"
+            session.message = reason
+        if errors:
+            reason = f"{reason}；临时结果保存失败：{'；'.join(errors)}"
+        job.state = "interrupted"
+        job.message = reason
+        self._emit_job(job)
+        self.failed.emit(reason)
+        self._job = None
+
+    def _checkpoint_legacy(self, job: _ActiveJob, session: _DeviceSession,
+                           state: str, message: str) -> None:
+        self.repository.write_mapping_checkpoint(
+            job.definition.map_id, session.session_id,
+            self._session_payload(job, session, state, message),
+            session.accumulator.points(), session.trajectory,
+        )
+
+    def _checkpoint_job_device(self, job: _ActiveJob, session: _DeviceSession,
+                               state: str, message: str) -> None:
+        payload = {
+            "schema_version": 1, "protocol_id": self.config.protocol_id,
+            "map_id": job.definition.map_id, "job_id": job.job_id,
+            "primary_device_id": job.primary_device_id, "state": state,
+            "message": message, "algorithm_id": job.algorithm.algorithm_id,
+            "started_at": job.started_at.isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "devices": [item.device.device_id for item in job.sessions.values()],
+            "transforms": [
+                {"source_id": item.transform.source_id,
+                 "is_primary": item.transform.is_primary,
+                 "translation_m": list(item.transform.translation_m),
+                 "rotation_rpy_deg": list(item.transform.rotation_rpy_deg)}
+                for item in job.sessions.values()
+            ],
+            "algorithm_version": job.algorithm.version,
+            "algorithm_sha256": job.algorithm.sha256,
+            "excluded_device_ids": [
+                item.device.device_id for item in job.sessions.values() if item.excluded
+            ],
+        }
+        self.repository.write_mapping_job_checkpoint(
+            job.definition.map_id, job.job_id, payload, session.device.device_id,
+            session.accumulator.points(), session.trajectory,
+        )
+
+    def _session_payload(self, job: _ActiveJob, session: _DeviceSession,
+                         state: str, message: str) -> dict[str, object]:
         return {
-            "schema_version": 1,
-            "protocol_id": self.config.protocol_id,
-            "map_id": session.definition.map_id,
-            "device_id": session.device.device_id,
-            "session_id": session.session_id,
-            "state": state,
-            "message": message,
-            "started_at": session.started_at.isoformat(),
-            "ended_at": ended_at.isoformat(),
+            "schema_version": 1, "protocol_id": self.config.protocol_id,
+            "map_id": job.definition.map_id, "device_id": session.device.device_id,
+            "session_id": session.session_id, "state": state, "message": message,
+            "started_at": job.started_at.isoformat(),
+            "ended_at": datetime.now(timezone.utc).isoformat(),
             "voxel_size_m": self.config.voxel_size_m,
             "complete_frames": session.complete_frames,
             "dropped_frames": session.dropped_frames,
@@ -463,8 +668,7 @@ class MapBuildingService(QObject):
     @staticmethod
     def _metadata_from_payload(payload: dict[str, object]) -> MapBuildingResultMetadata:
         return MapBuildingResultMetadata(
-            session_id=str(payload["session_id"]),
-            device_id=str(payload["device_id"]),
+            session_id=str(payload["session_id"]), device_id=str(payload["device_id"]),
             started_at=datetime.fromisoformat(str(payload["started_at"])),
             ended_at=datetime.fromisoformat(str(payload["ended_at"])),
             protocol_id=str(payload["protocol_id"]),
@@ -475,23 +679,45 @@ class MapBuildingService(QObject):
             fused_points=int(payload["fused_points"]),
         )
 
-    def _snapshot(self, session: _ActiveSession) -> MapBuildingSessionSnapshot:
+    def _session_snapshot(self, job: _ActiveJob,
+                          session: _DeviceSession) -> MapBuildingSessionSnapshot:
         return MapBuildingSessionSnapshot(
-            map_id=session.definition.map_id,
-            device_id=session.device.device_id,
-            session_id=session.session_id,
-            state=session.state,
-            message=session.message,
-            started_at=session.started_at,
-            complete_frames=session.complete_frames,
+            map_id=job.definition.map_id, device_id=session.device.device_id,
+            session_id=session.session_id, state=session.state, message=session.message,
+            started_at=job.started_at, complete_frames=session.complete_frames,
             dropped_frames=session.dropped_frames,
             received_points=session.accumulator.received_points,
-            fused_points=len(session.accumulator.points()),
-            last_data_at=session.last_data_at,
+            fused_points=len(session.accumulator.points()), last_data_at=session.last_data_at,
         )
 
-    def _emit_snapshot(self, session: _ActiveSession) -> None:
-        self.session_updated.emit(self._snapshot(session))
+    def _job_snapshot(self, job: _ActiveJob) -> MapBuildingJobSnapshot:
+        return MapBuildingJobSnapshot(
+            job.definition.map_id, job.job_id, job.state, job.message,
+            job.primary_device_id, job.algorithm.algorithm_id,
+            tuple(self._session_snapshot(job, item) for item in job.sessions.values()),
+            tuple(item.device.device_id for item in job.sessions.values() if item.excluded),
+            job.started_at,
+        )
+
+    def _emit_job(self, job: _ActiveJob) -> None:
+        snapshot = self._job_snapshot(job)
+        self.job_updated.emit(snapshot)
+        for item in snapshot.device_sessions:
+            self.device_session_updated.emit(item)
+        legacy = self.current_snapshot
+        if legacy is not None:
+            self.session_updated.emit(legacy)
+
+    def _resolve_algorithm(self, algorithm: MapFusionAlgorithm | str | None) -> MapFusionAlgorithm:
+        if algorithm is None:
+            return self.fusion_repository.default_algorithm()
+        selected = algorithm if isinstance(algorithm, MapFusionAlgorithm) \
+            else self.fusion_repository.algorithm(algorithm)
+        if selected is None:
+            raise ValueError(f"融合算法不存在：{algorithm}")
+        if not selected.enabled:
+            raise ValueError("融合算法已禁用")
+        return selected
 
     @staticmethod
     def _local_address_for(peer_ip: str) -> str:

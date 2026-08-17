@@ -46,6 +46,40 @@ class MapBuildingSessionSnapshot:
     last_data_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class MapBuildingJobSnapshot:
+    map_id: str
+    job_id: str
+    state: str
+    message: str
+    primary_device_id: str
+    algorithm_id: str
+    device_sessions: tuple[MapBuildingSessionSnapshot, ...]
+    excluded_device_ids: tuple[str, ...] = ()
+    started_at: datetime = field(default_factory=utc_now)
+
+    @property
+    def complete_frames(self) -> int:
+        return sum(item.complete_frames for item in self.device_sessions)
+
+    @property
+    def dropped_frames(self) -> int:
+        return sum(item.dropped_frames for item in self.device_sessions)
+
+    @property
+    def received_points(self) -> int:
+        return sum(item.received_points for item in self.device_sessions)
+
+    @property
+    def fused_points(self) -> int:
+        return sum(item.fused_points for item in self.device_sessions)
+
+    @property
+    def last_data_at(self) -> datetime | None:
+        values = [item.last_data_at for item in self.device_sessions if item.last_data_at]
+        return max(values) if values else None
+
+
 class MapBuildingProtocol:
     MESSAGE_TYPES = {
         "start_mapping", "stop_mapping", "command_ack", "session_heartbeat",
@@ -128,6 +162,12 @@ class MapBuildingProtocol:
             raise MapBuildingProtocolError("开始指令压缩或点格式无效")
         if payload.get("coordinate_contract") != "sensor+map_body+body_sensor":
             raise MapBuildingProtocolError("坐标契约无效")
+        if "job_id" in payload:
+            self._require_string(payload, "job_id")
+        if "role" in payload and payload["role"] not in {"primary", "secondary"}:
+            raise MapBuildingProtocolError("建图设备 role 无效")
+        if "primary_device_id" in payload:
+            self._require_string(payload, "primary_device_id")
 
     def _validate_stop_mapping(self, payload: dict[str, Any]) -> None:
         self._require_string(payload, "request_id")

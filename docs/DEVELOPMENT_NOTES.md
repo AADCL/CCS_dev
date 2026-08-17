@@ -1,5 +1,37 @@
 # 开发笔记
 
+## v0.11.1
+
+### 共享地图拖动速度
+
+- 三维地图页面均复用 `PointCloudViewer` 和 `MiddlePanTurntableCameraMixin`，因此拖动灵敏度必须在共享相机层调整，不能由地图页、任务页或指控大屏分别缩放。
+- `MAP_PAN_DRAG_SPEED` 固定为 `3.0`。`calculate_turntable_pan()` 在视口归一化和地图 `scale_factor` 换算后应用该倍率，保持不同窗口尺寸及地图范围下的一致操作感。
+- 相机距离不参与修改，右键拖动只移动观察中心，不会产生意外缩放。
+
+## v0.11.0
+
+### 融合插件与仓储
+
+- `MapFusionRepository` 管理内置及导入算法，配置保存算法版本、脚本 SHA-256、启用状态、默认算法和 JSON 参数。导入脚本先通过 AST 检查，再复制到应用数据目录并在独立进程执行小型 PCD 验证。
+- 插件工作进程只接收 JSON 请求和文件路径；返回结果后地面站重新使用 `MapPointCloudLoader` 校验有限 XYZ、点数和输出大小。进程隔离用于故障控制，不是恶意代码安全沙箱。
+- 离线融合临时任务位于 `.fusion/<job_id>`，正式地图仅在插件输出校验成功后创建。
+
+### 多设备建图
+
+- `MapBuildingService` 维护一个 `_ActiveJob` 和多个 `_DeviceSession`。每台设备独立跟踪 session、来源 IP、序列、分片、体素、轨迹、重试和超时。
+- 实时预览先把每台设备局部点云按 `primary <- secondary` 外参变换，再使用内置体素累计器合并；最终保存调用选定插件。
+- schema 4 的 `build_provenance` 记录模式、来源、外参、算法 ID/版本/指纹、时间和剔除设备。旧 `last_mapping` 在单机建图中继续写入，供已有页面和调用兼容使用。
+- 多设备开始需要全部 ACK。非主设备中断后进入降级态并等待用户剔除或中止；主设备中断不能继续提交。
+
+## v0.10.1
+
+### 原生 Qt 弹层主题
+
+- 仅使用 QSS 时，`QComboBoxPrivateContainer`、对话框 `QListWidget` viewport 等原生子控件仍可能读取操作系统浅色 Palette。`build_qt_palette()` 现在同步 Window、Base、AlternateBase、Button、Highlight、Text 和 Disabled 角色，作为所有二级页面的底层兜底。
+- `MainWindow` 初始化及日间/夜间切换时同时设置 QApplication Palette 与样式表，避免弹层在切换主题后保留旧背景。
+- QSS 增加通用对话框列表/树/表格、菜单、组合框容器与 item 状态；任务、地图和大屏已有 objectName 专用规则继续后置覆盖。
+- 夜间离屏检查覆盖类型模板、设备新建、状态卡编辑、地图新建、建图设备选择和任务新建对话框，并单独检查组合框弹层。
+
 ## v0.10.0
 
 ### 类型模板与迁移

@@ -3,27 +3,39 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 import math
-from datetime import datetime
+import json
+import threading
+import uuid
+from datetime import datetime, timezone
 
 import numpy as np
 from PySide6.QtCore import QEvent, QTimer, Signal, Qt
 from PySide6.QtGui import QColor, QMouseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFrame,
+    QFormLayout,
     QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QScrollArea,
     QSizePolicy,
+    QDoubleSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -32,13 +44,19 @@ from PySide6.QtWidgets import (
 from ..data_source import DeviceDataSource
 from ..map_repository import MapRepository, MapRepositoryError
 from ..map_building import MapBuildingSessionSnapshot
+from ..map_fusion import MapFusionError, MapFusionRepository, MapFusionRunner
 from ..models import (
     DeviceMapMarker,
     DeviceSnapshot,
     MapCreatorDevice,
+    MapBuildMode,
+    MapBuildProvenance,
     MapDefinition,
+    MapFusionAlgorithm,
+    MapFusionJob,
     MapMarkerShape,
     MapStatus,
+    MapTransform,
     PoseTelemetry,
     UdpLinkStatus,
 )
@@ -53,6 +71,8 @@ STATUS_TEXT = {
     MapStatus.ERROR: "地图数据异常",
 }
 
+MAP_PAN_DRAG_SPEED = 3.0
+
 
 def calculate_turntable_pan(
     camera,
@@ -60,13 +80,19 @@ def calculate_turntable_pan(
     current_position,
     view_size,
     start_center,
+    speed_multiplier: float = MAP_PAN_DRAG_SPEED,
 ) -> tuple[float, float, float]:
     """Translate a TurntableCamera center in its current observation plane."""
     press = np.asarray(press_position, dtype=np.float64)[:2]
     current = np.asarray(current_position, dtype=np.float64)[:2]
     size = np.asarray(view_size, dtype=np.float64)[:2]
     normalization = max(float(np.mean(size)), 1.0)
-    distance = (press - current) / normalization * float(camera.scale_factor)
+    distance = (
+        (press - current)
+        / normalization
+        * float(camera.scale_factor)
+        * float(speed_multiplier)
+    )
     distance[1] *= -1
     dx, dy, dz = camera._dist_to_trans(distance)
     up, forward, right = camera._get_dim_vectors()
@@ -82,7 +108,9 @@ def calculate_turntable_pan(
 
 
 class MiddlePanTurntableCameraMixin:
-    """Replace VisPy's unmodified middle-button zoom with planar panning."""
+    """Replace VisPy button-2 zoom with responsive planar map panning."""
+
+    pan_speed_multiplier = MAP_PAN_DRAG_SPEED
 
     def viewbox_mouse_event(self, event) -> None:
         if (
@@ -101,6 +129,7 @@ class MiddlePanTurntableCameraMixin:
                 event.mouse_event.pos,
                 self._viewbox.size,
                 self._event_value,
+                self.pan_speed_multiplier,
             )
             self.view_changed()
             event.handled = True
@@ -243,6 +272,427 @@ class NewMapDialog(QDialog):
 
     def selected_device_ids(self) -> tuple[str, ...]:
         return tuple(device_id for device_id, check in self.device_checks.items() if check.isChecked())
+
+
+class MapCreationModeDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("新建地图")
+        self.setMinimumWidth(460)
+        self.mode: str | None = None
+        root = QVBoxLayout(self)
+        title = QLabel("选择地图创建方式")
+        title.setObjectName("dialogTitle")
+        root.addWidget(title)
+        for mode, name, detail in (
+            ("single", "单机建图", "选择一台设备并立即协商实时点云"),
+            ("multi", "多机建图", "选择至少两台设备并配置主从坐标外参"),
+            ("empty", "空地图", "创建不绑定设备的地图档案，稍后导入或建图"),
+        ):
+            button = QPushButton(f"{name}\n{detail}")
+            button.setMinimumHeight(60)
+            button.setProperty("creationMode", mode)
+            button.clicked.connect(lambda _checked=False, value=mode: self._select(value))
+            root.addWidget(button)
+        cancel = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        cancel.rejected.connect(self.reject)
+        root.addWidget(cancel)
+
+    def _select(self, mode: str) -> None:
+        self.mode = mode
+        self.accept()
+
+
+class TransformTable(QTableWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(0, 7, parent)
+        self.setHorizontalHeaderLabels(("坐标系", "X/m", "Y/m", "Z/m", "Roll/°", "Pitch/°", "Yaw/°"))
+        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in range(1, 7):
+            self.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        self.verticalHeader().setVisible(False)
+        self.setMinimumHeight(180)
+        self._primary_id = ""
+
+    def set_sources(self, sources: list[tuple[str, str]], primary_id: str) -> None:
+        previous = {item.source_id: item for item in self.transforms()} if self.rowCount() else {}
+        self._primary_id = primary_id
+        self.setRowCount(len(sources))
+        for row, (source_id, display_name) in enumerate(sources):
+            item = QTableWidgetItem(f"{display_name} · {source_id}")
+            item.setData(Qt.ItemDataRole.UserRole, source_id)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.setItem(row, 0, item)
+            old = previous.get(source_id)
+            values = (*old.translation_m, *old.rotation_rpy_deg) if old else (0.0,) * 6
+            for column, value in enumerate(values, 1):
+                spin = QDoubleSpinBox()
+                spin.setRange(-1_000_000.0, 1_000_000.0)
+                spin.setDecimals(4)
+                spin.setValue(0.0 if source_id == primary_id else float(value))
+                spin.setEnabled(source_id != primary_id)
+                spin.setMinimumWidth(84)
+                self.setCellWidget(row, column, spin)
+
+    def transforms(self) -> tuple[MapTransform, ...]:
+        result = []
+        for row in range(self.rowCount()):
+            source_id = str(self.item(row, 0).data(Qt.ItemDataRole.UserRole))
+            values = tuple(float(self.cellWidget(row, column).value()) for column in range(1, 7))
+            result.append(MapTransform(
+                source_id, source_id == self._primary_id,
+                values[:3], values[3:],
+            ))
+        return tuple(result)
+
+
+class MappingSetupDialog(QDialog):
+    def __init__(self, mode: str, devices: list[DeviceSnapshot],
+                 algorithms: list[MapFusionAlgorithm], *, name: str = "",
+                 name_editable: bool = True, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.mode = mode
+        self.devices = list(devices)
+        self.setWindowTitle("单机建图" if mode == "single" else "多机联合建图")
+        self.setMinimumSize(760 if mode == "multi" else 560, 560 if mode == "multi" else 360)
+        root = QVBoxLayout(self)
+        title = QLabel("单机实时建图" if mode == "single" else "多设备联合建图")
+        title.setObjectName("dialogTitle")
+        root.addWidget(title)
+        form = QFormLayout()
+        self.name_input = QLineEdit(name)
+        self.name_input.setEnabled(name_editable)
+        self.name_input.setPlaceholderText("请输入地图名称")
+        form.addRow("地图名称", self.name_input)
+        self.algorithm_combo = QComboBox()
+        for algorithm in algorithms:
+            self.algorithm_combo.addItem(
+                f"{algorithm.display_name} · v{algorithm.version}", algorithm.algorithm_id
+            )
+            if algorithm.is_default:
+                self.algorithm_combo.setCurrentIndex(self.algorithm_combo.count() - 1)
+        form.addRow("融合算法", self.algorithm_combo)
+        root.addLayout(form)
+        self.single_device_combo = QComboBox()
+        self.device_list = QListWidget()
+        self.primary_combo = QComboBox()
+        self.transform_table = TransformTable()
+        if mode == "single":
+            for device in self.devices:
+                text = f"{device.device_name} · {device.device_id} · {device.connection_status.value}"
+                self.single_device_combo.addItem(text, device.device_id)
+                if not device.ip_address:
+                    model_item = self.single_device_combo.model().item(self.single_device_combo.count() - 1)
+                    if model_item is not None:
+                        model_item.setEnabled(False)
+            root.addWidget(QLabel("选择建图设备"))
+            root.addWidget(self.single_device_combo)
+        else:
+            root.addWidget(QLabel("选择至少两台设备（离线设备允许协商，缺少 IP 的设备不可选）"))
+            for device in self.devices:
+                item = QListWidgetItem(
+                    f"{device.device_name} · {device.device_id} · {device.connection_status.value}"
+                )
+                item.setData(Qt.ItemDataRole.UserRole, device.device_id)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Unchecked)
+                if not device.ip_address:
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                self.device_list.addItem(item)
+            self.device_list.itemChanged.connect(self._selection_changed)
+            root.addWidget(self.device_list, 1)
+            primary_row = QHBoxLayout()
+            primary_row.addWidget(QLabel("主设备"))
+            primary_row.addWidget(self.primary_combo, 1)
+            root.addLayout(primary_row)
+            self.primary_combo.currentIndexChanged.connect(self._refresh_transforms)
+            root.addWidget(QLabel("外参方向：主设备坐标系 <- 从设备坐标系"))
+            root.addWidget(self.transform_table, 1)
+        self.validation = QLabel()
+        self.validation.setObjectName("validationError")
+        root.addWidget(self.validation)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.start_button = buttons.addButton("开始建图", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.start_button.setObjectName("primaryButton")
+        self.start_button.clicked.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+        self.name_input.textChanged.connect(self._validate)
+        self.single_device_combo.currentIndexChanged.connect(self._validate)
+        self._validate()
+
+    def _selection_changed(self) -> None:
+        selected = self.selected_device_ids()
+        current = self.primary_combo.currentData()
+        self.primary_combo.blockSignals(True)
+        self.primary_combo.clear()
+        for device in self.devices:
+            if device.device_id in selected:
+                self.primary_combo.addItem(device.device_name, device.device_id)
+        index = self.primary_combo.findData(current)
+        if index >= 0:
+            self.primary_combo.setCurrentIndex(index)
+        self.primary_combo.blockSignals(False)
+        self._refresh_transforms()
+        self._validate()
+
+    def _refresh_transforms(self) -> None:
+        selected = set(self.selected_device_ids())
+        sources = [(item.device_id, item.device_name) for item in self.devices if item.device_id in selected]
+        self.transform_table.set_sources(sources, str(self.primary_combo.currentData() or ""))
+
+    def _validate(self) -> None:
+        valid_name = bool(self.name_input.text().strip())
+        if self.mode == "single":
+            valid_devices = self.single_device_combo.currentData() is not None
+            message = "请填写名称并选择一台具有有效 IP 的设备"
+        else:
+            valid_devices = len(self.selected_device_ids()) >= 2 and self.primary_combo.currentData() is not None
+            message = "请填写名称、选择至少两台设备并指定主设备"
+        valid = valid_name and valid_devices and self.algorithm_combo.currentData() is not None
+        self.start_button.setEnabled(valid)
+        self.validation.setText("" if valid else message)
+
+    def selected_device_ids(self) -> tuple[str, ...]:
+        if self.mode == "single":
+            value = self.single_device_combo.currentData()
+            return (str(value),) if value else ()
+        return tuple(
+            str(self.device_list.item(row).data(Qt.ItemDataRole.UserRole))
+            for row in range(self.device_list.count())
+            if self.device_list.item(row).checkState() == Qt.CheckState.Checked
+        )
+
+    def primary_device_id(self) -> str:
+        return str(
+            self.single_device_combo.currentData()
+            if self.mode == "single" else self.primary_combo.currentData()
+        )
+
+    def transforms(self) -> tuple[MapTransform, ...]:
+        if self.mode == "single":
+            return (MapTransform(self.primary_device_id(), True),)
+        return self.transform_table.transforms()
+
+    def algorithm_id(self) -> str:
+        return str(self.algorithm_combo.currentData())
+
+
+class MapFusionDialog(QDialog):
+    def __init__(self, maps: list[MapDefinition], algorithms: list[MapFusionAlgorithm],
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.maps = maps
+        self.setWindowTitle("地图融合")
+        self.setMinimumSize(820, 650)
+        root = QVBoxLayout(self)
+        title = QLabel("创建融合地图")
+        title.setObjectName("dialogTitle")
+        root.addWidget(title)
+        form = QFormLayout()
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("请输入融合后地图名称")
+        form.addRow("新地图名称", self.name_input)
+        self.algorithm_combo = QComboBox()
+        for algorithm in algorithms:
+            self.algorithm_combo.addItem(algorithm.display_name, algorithm.algorithm_id)
+            if algorithm.is_default:
+                self.algorithm_combo.setCurrentIndex(self.algorithm_combo.count() - 1)
+        form.addRow("融合算法", self.algorithm_combo)
+        root.addLayout(form)
+        root.addWidget(QLabel("选择至少两张具有有效 PCD 的地图"))
+        self.map_list = QListWidget()
+        for definition in maps:
+            item = QListWidgetItem(f"{definition.name} · {definition.point_count:,} 点 · {definition.frame_id}")
+            item.setData(Qt.ItemDataRole.UserRole, definition.map_id)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.map_list.addItem(item)
+        self.map_list.itemChanged.connect(self._selection_changed)
+        root.addWidget(self.map_list, 1)
+        primary_row = QHBoxLayout()
+        primary_row.addWidget(QLabel("主地图"))
+        self.primary_combo = QComboBox()
+        self.primary_combo.currentIndexChanged.connect(self._refresh_transforms)
+        primary_row.addWidget(self.primary_combo, 1)
+        root.addLayout(primary_row)
+        root.addWidget(QLabel("外参方向：主地图坐标系 <- 从地图坐标系"))
+        self.transform_table = TransformTable()
+        root.addWidget(self.transform_table, 1)
+        self.validation = QLabel()
+        self.validation.setObjectName("validationError")
+        root.addWidget(self.validation)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.fuse_button = buttons.addButton("开始融合", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.fuse_button.setObjectName("primaryButton")
+        self.fuse_button.clicked.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+        self.name_input.textChanged.connect(self._validate)
+        self._validate()
+
+    def selected_map_ids(self) -> tuple[str, ...]:
+        return tuple(
+            str(self.map_list.item(row).data(Qt.ItemDataRole.UserRole))
+            for row in range(self.map_list.count())
+            if self.map_list.item(row).checkState() == Qt.CheckState.Checked
+        )
+
+    def _selection_changed(self) -> None:
+        selected = set(self.selected_map_ids())
+        current = self.primary_combo.currentData()
+        self.primary_combo.blockSignals(True)
+        self.primary_combo.clear()
+        for definition in self.maps:
+            if definition.map_id in selected:
+                self.primary_combo.addItem(definition.name, definition.map_id)
+        index = self.primary_combo.findData(current)
+        if index >= 0:
+            self.primary_combo.setCurrentIndex(index)
+        self.primary_combo.blockSignals(False)
+        self._refresh_transforms()
+        self._validate()
+
+    def _refresh_transforms(self) -> None:
+        selected = set(self.selected_map_ids())
+        self.transform_table.set_sources(
+            [(item.map_id, item.name) for item in self.maps if item.map_id in selected],
+            str(self.primary_combo.currentData() or ""),
+        )
+
+    def _validate(self) -> None:
+        valid = (
+            bool(self.name_input.text().strip()) and len(self.selected_map_ids()) >= 2
+            and self.primary_combo.currentData() is not None
+            and self.algorithm_combo.currentData() is not None
+        )
+        self.fuse_button.setEnabled(valid)
+        self.validation.setText("" if valid else "请填写名称、选择至少两张地图并指定主地图")
+
+    def job(self) -> MapFusionJob:
+        return MapFusionJob(
+            uuid.uuid4().hex, self.name_input.text().strip(), self.selected_map_ids(),
+            str(self.primary_combo.currentData()), self.transform_table.transforms(),
+            str(self.algorithm_combo.currentData()),
+        )
+
+
+class FusionAlgorithmDialog(QDialog):
+    def __init__(self, repository: MapFusionRepository,
+                 parent: QWidget | None = None, *,
+                 active_algorithm_ids: tuple[str, ...] = ()) -> None:
+        super().__init__(parent)
+        self.repository = repository
+        self.active_algorithm_ids = active_algorithm_ids
+        self.setWindowTitle("融合算法配置")
+        self.setMinimumSize(760, 480)
+        root = QHBoxLayout(self)
+        left = QVBoxLayout()
+        self.list = QListWidget()
+        self.list.currentRowChanged.connect(self._show_current)
+        left.addWidget(self.list, 1)
+        self.import_button = QPushButton("导入 .py 算法")
+        self.import_button.clicked.connect(self._import)
+        left.addWidget(self.import_button)
+        root.addLayout(left, 1)
+        right = QVBoxLayout()
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+        right.addWidget(self.summary)
+        self.enabled = QCheckBox("启用算法")
+        self.default = QCheckBox("设为默认算法")
+        right.addWidget(self.enabled)
+        right.addWidget(self.default)
+        right.addWidget(QLabel("默认参数（JSON 对象）"))
+        self.options = QPlainTextEdit()
+        right.addWidget(self.options, 1)
+        actions = QHBoxLayout()
+        self.save_button = QPushButton("保存配置")
+        self.save_button.setObjectName("primaryButton")
+        self.save_button.clicked.connect(self._save)
+        self.delete_button = QPushButton("删除算法")
+        self.delete_button.setObjectName("dangerButton")
+        self.delete_button.clicked.connect(self._delete)
+        actions.addWidget(self.save_button)
+        actions.addWidget(self.delete_button)
+        right.addLayout(actions)
+        close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close.rejected.connect(self.accept)
+        right.addWidget(close)
+        root.addLayout(right, 2)
+        self._reload()
+        if repository.read_only:
+            self.summary.setText(repository.error_message)
+            self.import_button.setEnabled(False)
+            self.save_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
+
+    def _reload(self) -> None:
+        current_id = self.list.currentItem().data(Qt.ItemDataRole.UserRole) if self.list.currentItem() else None
+        self.list.clear()
+        for algorithm in self.repository.algorithms():
+            suffix = " · 默认" if algorithm.is_default else ""
+            item = QListWidgetItem(f"{algorithm.display_name} · v{algorithm.version}{suffix}")
+            item.setData(Qt.ItemDataRole.UserRole, algorithm.algorithm_id)
+            self.list.addItem(item)
+            if algorithm.algorithm_id == current_id:
+                self.list.setCurrentItem(item)
+        if self.list.currentRow() < 0 and self.list.count():
+            self.list.setCurrentRow(0)
+
+    def _current(self) -> MapFusionAlgorithm | None:
+        item = self.list.currentItem()
+        return self.repository.algorithm(str(item.data(Qt.ItemDataRole.UserRole))) if item else None
+
+    def _show_current(self) -> None:
+        algorithm = self._current()
+        if algorithm is None:
+            return
+        self.summary.setText(
+            f"ID: {algorithm.algorithm_id}\n脚本: {algorithm.script_path}\nSHA-256: {algorithm.sha256}"
+        )
+        self.enabled.setChecked(algorithm.enabled)
+        self.default.setChecked(algorithm.is_default)
+        self.options.setPlainText(json.dumps(algorithm.default_options, ensure_ascii=False, indent=2))
+        self.enabled.setEnabled(not algorithm.builtin)
+
+    def _import(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "导入融合算法", "", "Python 文件 (*.py)")
+        if not path:
+            return
+        try:
+            self.repository.import_algorithm(path)
+            self._reload()
+        except MapFusionError as exc:
+            QMessageBox.critical(self, "算法导入失败", str(exc))
+
+    def _save(self) -> None:
+        algorithm = self._current()
+        if algorithm is None:
+            return
+        try:
+            options = json.loads(self.options.toPlainText() or "{}")
+            if not isinstance(options, dict):
+                raise ValueError("默认参数必须是 JSON 对象")
+            self.repository.update(
+                algorithm.algorithm_id, enabled=self.enabled.isChecked(),
+                is_default=self.default.isChecked(), default_options=options,
+            )
+            self._reload()
+        except (MapFusionError, ValueError, json.JSONDecodeError) as exc:
+            QMessageBox.critical(self, "配置保存失败", str(exc))
+
+    def _delete(self) -> None:
+        algorithm = self._current()
+        if algorithm is None:
+            return
+        try:
+            self.repository.delete(
+                algorithm.algorithm_id, active_algorithm_ids=self.active_algorithm_ids
+            )
+            self._reload()
+        except MapFusionError as exc:
+            QMessageBox.warning(self, "无法删除算法", str(exc))
 
 
 class MappingDeviceDialog(QDialog):
@@ -796,7 +1246,7 @@ class MapDetailPage(QWidget):
         reload_button.clicked.connect(self.reload_requested)
         export_button = QPushButton("下载地图")
         export_button.clicked.connect(self.export_requested)
-        self.mapping_button = QPushButton("建图")
+        self.mapping_button = QPushButton("重新建图")
         self.mapping_button.setObjectName("primaryButton")
         self.mapping_button.clicked.connect(self.mapping_requested)
         for button in (reset, fit, reload_button, export_button, self.mapping_button):
@@ -877,8 +1327,8 @@ class MapDetailPage(QWidget):
 
     def update_mapping(self, snapshot: MapBuildingSessionSnapshot) -> None:
         self.mapping_status.setVisible(True)
-        active = snapshot.state in {"negotiating", "mapping", "warning"}
-        self.mapping_button.setText("结束建图" if active else "建图")
+        active = snapshot.state in {"negotiating", "mapping", "warning", "degraded"}
+        self.mapping_button.setText("结束建图" if active else "重新建图")
         self.mapping_button.setEnabled(snapshot.state != "saving")
         self.mapping_state.setText(snapshot.message)
         self.mapping_metrics.setText(
@@ -900,6 +1350,8 @@ class MapDetailPage(QWidget):
 
 
 class MapPage(QWidget):
+    fusion_finished = Signal(object, object)
+
     def __init__(
         self,
         source: DeviceDataSource,
@@ -908,6 +1360,8 @@ class MapPage(QWidget):
         viewer_factory: Callable[[], PointCloudViewer] | None = None,
         mapping_service=None,
         telemetry_store=None,
+        fusion_repository: MapFusionRepository | None = None,
+        fusion_runner: MapFusionRunner | None = None,
     ) -> None:
         super().__init__()
         self.source = source
@@ -919,18 +1373,27 @@ class MapPage(QWidget):
         self.card_column_count = 0
         self.current_map_id: str | None = None
         self.mapping_service = mapping_service
+        self.fusion_repository = (
+            fusion_repository
+            or getattr(mapping_service, "fusion_repository", None)
+            or MapFusionRepository()
+        )
+        self.fusion_runner = fusion_runner or getattr(mapping_service, "fusion_runner", None) or MapFusionRunner()
+        self._fusion_thread: threading.Thread | None = None
         self.telemetry_store = telemetry_store
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self._build(viewer_factory)
         self._render_cards()
         self.repository.maps_updated.connect(self._on_maps_updated)
         self.source.devices_updated.connect(self._on_devices_updated)
+        self.fusion_finished.connect(self._on_fusion_finished)
         if self.mapping_service is not None:
             self.mapping_service.session_updated.connect(self._on_mapping_updated)
             self.mapping_service.preview_updated.connect(self._on_mapping_preview)
             self.mapping_service.completed.connect(self._on_mapping_completed)
             self.mapping_service.failed.connect(self._on_mapping_failed)
             self.mapping_service.availability_changed.connect(self._on_mapping_availability)
+            self.mapping_service.degraded.connect(self._on_mapping_degraded)
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
@@ -974,9 +1437,15 @@ class MapPage(QWidget):
         self.new_button = QPushButton("新建地图")
         self.new_button.setObjectName("primaryButton")
         self.new_button.clicked.connect(self._create_map)
+        self.fusion_button = QPushButton("地图融合")
+        self.fusion_button.clicked.connect(self._open_map_fusion)
+        self.algorithm_button = QPushButton("融合算法")
+        self.algorithm_button.clicked.connect(self._open_algorithm_manager)
         self.edit_button = QPushButton("编辑")
         self.edit_button.clicked.connect(self._toggle_edit)
         header.addWidget(self.new_button)
+        header.addWidget(self.fusion_button)
+        header.addWidget(self.algorithm_button)
         header.addWidget(self.edit_button)
         layout.addLayout(header)
 
@@ -1056,24 +1525,129 @@ class MapPage(QWidget):
             self.card_grid.addWidget(empty, 0, 0, 1, columns)
 
     def _create_map(self) -> None:
-        dialog = NewMapDialog(self.devices, self)
+        mode_dialog = MapCreationModeDialog(self)
+        if mode_dialog.exec() != QDialog.DialogCode.Accepted or not mode_dialog.mode:
+            return
+        if mode_dialog.mode == "empty":
+            name, accepted = QInputDialog.getText(self, "创建空地图", "地图名称")
+            if not accepted:
+                return
+            try:
+                self.repository.create_empty(name)
+            except MapRepositoryError as exc:
+                QMessageBox.critical(self, "地图创建失败", str(exc))
+            return
+        if self.mapping_service is None or not self.mapping_service.available:
+            message = self.mapping_service.module_message if self.mapping_service else "UDP 建图模块未配置"
+            QMessageBox.warning(self, "建图不可用", message)
+            return
+        self._create_and_start_mapping(mode_dialog.mode)
+
+    def _create_and_start_mapping(self, mode: str) -> None:
+        dialog = MappingSetupDialog(
+            mode, self.devices, self.fusion_repository.algorithms(enabled_only=True), parent=self,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         selected = set(dialog.selected_device_ids())
+        selected_devices = [item for item in self.devices if item.device_id in selected]
         creators = tuple(
-            MapCreatorDevice(device.device_id, device.device_name, device.device_type)
-            for device in self.devices if device.device_id in selected
+            MapCreatorDevice(item.device_id, item.device_name, item.device_type)
+            for item in selected_devices
         )
         try:
-            self.repository.create(dialog.name_input.text(), creators)
-        except MapRepositoryError as exc:
+            definition = self.repository.create(dialog.name_input.text(), creators)
+            self.show_detail(definition.map_id)
+            self.mapping_service.start_job(
+                definition, selected_devices, dialog.primary_device_id(),
+                dialog.transforms(), dialog.algorithm_id(),
+            )
+        except (MapRepositoryError, RuntimeError, ValueError) as exc:
             QMessageBox.critical(self, "地图创建失败", str(exc))
+
+    def _open_algorithm_manager(self) -> None:
+        snapshot = self.mapping_service.current_job_snapshot if self.mapping_service else None
+        active = (snapshot.algorithm_id,) if snapshot else ()
+        FusionAlgorithmDialog(
+            self.fusion_repository, self, active_algorithm_ids=active
+        ).exec()
+
+    def _open_map_fusion(self) -> None:
+        if self._fusion_thread and self._fusion_thread.is_alive():
+            QMessageBox.information(self, "地图融合", "已有地图融合任务正在运行")
+            return
+        candidates = [item for item in self.maps if item.status == MapStatus.READY and item.pcd_path]
+        if len(candidates) < 2:
+            QMessageBox.warning(self, "无法融合", "至少需要两张具有有效 PCD 的地图")
+            return
+        dialog = MapFusionDialog(candidates, self.fusion_repository.algorithms(enabled_only=True), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        job = dialog.job()
+        self.fusion_button.setEnabled(False)
+        self.fusion_button.setText("融合中…")
+        self._fusion_thread = threading.Thread(
+            target=self._run_offline_fusion, args=(job,), name="ccs-map-fusion", daemon=True,
+        )
+        self._fusion_thread.start()
+
+    def _run_offline_fusion(self, job: MapFusionJob) -> None:
+        try:
+            definitions = [self.repository.map_by_id(map_id) for map_id in job.source_map_ids]
+            if any(item is None for item in definitions):
+                raise MapRepositoryError("融合源地图已被删除")
+            maps = [item for item in definitions if item is not None]
+            primary = next(item for item in maps if item.map_id == job.primary_map_id)
+            algorithm = self.fusion_repository.algorithm(job.algorithm_id)
+            if algorithm is None or not algorithm.enabled:
+                raise MapFusionError("融合算法不存在或已禁用")
+            directory = self.repository.write_fusion_job(job.job_id, {
+                "schema_version": 1, "job_id": job.job_id, "state": "running",
+                "output_name": job.output_name, "source_map_ids": list(job.source_map_ids),
+                "primary_map_id": job.primary_map_id, "algorithm_id": job.algorithm_id,
+                "transforms": [
+                    {"source_id": item.source_id, "is_primary": item.is_primary,
+                     "translation_m": list(item.translation_m),
+                     "rotation_rpy_deg": list(item.rotation_rpy_deg)}
+                    for item in job.transforms
+                ],
+            })
+            output = directory / "plugin-output.pcd"
+            inputs = [self.repository.pcd_path(item.map_id) for item in maps]
+            self.fusion_runner.run(algorithm, inputs, primary.frame_id, list(job.transforms), output)
+            creators_by_id = {
+                creator.device_id: creator for definition in maps for creator in definition.creator_devices
+            }
+            now = datetime.now(timezone.utc)
+            provenance = MapBuildProvenance(
+                MapBuildMode.FUSION, job.job_id, job.primary_map_id,
+                job.source_map_ids, job.transforms, algorithm.algorithm_id,
+                algorithm.version, algorithm.sha256, (), now, datetime.now(timezone.utc),
+            )
+            definition = self.repository.commit_fusion_result(
+                job.output_name, job.job_id, output, creators_by_id.values(),
+                primary.frame_id, provenance,
+            )
+            self.fusion_finished.emit(definition, None)
+        except Exception as exc:
+            self.fusion_finished.emit(None, str(exc))
+
+    def _on_fusion_finished(self, definition: object, error: object) -> None:
+        self.fusion_button.setEnabled(True)
+        self.fusion_button.setText("地图融合")
+        if error:
+            QMessageBox.critical(self, "地图融合失败", f"{error}\n临时输入已保留，可调整算法后重试。")
+        elif isinstance(definition, MapDefinition):
+            QMessageBox.information(self, "地图融合", f"融合地图“{definition.name}”已创建")
+            self.show_detail(definition.map_id)
 
     def _toggle_edit(self) -> None:
         self.edit_mode = not self.edit_mode
         self.selected_map_ids.clear()
         self.edit_button.setText("取消编辑" if self.edit_mode else "编辑")
         self.new_button.setEnabled(not self.edit_mode)
+        self.fusion_button.setEnabled(not self.edit_mode)
+        self.algorithm_button.setEnabled(not self.edit_mode)
         for button in (
             self.rename_button, self.import_button, self.import_pgm_button,
             self.export_button, self.delete_button,
@@ -1215,16 +1789,35 @@ class MapPage(QWidget):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        dialog = MappingDeviceDialog(definition, self.devices, self.telemetry_store, self)
+        creator_ids = {item.device_id.casefold() for item in definition.creator_devices}
+        candidates = [
+            item for item in self.devices
+            if not creator_ids or item.device_id.casefold() in creator_ids
+        ]
+        if not candidates:
+            QMessageBox.warning(self, "无法开始建图", "没有可用的已保存设备")
+            return
+        mode = "single"
+        if len(candidates) >= 2:
+            selected_mode, accepted = QInputDialog.getItem(
+                self, "重新建图", "建图模式", ("单机建图", "多机建图"), 0, False,
+            )
+            if not accepted:
+                return
+            mode = "multi" if selected_mode == "多机建图" else "single"
+        dialog = MappingSetupDialog(
+            mode, candidates, self.fusion_repository.algorithms(enabled_only=True),
+            name=definition.name, name_editable=False, parent=self,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        device_id = dialog.selected_device_id()
-        device = self.source.device(device_id) if device_id else None
-        if device is None:
-            QMessageBox.warning(self, "无法开始建图", "设备不存在或已被删除")
-            return
+        selected_ids = set(dialog.selected_device_ids())
+        selected_devices = [item for item in candidates if item.device_id in selected_ids]
         try:
-            self.mapping_service.start_mapping(definition, device)
+            self.mapping_service.start_job(
+                definition, selected_devices, dialog.primary_device_id(),
+                dialog.transforms(), dialog.algorithm_id(),
+            )
         except (RuntimeError, ValueError) as exc:
             QMessageBox.critical(self, "建图启动失败", str(exc))
 
@@ -1246,11 +1839,61 @@ class MapPage(QWidget):
         if self.page_stack.currentWidget() == self.detail_page:
             self.detail_page.mapping_state.setText(message)
 
+    def _on_mapping_degraded(self, snapshot: object) -> None:
+        failed = [item for item in snapshot.device_sessions if item.state == "failed"]
+        if not failed or self.page_stack.currentWidget() != self.detail_page:
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("联合建图链路中断")
+        box.setText(snapshot.message)
+        failed_session = failed[0]
+        if failed_session.device_id.casefold() != snapshot.primary_device_id.casefold():
+            keep = box.addButton("剔除该设备并继续", QMessageBox.ButtonRole.AcceptRole)
+        else:
+            keep = None
+        stop = box.addButton("中止全部", QMessageBox.ButtonRole.DestructiveRole)
+        box.exec()
+        try:
+            if keep is not None and box.clickedButton() == keep:
+                self.mapping_service.continue_without_device(failed_session.device_id)
+            elif box.clickedButton() == stop:
+                self.mapping_service.interrupt_mapping("用户中止降级建图任务")
+        except (RuntimeError, ValueError) as exc:
+            QMessageBox.warning(self, "建图状态处理失败", str(exc))
+
     def _on_mapping_availability(self, available: bool, message: str) -> None:
         self.detail_page.set_mapping_available(available, message)
 
     def _offer_interrupted_session(self, map_id: str) -> None:
         if self.mapping_service is None or self.mapping_service.active:
+            return
+        jobs = self.repository.interrupted_mapping_jobs(map_id)
+        if jobs:
+            job = jobs[0]
+            box = QMessageBox(self)
+            box.setWindowTitle("发现临时联合建图结果")
+            box.setText("检测到多设备建图临时点云。可选择算法融合保存，或丢弃整个临时任务。")
+            save_job = box.addButton("选择算法并保存", QMessageBox.ButtonRole.AcceptRole)
+            discard_job = box.addButton("丢弃", QMessageBox.ButtonRole.DestructiveRole)
+            box.addButton("稍后处理", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            try:
+                if box.clickedButton() == save_job:
+                    algorithms = self.fusion_repository.algorithms(enabled_only=True)
+                    labels = [f"{item.display_name} · v{item.version}" for item in algorithms]
+                    selected, accepted = QInputDialog.getItem(
+                        self, "选择融合算法", "算法", labels, 0, False,
+                    )
+                    if accepted:
+                        algorithm = algorithms[labels.index(selected)]
+                        self.mapping_service.save_interrupted_job(
+                            map_id, str(job["job_id"]), algorithm.algorithm_id,
+                        )
+                        self.show_detail(map_id)
+                elif box.clickedButton() == discard_job:
+                    self.repository.discard_mapping_job(map_id, str(job["job_id"]))
+            except (MapRepositoryError, MapFusionError, RuntimeError, ValueError) as exc:
+                QMessageBox.critical(self, "临时联合建图处理失败", str(exc))
             return
         sessions = self.repository.interrupted_sessions(map_id)
         if not sessions:

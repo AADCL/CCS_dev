@@ -4,7 +4,7 @@
 
 命名规则：通用包目录使用 `EPGeneral_<function>`，ROS/catkin 包名使用全小写 `epgeneral_<function>`。设备专属扩展使用 `EPDQUAV_`、`EPUGV_`、`EPQRD_`、`EPDATUGV_` 或 `EPAGUAV_` 目录前缀，对应 ROS 前缀为 `epdquav_`、`epugv_`、`epqrd_`、`epdatugv_`、`epaguav_`。
 
-地面站升级为 v0.10.0，新增的设备类型模板、图标、地图形状和功能卡片均为地面站本地展示配置；不修改任何端侧协议、配置 schema 或功能包版本。
+地面站当前为 v0.11.1；本次仅修复地面站三维地图拖动速度，不修改任何端侧包代码、配置 schema、通信协议或包版本。v0.11.0 新增的离线地图融合和多设备建图调度保持不变。
 
 本次新增独立版本的端侧 `epgeneral_task_control` v0.1.0，不修改既有协议字段或其他端侧包版本。
 
@@ -23,6 +23,10 @@
 地面站与 `epgeneral_map_stream` v0.1.0 已实现 `ccs-map-stream-v1`：地面站向端侧 UDP 14561 发送开始/停止建图指令，并在 UDP 14562 接收同步位姿、外参和分片 XYZ 点云。`epgeneral_udp_telemetry` 仍只负责 UDP 14560 状态遥测，建图点云不进入遥测协议。
 
 双方实现遵循根目录 `docs/EDGE_DEVICE_INTERFACES.md`，包括 MessagePack 信封、1400 字节数据报上限、CRC32、zlib、`map <- body <- sensor` 坐标约定、ACK 幂等和超时处理。
+
+## v0.11.0 联合建图兼容扩展
+
+地面站可同时为多台设备建立独立 `ccs-map-stream-v1` 会话，并在 `start_mapping` 中增加可选 `job_id`、`role` 和 `primary_device_id`。`epgeneral_map_stream` v0.1.0 会忽略额外字段，仍可作为单机或独立子会话上传点云；主从外参、实时预览和最终插件融合均由地面站处理。后续端侧版本可读取这些字段以展示联合任务关系，但不得改变现有点云载荷和坐标契约。
 
 ## v0.9.0 任务接口状态
 

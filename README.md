@@ -1,6 +1,6 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.10.0**
+当前地面站版本：**v0.11.1**
 
 端侧包版本：mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
@@ -12,7 +12,7 @@
 - **设备管理**：支持搜索、筛选、新建、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
 - **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
 - **视频监控**：按需拉取 `rtsp://<设备IP>:8554/usb_cam` H.264 视频流。
-- **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载、三维复原，以及 UDP 14561/14562 单设备实时建图和点云融合。
+- **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原，并提供离线地图融合、Python 算法插件及 UDP 14561/14562 单机/多机实时建图。
 - **任务系统**：支持 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态，支持全屏及面板折叠。
 - **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、RTSP 推流、实时建图和任务协调包。
@@ -26,7 +26,9 @@ CCS_dev/
 ├── ccs_monitor/                   # 地面站 PySide6 应用
 ├── config/                        # 设备、设备类型、MQTT、遥测与控制配置
 ├── data/device_type_assets/       # 设备类型图标及 .trash 回收目录
+├── data/map_fusion_algorithms/    # 用户导入的地图融合算法
 ├── data/map_server/               # 地图元数据、PCD 与 .trash 回收目录
+├── examples/                      # 地图融合插件等扩展示例
 ├── edge_side_pkg/
 │   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
 │   ├── mqtav/                     # ROS1 MQTT 遥测包，v0.3.0
@@ -104,6 +106,7 @@ python -m pip install -r requirements.txt
 - `config/mqtt.json`：MQTT Broker 与心跳阈值。
 - `config/udp_telemetry.json`：UDP 14560 描述项与分级频率。
 - `config/map_building.json`：实时建图 14561/14562 参数。
+- `config/map_fusion_algorithms.json`：融合算法、默认参数、启用状态和脚本指纹。
 - `config/task_system.json`：任务系统 14563/14564 参数。
 
 放行地面站 TCP 1883、UDP 14560、14562、14564，然后启动：
@@ -198,11 +201,13 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 
 ### 地图页面
 
-- 点击“新建地图”，填写名称并选择建图设备。
+- 点击“新建地图”后选择单机建图、多机建图或空地图。单机选择一台设备后立即协商；多机至少选择两台设备，并指定主设备及“主坐标系 <- 从坐标系”的 XYZ/RPY 外参。
+- 点击“地图融合”选择至少两张有效 PCD 地图、主地图、各从地图外参和算法，成功后创建独立融合地图；PGM 不参与融合。
+- 点击“融合算法”可导入标准 `.py` 插件、设置默认算法和 JSON 参数。接口示例见 `examples/map_fusion_plugin_example.py`，导入代码属于受信任本地代码并在独立进程运行。
 - 编辑模式支持重命名、导入/替换 PCD 或 PGM、下载 ZIP 和删除。
-- 双击卡片进入三维详情：左键旋转、滚轮缩放、中键平移。
-- 点击“建图”选择一台登记设备实时接收并融合点云；结束后原子保存 PCD。
-- 中断结果保存在 `.mapping`，再次进入时可保存或丢弃。
+- 双击卡片进入三维详情：左键旋转、滚轮缩放、右键拖动快速平移。任务页和指控大屏使用相同的三维操作速度。
+- 点击“重新建图”可统一发起单机或多机任务。实时预览使用内置体素融合，结束时由所选算法生成正式 PCD。
+- 单个从设备掉线时任务进入降级态，可剔除后继续或中止全部；主设备掉线必须中止。中断结果保存在 `.mapping`，离线融合临时结果保存在 `.fusion`。
 
 ### 任务页面
 
@@ -279,6 +284,10 @@ gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/usb_cam latency=100 \
 
 PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server YAML 指定 image、resolution、origin 和阈值。失败不会覆盖旧地图。
 
+### 融合算法无法导入或执行失败
+
+插件必须定义 `PLUGIN_API_VERSION = 1`、唯一 `ALGORITHM_ID` 和 `fuse_maps()`，并生成有效 XYZ PCD。检查插件依赖是否安装在地面站 Python 环境。超时、崩溃和无效输出不会覆盖正式地图，临时任务会保留在 `data/map_server/.fusion` 或地图的 `.mapping` 目录。
+
 ### 任务无法下发或同步执行
 
 确认设备和 IP 有效、UDP 14563/14564 可达、epgeneral_task_control 已启动、子任务已保存且无未处理冲突。共同执行还需两端 NTP 同步；地图变化后必须重新复核航点。
@@ -290,6 +299,15 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.11.1 · 2026-08-17**
+<small>统一提高地图页、任务页和指控大屏的右键拖动平移速度。</small>
+
+**v0.11.0 · 2026-08-17**
+<small>新增可扩展地图融合算法、离线 PCD 融合和多设备 UDP 联合建图。</small>
+
+**v0.10.1 · 2026-08-17**
+<small>统一夜间主题下类型模板弹窗、下拉菜单和其他二级页面的原生 Qt 背景。</small>
 
 **v0.10.0 · 2026-08-17**
 <small>新增设备类型模板、共享图标与地图形状，并系统修复日间主题页面配色。</small>

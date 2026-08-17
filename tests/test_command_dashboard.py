@@ -65,7 +65,7 @@ class TelemetryTrendBufferTests(unittest.TestCase):
 
 @unittest.skipUnless(PYSIDE_AVAILABLE, "PySide6 is not installed")
 class MiddlePanCameraTests(unittest.TestCase):
-    def test_middle_drag_pans_without_changing_distance(self):
+    def test_button_two_drag_uses_fast_pan_without_changing_distance(self):
         class CameraBase:
             def viewbox_mouse_event(self, event):
                 self.base_event_called = True
@@ -108,7 +108,7 @@ class MiddlePanCameraTests(unittest.TestCase):
         )
         camera = Camera()
         camera.viewbox_mouse_event(event)
-        self.assertEqual(camera.center, (-1.0, 2.0, 0.0))
+        self.assertEqual(camera.center, (-3.0, 6.0, 0.0))
         self.assertEqual(camera.distance, 25.0)
         self.assertTrue(event.handled)
         self.assertTrue(camera.changed)

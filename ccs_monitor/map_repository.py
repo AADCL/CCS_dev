@@ -18,17 +18,20 @@ import yaml
 
 from .models import (
     MapBounds,
+    MapBuildMode,
+    MapBuildProvenance,
     MapBuildingResultMetadata,
     MapCreatorDevice,
     MapDefinition,
     MapStatus,
+    MapTransform,
     PgmMapMetadata,
 )
 from .pgm_map import PgmMapError, PgmMapLoader
 from .point_cloud import MapPointCloudLoader, PointCloudError
 
 
-MAP_SCHEMA_VERSION = 3
+MAP_SCHEMA_VERSION = 4
 DEFAULT_MAP_ROOT = Path(__file__).resolve().parent.parent / "data" / "map_server"
 
 
@@ -60,11 +63,13 @@ class MapRepository(QObject):
         super().__init__()
         self.root = Path(root)
         self.trash_root = self.root / ".trash"
+        self.fusion_root = self.root / ".fusion"
         self.loader = loader or MapPointCloudLoader()
         self.pgm_loader = pgm_loader or PgmMapLoader()
         self._maps: list[MapDefinition] = []
         self.root.mkdir(parents=True, exist_ok=True)
         self.trash_root.mkdir(parents=True, exist_ok=True)
+        self.fusion_root.mkdir(parents=True, exist_ok=True)
         self.load_all()
 
     def load_all(self) -> list[MapDefinition]:
@@ -94,11 +99,13 @@ class MapRepository(QObject):
         frame_id: str = "map",
         *,
         now: datetime | None = None,
+        allow_empty_devices: bool = False,
+        build_provenance: MapBuildProvenance | None = None,
     ) -> MapDefinition:
         display_name = name.strip()
         safe_name = sanitize_map_name(display_name)
         devices = tuple(creator_devices)
-        if not devices:
+        if not devices and not allow_empty_devices:
             raise MapRepositoryError("至少选择一台建图设备")
         self._ensure_unique_name(display_name)
         created_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -119,6 +126,7 @@ class MapRepository(QObject):
             creator_devices=devices,
             status=MapStatus.WAITING_FOR_PCD,
             directory_name=target.name,
+            build_provenance=build_provenance,
         )
         try:
             self._write_metadata(definition)
@@ -127,6 +135,19 @@ class MapRepository(QObject):
             raise
         self._refresh_and_emit()
         return self.map_by_id(definition.map_id) or definition
+
+    def create_empty(
+        self,
+        name: str,
+        frame_id: str = "map",
+        *,
+        now: datetime | None = None,
+    ) -> MapDefinition:
+        provenance = MapBuildProvenance(MapBuildMode.EMPTY, uuid.uuid4().hex)
+        return self.create(
+            name, (), frame_id, now=now, allow_empty_devices=True,
+            build_provenance=provenance,
+        )
 
     def rename(self, map_id: str, new_name: str) -> MapDefinition:
         current = self._require_map(map_id)
@@ -321,6 +342,10 @@ class MapRepository(QObject):
                 trajectory = source_dir / "trajectory.csv"
                 if trajectory.is_file():
                     archive.write(trajectory, "trajectory.csv")
+                trajectories = source_dir / "trajectories"
+                if trajectories.is_dir():
+                    for trajectory_file in sorted(trajectories.glob("*.csv")):
+                        archive.write(trajectory_file, f"trajectories/{trajectory_file.name}")
             os.replace(temporary_path, destination_path)
             return destination_path
         except OSError as exc:
@@ -355,6 +380,138 @@ class MapRepository(QObject):
             path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def fusion_job_directory(self, job_id: str, *, create: bool = False) -> Path:
+        if not job_id or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", job_id):
+            raise MapRepositoryError("融合任务 ID 无效")
+        path = self.fusion_root / job_id
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def interrupted_fusion_jobs(self) -> list[dict[str, Any]]:
+        jobs: list[dict[str, Any]] = []
+        if not self.fusion_root.is_dir():
+            return jobs
+        for directory in sorted(self.fusion_root.iterdir(), reverse=True):
+            if not directory.is_dir():
+                continue
+            try:
+                payload = json.loads((directory / "job.json").read_text(encoding="utf-8"))
+                if payload.get("job_id") != directory.name:
+                    raise ValueError("融合任务标识不一致")
+                jobs.append(payload)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+        return jobs
+
+    def write_fusion_job(self, job_id: str, payload: dict[str, Any]) -> Path:
+        directory = self.fusion_job_directory(job_id, create=True)
+        self._atomic_json(directory / "job.json", payload)
+        return directory
+
+    def commit_fusion_result(
+        self,
+        name: str,
+        job_id: str,
+        output_pcd: str | Path,
+        creator_devices: Iterable[MapCreatorDevice],
+        frame_id: str,
+        provenance: MapBuildProvenance,
+        *,
+        now: datetime | None = None,
+    ) -> MapDefinition:
+        source = Path(output_pcd)
+        try:
+            cloud = self.loader.load(source)
+        except (OSError, PointCloudError) as exc:
+            raise MapRepositoryError(f"融合结果校验失败：{exc}") from exc
+        self._ensure_unique_name(name)
+        definition = self.create(
+            name, tuple(creator_devices), frame_id, now=now,
+            allow_empty_devices=True, build_provenance=provenance,
+        )
+        directory = self.root / definition.directory_name
+        target = directory / "map.pcd"
+        try:
+            temporary = directory / ".fusion-result.pcd"
+            shutil.copy2(source, temporary)
+            os.replace(temporary, target)
+            updated = replace(
+                definition, status=MapStatus.READY, pcd_path="map.pcd",
+                point_count=cloud.point_count, bounds=cloud.bounds,
+                width_m=cloud.bounds.width, height_m=cloud.bounds.height,
+                updated_at=datetime.now(timezone.utc), build_provenance=provenance,
+            )
+            self._write_metadata(updated)
+        except Exception as exc:
+            shutil.rmtree(directory, ignore_errors=True)
+            self._refresh_and_emit()
+            raise MapRepositoryError(f"融合地图提交失败：{exc}") from exc
+        shutil.rmtree(self.fusion_job_directory(job_id), ignore_errors=True)
+        self._refresh_and_emit()
+        return self.map_by_id(updated.map_id) or updated
+
+    def commit_fusion_to_existing(
+        self,
+        map_id: str,
+        job_id: str,
+        output_pcd: str | Path,
+        provenance: MapBuildProvenance,
+        last_mapping: MapBuildingResultMetadata | None = None,
+    ) -> MapDefinition:
+        current = self._require_map(map_id)
+        source = Path(output_pcd)
+        try:
+            cloud = self.loader.load(source)
+        except (OSError, PointCloudError) as exc:
+            raise MapRepositoryError(f"联合建图结果校验失败：{exc}") from exc
+        directory = self.root / current.directory_name
+        target = directory / "map.pcd"
+        temporary = directory / ".map.fusion.tmp"
+        backup = directory / ".map.fusion.backup"
+        had_target = target.is_file()
+        source_job_dir = self.mapping_session_directory(map_id, job_id)
+        trajectories_target = directory / "trajectories"
+        trajectory_file: str | None = current.trajectory_path
+        try:
+            shutil.copy2(source, temporary)
+            backup.unlink(missing_ok=True)
+            if had_target:
+                os.replace(target, backup)
+            os.replace(temporary, target)
+            device_trajectories = [
+                path for path in source_job_dir.glob("*/trajectory.csv") if path.is_file()
+            ]
+            if len(device_trajectories) == 1:
+                root_trajectory = directory / "trajectory.csv"
+                shutil.copy2(device_trajectories[0], root_trajectory)
+                trajectory_file = "trajectory.csv"
+            elif device_trajectories:
+                trajectories_target.mkdir(exist_ok=True)
+                for path in device_trajectories:
+                    shutil.copy2(path, trajectories_target / f"{path.parent.name}.csv")
+                trajectory_file = None
+            updated = replace(
+                current, status=MapStatus.READY, pcd_path="map.pcd",
+                point_count=cloud.point_count, bounds=cloud.bounds,
+                width_m=cloud.bounds.width, height_m=cloud.bounds.height,
+                updated_at=datetime.now(timezone.utc), build_provenance=provenance,
+                last_mapping=last_mapping, trajectory_path=trajectory_file,
+                error_message=None,
+            )
+            self._write_metadata(updated)
+        except Exception as exc:
+            temporary.unlink(missing_ok=True)
+            if target.is_file():
+                target.unlink(missing_ok=True)
+            if had_target and backup.is_file():
+                os.replace(backup, target)
+            raise MapRepositoryError(f"联合建图结果提交失败：{exc}") from exc
+        backup.unlink(missing_ok=True)
+        shutil.rmtree(self.mapping_session_directory(map_id, job_id), ignore_errors=True)
+        self._refresh_and_emit()
+        return self.map_by_id(map_id) or updated
+
     def write_mapping_checkpoint(
         self,
         map_id: str,
@@ -377,6 +534,33 @@ class MapRepository(QObject):
             raise MapRepositoryError(f"建图检查点写入失败：{exc}") from exc
         return directory
 
+    def write_mapping_job_checkpoint(
+        self,
+        map_id: str,
+        job_id: str,
+        job_payload: dict[str, Any],
+        device_id: str,
+        points: Any,
+        trajectory_rows: Iterable[tuple[Any, ...]],
+    ) -> Path:
+        from .map_building import write_binary_pcd
+
+        root = self.mapping_session_directory(map_id, job_id, create=True)
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", device_id):
+            raise MapRepositoryError("建图设备 ID 无效")
+        device_dir = root / device_id
+        device_dir.mkdir(exist_ok=True)
+        self._atomic_json(root / "job.json", job_payload)
+        temporary = device_dir / ".partial.pcd.tmp"
+        try:
+            write_binary_pcd(temporary, points)
+            os.replace(temporary, device_dir / "partial.pcd")
+            self._write_trajectory_atomic(device_dir / "trajectory.csv", trajectory_rows)
+        except (OSError, ValueError) as exc:
+            temporary.unlink(missing_ok=True)
+            raise MapRepositoryError(f"联合建图检查点写入失败：{exc}") from exc
+        return device_dir
+
     def interrupted_sessions(self, map_id: str) -> list[dict[str, Any]]:
         root = self.mapping_session_directory(map_id, "placeholder").parent
         sessions: list[dict[str, Any]] = []
@@ -395,6 +579,30 @@ class MapRepository(QObject):
             except (OSError, ValueError, json.JSONDecodeError):
                 continue
         return sessions
+
+    def interrupted_mapping_jobs(self, map_id: str) -> list[dict[str, Any]]:
+        root = self.mapping_session_directory(map_id, "placeholder").parent
+        jobs: list[dict[str, Any]] = []
+        if not root.is_dir():
+            return jobs
+        for directory in sorted(root.iterdir(), reverse=True):
+            if not directory.is_dir() or not (directory / "job.json").is_file():
+                continue
+            try:
+                payload = json.loads((directory / "job.json").read_text(encoding="utf-8"))
+                if payload.get("map_id") != map_id or payload.get("job_id") != directory.name:
+                    raise ValueError("联合建图任务标识不一致")
+                if not any(directory.glob("*/partial.pcd")):
+                    raise ValueError("联合建图任务缺少设备点云")
+                jobs.append(payload)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+        return jobs
+
+    def discard_mapping_job(self, map_id: str, job_id: str) -> None:
+        directory = self.mapping_session_directory(map_id, job_id)
+        if directory.is_dir():
+            shutil.rmtree(directory)
 
     def discard_mapping_session(self, map_id: str, session_id: str) -> None:
         directory = self.mapping_session_directory(map_id, session_id)
@@ -482,7 +690,8 @@ class MapRepository(QObject):
     def _read_metadata(self, path: Path, directory_name: str) -> MapDefinition:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or payload.get("schema_version") not in {1, 2, MAP_SCHEMA_VERSION}:
+            schema_version = payload.get("schema_version") if isinstance(payload, dict) else None
+            if schema_version not in {1, 2, 3, MAP_SCHEMA_VERSION}:
                 raise ValueError("schema_version 不受支持")
             devices = tuple(
                 MapCreatorDevice(str(item["device_id"]), str(item["device_name"]), str(item["device_type"]))
@@ -519,6 +728,7 @@ class MapRepository(QObject):
                 received_points=int(mapping_payload["received_points"]),
                 fused_points=int(mapping_payload["fused_points"]),
             ) if mapping_payload else None
+            provenance = self._parse_provenance(payload.get("build_provenance"))
             if pgm is not None:
                 pgm_numbers = (
                     pgm.resolution,
@@ -551,9 +761,12 @@ class MapRepository(QObject):
                 last_mapping=last_mapping,
                 trajectory_path=str(payload["trajectory_file"]) if payload.get("trajectory_file") else None,
                 directory_name=directory_name,
+                build_provenance=provenance,
             )
-            if not definition.map_id or not definition.name or not devices:
-                raise ValueError("地图 ID、名称和建图设备不能为空")
+            if not definition.map_id or not definition.name:
+                raise ValueError("地图 ID 和名称不能为空")
+            if not devices and schema_version < 4:
+                raise ValueError("旧版地图的建图设备不能为空")
             if definition.point_count < 0:
                 raise ValueError("point_count 不能为负数")
             if last_mapping is not None:
@@ -602,6 +815,7 @@ class MapRepository(QObject):
             "pgm": self._serialize_pgm(definition.pgm),
             "trajectory_file": definition.trajectory_path,
             "last_mapping": self._serialize_mapping(definition.last_mapping),
+            "build_provenance": self._serialize_provenance(definition.build_provenance),
         }
         temporary: Path | None = None
         try:
@@ -651,6 +865,83 @@ class MapRepository(QObject):
             "received_points": metadata.received_points,
             "fused_points": metadata.fused_points,
         }
+
+    @staticmethod
+    def _serialize_provenance(metadata: MapBuildProvenance | None) -> dict[str, Any] | None:
+        if metadata is None:
+            return None
+        return {
+            "mode": metadata.mode.value,
+            "job_id": metadata.job_id,
+            "primary_source_id": metadata.primary_source_id,
+            "source_ids": list(metadata.source_ids),
+            "transforms": [
+                {
+                    "source_id": item.source_id,
+                    "is_primary": item.is_primary,
+                    "translation_m": list(item.translation_m),
+                    "rotation_rpy_deg": list(item.rotation_rpy_deg),
+                }
+                for item in metadata.transforms
+            ],
+            "algorithm_id": metadata.algorithm_id,
+            "algorithm_version": metadata.algorithm_version,
+            "algorithm_sha256": metadata.algorithm_sha256,
+            "excluded_device_ids": list(metadata.excluded_device_ids),
+            "started_at": metadata.started_at.isoformat() if metadata.started_at else None,
+            "ended_at": metadata.ended_at.isoformat() if metadata.ended_at else None,
+        }
+
+    @staticmethod
+    def _parse_provenance(payload: Any) -> MapBuildProvenance | None:
+        if payload is None:
+            return None
+        if not isinstance(payload, dict):
+            raise ValueError("build_provenance 必须为对象")
+        transforms = tuple(
+            MapTransform(
+                source_id=str(item["source_id"]), is_primary=bool(item.get("is_primary", False)),
+                translation_m=tuple(float(value) for value in item["translation_m"]),
+                rotation_rpy_deg=tuple(float(value) for value in item["rotation_rpy_deg"]),
+            )
+            for item in payload.get("transforms", [])
+        )
+        if any(len(item.translation_m) != 3 or len(item.rotation_rpy_deg) != 3 for item in transforms):
+            raise ValueError("融合外参必须为三维 XYZ/RPY")
+        if any(
+            not all(math.isfinite(value) for value in (*item.translation_m, *item.rotation_rpy_deg))
+            for item in transforms
+        ):
+            raise ValueError("融合外参必须为有限数值")
+        source_ids = tuple(str(value) for value in payload.get("source_ids", []))
+        if len({value.casefold() for value in source_ids}) != len(source_ids):
+            raise ValueError("构建来源不能重复")
+        mode = MapBuildMode(str(payload["mode"]))
+        if mode in {MapBuildMode.SINGLE, MapBuildMode.MULTI, MapBuildMode.FUSION}:
+            if not source_ids or len(transforms) != len(source_ids):
+                raise ValueError("构建来源与外参数量不一致")
+            primary = [item for item in transforms if item.is_primary]
+            if len(primary) != 1 or primary[0].source_id != payload.get("primary_source_id"):
+                raise ValueError("构建来源必须指定唯一主坐标系")
+            if primary[0].translation_m != (0.0, 0.0, 0.0) or primary[0].rotation_rpy_deg != (0.0, 0.0, 0.0):
+                raise ValueError("主坐标系必须使用单位变换")
+            if set(item.source_id for item in transforms) != set(source_ids):
+                raise ValueError("外参来源与构建来源不一致")
+        provenance = MapBuildProvenance(
+            mode=mode, job_id=str(payload["job_id"]),
+            primary_source_id=str(payload["primary_source_id"]) if payload.get("primary_source_id") else None,
+            source_ids=source_ids,
+            transforms=transforms,
+            algorithm_id=str(payload["algorithm_id"]) if payload.get("algorithm_id") else None,
+            algorithm_version=str(payload["algorithm_version"]) if payload.get("algorithm_version") else None,
+            algorithm_sha256=str(payload["algorithm_sha256"]) if payload.get("algorithm_sha256") else None,
+            excluded_device_ids=tuple(str(value) for value in payload.get("excluded_device_ids", [])),
+            started_at=datetime.fromisoformat(payload["started_at"]) if payload.get("started_at") else None,
+            ended_at=datetime.fromisoformat(payload["ended_at"]) if payload.get("ended_at") else None,
+        )
+        if not provenance.job_id:
+            raise ValueError("构建任务 ID 不能为空")
+        return provenance
 
     @staticmethod
     def _atomic_json(path: Path, payload: dict[str, Any]) -> None:

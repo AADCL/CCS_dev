@@ -286,6 +286,7 @@ class DeviceTypeTemplateDialog(QDialog):
         left = QVBoxLayout()
         left.addWidget(QLabel("设备类型"))
         self.template_list = QListWidget()
+        self.template_list.setObjectName("secondaryList")
         self.template_list.setMinimumWidth(220)
         self.template_list.currentItemChanged.connect(self._select_template)
         left.addWidget(self.template_list, 1)
