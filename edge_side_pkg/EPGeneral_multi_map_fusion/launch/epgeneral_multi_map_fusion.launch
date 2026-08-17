@@ -1,0 +1,8 @@
+<launch>
+  <arg name="config_file" default="$(find epgeneral_multi_map_fusion)/config/fusion.yaml" />
+  <arg name="job_file" />
+
+  <node pkg="epgeneral_multi_map_fusion" type="epgeneral_multi_map_fusion_node.py" name="epgeneral_multi_map_fusion"
+        output="screen" required="true"
+        args="--config-file $(arg config_file) --job-file $(arg job_file)" />
+</launch>

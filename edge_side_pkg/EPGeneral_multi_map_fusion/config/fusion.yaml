@@ -1,0 +1,24 @@
+schema_version: 1
+
+registration:
+  enabled: true
+  max_sample_points: 4000
+  max_iterations: 30
+  max_correspondence_distance_m: 0.50
+  convergence_translation_m: 0.001
+  convergence_rotation_deg: 0.05
+
+quality:
+  min_correspondences: 50
+  min_source_fitness: 0.20
+  min_target_fitness: 0.05
+  max_inlier_rmse_m: 0.25
+  max_cycle_translation_error_m: 0.20
+  max_cycle_rotation_error_deg: 3.0
+
+fusion:
+  output_voxel_size_m: 0.10
+
+limits:
+  max_input_points_per_map: 5000000
+  max_output_voxels: 5000000
