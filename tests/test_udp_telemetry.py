@@ -31,13 +31,13 @@ class UdpConfigAndProtocolTests(unittest.TestCase):
         self.assertEqual(self.config.descriptor("global_pose").level, 1)
 
     def test_ground_and_edge_descriptor_hashes_match(self):
-        edge_package = ROOT / "edge_side_pkg" / "ros_udp_telemetry"
+        edge_package = ROOT / "edge_side_pkg" / "EPGeneral_udp_telemetry"
         sys.path.insert(0, str(edge_package / "src"))
         try:
-            from ros_udp_telemetry.config import load_config as load_edge_config
+            from epgeneral_udp_telemetry.config import load_config as load_edge_config
             edge = load_edge_config(
                 str(edge_package / "config" / "telemetry.yaml"),
-                str(ROOT / "edge_side_pkg" / "edge_device_config" / "config" / "device.yaml"),
+                str(ROOT / "edge_side_pkg" / "EPGeneral_device_config" / "config" / "device.yaml"),
             )
         finally:
             sys.path.pop(0)

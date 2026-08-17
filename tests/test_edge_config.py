@@ -6,7 +6,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EDGE_CONFIG = ROOT / "edge_side_pkg" / "edge_device_config" / "config" / "device.yaml"
+EDGE_CONFIG = ROOT / "edge_side_pkg" / "EPGeneral_device_config" / "config" / "device.yaml"
 
 
 class EdgeDeviceAlignmentTests(unittest.TestCase):

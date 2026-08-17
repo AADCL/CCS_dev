@@ -1,0 +1,8 @@
+<launch>
+  <arg name="config_file" default="$(find epgeneral_mqtav)/config/config.yaml" />
+  <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
+  <arg name="log_dir" default="$(env HOME)/.ros/log/epgeneral_mqtav" />
+
+  <node pkg="epgeneral_mqtav" type="epgeneral_mqtav_node.py" name="epgeneral_mqtav" output="screen"
+        args="--config-file $(arg config_file) --device-config-file $(arg device_config_file) --log-dir $(arg log_dir)" />
+</launch>

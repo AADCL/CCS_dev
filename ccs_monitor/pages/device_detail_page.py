@@ -436,9 +436,11 @@ class DeviceDetailPage(QWidget):
     def _edit_status_cards(self) -> None:
         if self.device is None:
             return
-        dialog = StatusCardEditorDialog(self.device.status_card_ids, self)
+        dialog = StatusCardEditorDialog(
+            self.device.status_card_ids, self, inherited=self.device.status_cards_inherited
+        )
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.status_cards_changed.emit(self.device.device_id, dialog.selected_ids())
+            self.status_cards_changed.emit(self.device.device_id, dialog.status_card_override())
 
     def set_status_card_edit_enabled(self, enabled: bool) -> None:
         self.edit_status_cards_button.setEnabled(enabled)

@@ -16,7 +16,7 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class DeviceConfigError(RuntimeError):
@@ -40,8 +40,9 @@ def default_device_profiles() -> list[DeviceProfile]:
 
 
 class DeviceConfigRepository:
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, valid_device_types=None) -> None:
         self.path = Path(path)
+        self.valid_device_types = valid_device_types
         self.read_only = False
         self.error_message: str | None = None
         self._profiles: list[DeviceProfile] = []
@@ -64,7 +65,7 @@ class DeviceConfigRepository:
             self._profiles = []
             return []
         self._profiles = profiles
-        if schema_version == 1:
+        if schema_version in {1, 2}:
             self._write(profiles)
         return list(profiles)
 
@@ -86,10 +87,10 @@ class DeviceConfigRepository:
         self._profiles = updated
         return list(updated)
 
-    def update_status_cards(self, device_id: str, status_card_ids: tuple[str, ...]) -> list[DeviceProfile]:
+    def update_status_cards(self, device_id: str, status_card_ids: tuple[str, ...] | None) -> list[DeviceProfile]:
         self._ensure_writable()
         folded_id = device_id.strip().casefold()
-        normalized_cards = self._validate_status_cards(status_card_ids)
+        normalized_cards = None if status_card_ids is None else self._validate_status_cards(status_card_ids)
         if not any(profile.device_id.casefold() == folded_id for profile in self._profiles):
             raise DeviceConfigError(f"设备 ID {device_id} 不存在")
         updated = [
@@ -120,7 +121,8 @@ class DeviceConfigRepository:
     def _parse_payload(self, payload: Any) -> list[DeviceProfile]:
         if not isinstance(payload, dict):
             raise ValueError("根节点必须是对象")
-        if payload.get("schema_version") not in {1, SCHEMA_VERSION}:
+        schema_version = payload.get("schema_version")
+        if schema_version not in {1, 2, SCHEMA_VERSION}:
             raise ValueError(f"不支持的 schema_version：{payload.get('schema_version')}")
         raw_devices = payload.get("devices")
         if not isinstance(raw_devices, list):
@@ -139,8 +141,10 @@ class DeviceConfigRepository:
                     ip_address=str(item["ip_address"]),
                     availability=DeviceAvailability(str(item.get("availability", "unknown"))),
                     last_tested_at=datetime.fromisoformat(last_tested) if last_tested else None,
-                    status_card_ids=self._validate_status_cards(
-                        tuple(item.get("status_cards", DEFAULT_DEVICE_STATUS_CARDS))
+                    status_card_ids=(
+                        None
+                        if schema_version == SCHEMA_VERSION and item.get("status_cards") is None
+                        else self._validate_status_cards(tuple(item.get("status_cards", DEFAULT_DEVICE_STATUS_CARDS)))
                     ),
                 )
             except (KeyError, ValueError, TypeError) as exc:
@@ -153,15 +157,15 @@ class DeviceConfigRepository:
             profiles.append(profile)
         return profiles
 
-    @staticmethod
-    def _validate_profile(profile: DeviceProfile) -> DeviceProfile:
+    def _validate_profile(self, profile: DeviceProfile) -> DeviceProfile:
         device_id = profile.device_id.strip().upper()
         device_name = profile.device_name.strip()
         device_type = profile.device_type.strip().upper()
         ip_address = profile.ip_address.strip()
         if not device_id or not device_name or not device_type or not ip_address:
             raise ValueError("设备名称、类型、ID 和 IP 均不能为空")
-        if device_type not in {"UGV", "UAV", "AMR", "USV"}:
+        valid_types = self.valid_device_types() if self.valid_device_types is not None else {"UGV", "UAV", "AMR", "USV"}
+        if device_type.casefold() not in {item.casefold() for item in valid_types}:
             raise ValueError(f"不支持的设备类型：{device_type}")
         try:
             ipaddress.ip_address(ip_address)
@@ -174,7 +178,7 @@ class DeviceConfigRepository:
             ip_address=ip_address,
             availability=profile.availability,
             last_tested_at=profile.last_tested_at,
-            status_card_ids=DeviceConfigRepository._validate_status_cards(profile.status_card_ids),
+            status_card_ids=(None if profile.status_card_ids is None else DeviceConfigRepository._validate_status_cards(profile.status_card_ids)),
         )
 
     @staticmethod
@@ -226,5 +230,5 @@ class DeviceConfigRepository:
             "ip_address": profile.ip_address,
             "availability": profile.availability.value,
             "last_tested_at": profile.last_tested_at.isoformat() if profile.last_tested_at else None,
-            "status_cards": list(profile.status_card_ids),
+            "status_cards": None if profile.status_card_ids is None else list(profile.status_card_ids),
         }

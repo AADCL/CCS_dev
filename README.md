@@ -1,14 +1,15 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.9.1**  
-端侧包版本：MQTAV **v0.3.0**、ros_udp_telemetry **v0.2.1**、usb_cam_rtsp **v0.1.0**、ros_map_stream **v0.1.0**、ros_task_control **v0.1.0**
+当前地面站版本：**v0.10.0**
+
+端侧包版本：mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
 本仓库包含基于 PySide6 的多异构智能体指挥与控制地面站，以及部署到 ROS 端侧设备的配套功能包。系统面向可信局域网中的无人机、无人车、移动机器人和无人船。
 
 - **系统总览**：统计在线/离线设备、地图和任务执行记录。
-- **设备管理**：支持搜索、筛选、新建、批量删除、详情查看和配置持久化。
+- **设备管理**：支持搜索、筛选、新建、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
 - **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
 - **视频监控**：按需拉取 `rtsp://<设备IP>:8554/usb_cam` H.264 视频流。
 - **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载、三维复原，以及 UDP 14561/14562 单设备实时建图和点云融合。
@@ -23,16 +24,17 @@
 ```text
 CCS_dev/
 ├── ccs_monitor/                   # 地面站 PySide6 应用
-├── config/                        # 设备、MQTT、遥测 UDP 与建图 UDP 配置
+├── config/                        # 设备、设备类型、MQTT、遥测与控制配置
+├── data/device_type_assets/       # 设备类型图标及 .trash 回收目录
 ├── data/map_server/               # 地图元数据、PCD 与 .trash 回收目录
 ├── edge_side_pkg/
-│   ├── edge_device_config/        # 共享设备 ID/IP，v0.1.0
-│   ├── MQTAV/                     # ROS1 MQTT 遥测包，v0.3.0
-│   ├── usb_cam_rtsp/              # USB 相机 RTSP 推流包，v0.1.0
-│   ├── ros_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
-│   ├── ros_map_stream/             # ROS 实时建图上行包，v0.1.0
-│   ├── ros_task_control/            # ROS 任务接收与执行协调包，v0.1.0
-│   ├── MQTAV.zip                  # 端侧部署归档
+│   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
+│   ├── mqtav/                     # ROS1 MQTT 遥测包，v0.3.0
+│   ├── epgeneral_usb_cam_rtsp/              # USB 相机 RTSP 推流包，v0.1.0
+│   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
+│   ├── epgeneral_map_stream/             # ROS 实时建图上行包，v0.1.0
+│   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
+│   ├── EPGeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
 ├── docs/DEVELOPMENT_NOTES.md
 ├── docs/EDGE_DEVICE_INTERFACES.md # 端侧交互协议总册
@@ -97,7 +99,8 @@ python -m pip install -r requirements.txt
 
 启动前核对：
 
-- `config/devices.json`：设备 ID、名称、类型、IP 和状态卡片。
+- `config/devices.json`：设备 ID、名称、类型、IP 和设备级状态卡覆盖。
+- `config/device_types.json`：类型显示名称、图标路径、地图形状和默认状态卡片。
 - `config/mqtt.json`：MQTT Broker 与心跳阈值。
 - `config/udp_telemetry.json`：UDP 14560 描述项与分级频率。
 - `config/map_building.json`：实时建图 14561/14562 参数。
@@ -134,13 +137,13 @@ catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
-将 `edge_device_config/config/device.yaml` 的 ID/IP 与地面站 `config/devices.json` 对齐，并检查：
+将 `epgeneral_device_config/config/device.yaml` 的 ID/IP 与地面站 `config/devices.json` 对齐，并检查：
 
-- `MQTAV/config/config.yaml` 的地面站 MQTT 地址。
-- `ros_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
-- `usb_cam_rtsp/config/video.yaml` 的摄像头、分辨率、帧率和码率。
-- `ros_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。
-- `ros_task_control/config/task_control.yaml` 的端口、XML 目录和 command/feedback 话题。
+- `mqtav/config/config.yaml` 的地面站 MQTT 地址。
+- `epgeneral_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
+- `epgeneral_usb_cam_rtsp/config/video.yaml` 的摄像头、分辨率、帧率和码率。
+- `epgeneral_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。
+- `epgeneral_task_control/config/task_control.yaml` 的端口、XML 目录和 command/feedback 话题。
 
 端侧放行 TCP 8554、UDP 14561、14563。每个新终端先执行：
 
@@ -152,14 +155,14 @@ source ~/catkin_ws/devel/setup.bash
 按需启动：
 
 ```bash
-roslaunch mqtav mqtav.launch
-roslaunch usb_cam_rtsp usb_cam_rtsp.launch
-roslaunch ros_udp_telemetry ros_udp_telemetry.launch destination_host:=<地面站IP>
-roslaunch ros_map_stream ros_map_stream.launch
-roslaunch ros_task_control ros_task_control.launch
+roslaunch epgeneral_mqtav epgeneral_mqtav.launch
+roslaunch epgeneral_usb_cam_rtsp epgeneral_usb_cam_rtsp.launch
+roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>
+roslaunch epgeneral_map_stream epgeneral_map_stream.launch
+roslaunch epgeneral_task_control epgeneral_task_control.launch
 ```
 
-`ros_task_control` 不直接操作 MAVROS。真实运动还需设备控制节点实现该包的 command/feedback 消息接口。
+`epgeneral_task_control` 不直接操作 MAVROS。真实运动还需设备控制节点实现该包的 command/feedback 消息接口。
 
 ### 3. 部署后验证
 
@@ -186,9 +189,11 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 ### 设备页面
 
 - 使用搜索与类型/状态条件筛选设备。
-- 点击“新建”填写名称、类型、ID 和 IP，测试连接后保存；ID 会检查重复并统一为大写。
+- 点击“类型模板”新增或编辑设备类型，上传 PNG/JPEG/SVG 图标，选择箭头、立方体或球体地图形状，并绑定默认功能卡片。被设备引用的模板不能删除。
+- 点击“新建”从类型模板中选择类型，填写名称、ID 和 IP，测试连接后保存；ID 会检查重复并统一为大写。
 - 点击“编辑”批量选择并删除设备；双击设备卡进入详情。
 - 详情页显示 MQTT、UDP、电量、任务、飞行模式、位姿、IMU、点云和设备状态卡。
+- 详情页的状态卡可跟随类型模板动态更新，也可切换为设备自定义覆盖；空自定义表示明确不显示卡片。
 - 日志支持 info/warning/error 筛选；视频开关按需连接 RTSP，离开页面自动释放播放器。
 
 ### 地图页面
@@ -249,7 +254,11 @@ MQTT 与 UDP 是独立链路。检查 `destination_host`、ROS 话题频率和 U
 
 ### 新建设备后端侧无法连接
 
-新建设备不会自动修改端侧配置。将 ID/IP 同步到 `edge_device_config/config/device.yaml` 并重启端侧节点。
+新建设备不会自动修改端侧配置。将 ID/IP 同步到 `epgeneral_device_config/config/device.yaml` 并重启端侧节点。
+
+### 类型图标无法上传或地图仍显示圆点
+
+图标仅支持可正常解码的 PNG、JPEG、SVG，单文件不超过 5 MiB。成功上传后会复制到 `data/device_type_assets`；不要只保留外部源文件。三维环境不支持 OpenGL 或某个 mesh 创建失败时，地图会自动回退为圆点，不影响遥测与任务运行。
 
 ### RTSP 无画面
 
@@ -272,7 +281,7 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 ### 任务无法下发或同步执行
 
-确认设备和 IP 有效、UDP 14563/14564 可达、ros_task_control 已启动、子任务已保存且无未处理冲突。共同执行还需两端 NTP 同步；地图变化后必须重新复核航点。
+确认设备和 IP 有效、UDP 14563/14564 可达、epgeneral_task_control 已启动、子任务已保存且无未处理冲突。共同执行还需两端 NTP 同步；地图变化后必须重新复核航点。
 
 ### 误删地图或任务
 
@@ -281,6 +290,9 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.10.0 · 2026-08-17**
+<small>新增设备类型模板、共享图标与地图形状，并系统修复日间主题页面配色。</small>
 
 **v0.9.1 · 2026-08-12**
 <small>统一任务二级页面的深色主题与组件渲染。</small>

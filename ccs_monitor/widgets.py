@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox, QFrame, QGridLayout, QLabel, QProgressBar, QSizePolicy, QVBoxLayout, QWidget,
 )
@@ -57,6 +57,7 @@ class DeviceCard(QFrame):
         self.device = device
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.type_badge: TypeBadge | None = None
+        self.type_icon: QLabel | None = None
         self.status_label: QLabel | None = None
         self.battery_bar: QProgressBar | None = None
         self.edit_mode = False
@@ -80,8 +81,17 @@ class DeviceCard(QFrame):
             lambda checked: self.selection_changed.emit(self.device.device_id, checked)
         )
         head.addWidget(self.checkbox, 0, 3, 2, 1, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
-        self.type_badge = TypeBadge(self.device.device_type)
-        head.addWidget(self.type_badge, 0, 0, 2, 1)
+        if self.device.device_icon_path and not QIcon(self.device.device_icon_path).isNull():
+            self.type_icon = QLabel()
+            self.type_icon.setObjectName("deviceTypeIcon")
+            self.type_icon.setFixedSize(58, 58)
+            self.type_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.type_icon.setPixmap(QIcon(self.device.device_icon_path).pixmap(54, 54))
+            self.type_icon.setToolTip(self.device.device_type_name or self.device.device_type)
+            head.addWidget(self.type_icon, 0, 0, 2, 1)
+        else:
+            self.type_badge = TypeBadge(self.device.device_type)
+            head.addWidget(self.type_badge, 0, 0, 2, 1)
         name = QLabel(self.device.device_name)
         name.setObjectName("deviceName")
         head.addWidget(name, 0, 1)

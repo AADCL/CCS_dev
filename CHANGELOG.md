@@ -2,16 +2,43 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## v0.10.0 - 2026-08-17
+
+### 新增
+
+- 新增 `config/device_types.json`、`DeviceTypeTemplateRepository` 和设备类型模板管理对话框，支持新增、编辑、引用删除保护及原子持久化。
+- 新增 PNG/JPEG/SVG 类型图标上传、5 MiB 校验、应用内资产复制与未引用资源回收。
+- 新增箭头、立方体和球体地图标记；箭头使用 UDP 全局位姿 yaw 定向，OpenGL 失败时回退圆点。
+- 新增模板默认功能卡片与设备级动态继承/显式覆盖切换。
+- 新增设备类型仓储、schema 迁移、继承语义及日间颜色映射测试。
+
+### 调整
+
+- 地面站版本从 v0.9.1 升级为 v0.10.0；端侧协议和所有端侧包版本保持不变。
+- `devices.json` 升级至 schema 3，`status_cards: null` 表示继承模板，数组表示设备自定义覆盖。
+- 新建设备类型选择改为读取模板仓储；设备卡优先显示模板图标。
+- 地图页、任务页与指控大屏统一消费快照中的类型显示信息和地图形状。
+
+### 修复
+
+- 修复日间主题下选中设备卡黑底导致文字不可读的问题。
+- 修复日间主题下地图按钮、任务二级页输入/列表/表格/滚动条及指控大屏按钮残留夜间颜色的问题。
+- 修复模板或卡片更新可能重建 MQTT 快照并重置实时状态的风险。
+
+### 删除
+
+- 无。
+
 ## v0.9.1 - 2026-08-12
 
 ### 新增
 
-- 新增端侧 `ros_task_control` v0.1.0，实现 UDP 14563/14564 任务协议、XML 原子持久化、ID 状态机和 ROS 执行协调接口。
+- 新增端侧 `epgeneral_task_control` v0.1.0，实现 UDP 14563/14564 任务协议、XML 原子持久化、ID 状态机和 ROS 执行协调接口。
 - 新增任务二级页面专用组件对象名和主题作用域，便于后续独立维护。
 
 ### 调整
 
-- 地面站版本从 v0.9.0 升级为 v0.9.1；任务协议字段不变，新增独立版本的端侧 `ros_task_control` v0.1.0。
+- 地面站版本从 v0.9.0 升级为 v0.9.1；任务协议字段不变，新增独立版本的端侧 `epgeneral_task_control` v0.1.0。
 - 统一设备列表、地图面板、航点表、冲突列表、日志列表、数值输入和分隔条的深色科技主题。
 
 ### 修复
@@ -53,7 +80,7 @@
 
 ### 新增
 
-- 新增端侧 `ros_map_stream` v0.1.0，支持 UDP 14561 建图控制、PointCloud2/位姿同步预处理及 UDP 14562 分片上传。
+- 新增端侧 `epgeneral_map_stream` v0.1.0，支持 UDP 14561 建图控制、PointCloud2/位姿同步预处理及 UDP 14562 分片上传。
 - 新增地图详情单设备实时建图入口、设备单选对话框和会话状态统计栏。
 - 新增 `config/map_building.json` 与独立 `ccs-map-stream-v1` MessagePack 协议。
 - 新增 UDP 14561 指令下发、14562 数据接收、命令重试、ACK、心跳和会话状态处理。
@@ -66,7 +93,7 @@
 
 ### 调整
 
-- 地面站版本从 `v0.7.1` 升级为 `v0.8.0`；新增独立版本的端侧 `ros_map_stream` v0.1.0，其余端侧功能包版本保持不变。
+- 地面站版本从 `v0.7.1` 升级为 `v0.8.0`；新增独立版本的端侧 `epgeneral_map_stream` v0.1.0，其余端侧功能包版本保持不变。
 - 地图 ZIP 在存在建图轨迹时包含 `trajectory.csv`。
 - 返回地图列表、切换导航和退出应用时主动中断当前会话并保留临时结果。
 
@@ -190,12 +217,12 @@
 
 ### 调整
 
-- 地面站版本从 `v0.5.0` 升至 `v0.5.1`；`ros_udp_telemetry` 从 `v0.2.0` 升至 `v0.2.1`。
+- 地面站版本从 `v0.5.0` 升至 `v0.5.1`；`epgeneral_udp_telemetry` 从 `v0.2.0` 升至 `v0.2.1`。
 - CMake 强制缓存选定的 Python 3.6+ 解释器，统一 `catkin_python_setup` 与运行脚本环境。
 
 ### 修复
 
-- 修复 roslaunch 直接执行源码目录脚本时无法导入同包 `ros_udp_telemetry` 模块的问题。
+- 修复 roslaunch 直接执行源码目录脚本时无法导入同包 `epgeneral_udp_telemetry` 模块的问题。
 - 修复 Melodic CMake 缓存可能继续引用 Python 2、导致 devel Python 路径生成不一致的问题。
 
 ### 删除
@@ -214,7 +241,7 @@
 
 ### 调整
 
-- 地面站版本从 `v0.4.0` 升级至 `v0.5.0`；`ros_udp_telemetry` 从 `v0.1.0` 升级至 `v0.2.0`。
+- 地面站版本从 `v0.4.0` 升级至 `v0.5.0`；`epgeneral_udp_telemetry` 从 `v0.1.0` 升级至 `v0.2.0`。
 - `devices.json` 从 schema 1 升级至 schema 2，旧配置首次读取时自动迁移。
 - 数据接收状态由单个汇总面板改为轻量独立卡片网格，按宽度切换 1/2/3 列。
 - Livox 状态卡合并显示驱动可用性和点云接收频率；建图模式显示最近文本值。
@@ -239,7 +266,7 @@
 - 新增独立 UDP 接收线程、设备遥测仓储、1 Hz 心跳及 2 秒 warning/5 秒 offline 状态机。
 - 新增全局 ENU 位姿、视觉位姿、IMU、点云接收状态和三级传感器可用性模型。
 - 设备详情页新增 20 Hz 遥测面板、UDP 链路字段、点云元数据和红绿灰状态灯。
-- 新增端侧 `ros_udp_telemetry v0.1.0` ROS 包，支持 MAVROS 默认话题、普通 ROS 字段映射、窗口平滑和低频样本复用。
+- 新增端侧 `epgeneral_udp_telemetry v0.1.0` ROS 包，支持 MAVROS 默认话题、普通 ROS 字段映射、窗口平滑和低频样本复用。
 - 新增地面站/端侧配置一致性、协议边界、心跳状态机、采样平滑和 UI 测试。
 
 ### 调整
@@ -266,16 +293,16 @@
 - 设备详情页新增按需 RTSP 视频区域和视频流开关，固定地址为 `rtsp://<设备IP>:8554/usb_cam`。
 - 新增 Qt Multimedia 播放状态、错误状态和设备切换时的播放器释放。
 - 新增宽屏左右、窄屏上下的详情页响应式布局。
-- 新增 `edge_side_pkg` 端侧部署目录、`edge_device_config` 共享设备配置包和 `usb_cam_rtsp` ROS/GStreamer 推流包。
+- 新增 `edge_side_pkg` 端侧部署目录、`epgeneral_device_config` 共享设备配置包和 `epgeneral_usb_cam_rtsp` ROS/GStreamer 推流包。
 - 新增端侧 USB 摄像头默认配置、RTSP launch、H.264 低延迟管线和断帧日志。
 - 新增 RTSP URL、假播放器生命周期、布局、共享配置对齐和端侧视频配置测试。
 
 ### 调整
 
 - 地面站版本从 `v0.2.0` 升级为 `v0.3.0`。
-- MQTAV 从根目录迁移到 `edge_side_pkg/MQTAV`，版本从 `v0.2.2` 升级为 `v0.3.0`。
-- MQTAV 不再在自身配置中重复保存设备 ID/IP，改从 `edge_device_config/config/device.yaml` 读取。
-- 根目录 MQTAV 发布归档迁移并重新生成到 `edge_side_pkg/MQTAV.zip`。
+- mqtav 从根目录迁移到 `edge_side_pkg/mqtav`，版本从 `v0.2.2` 升级为 `v0.3.0`。
+- mqtav 不再在自身配置中重复保存设备 ID/IP，改从 `epgeneral_device_config/config/device.yaml` 读取。
+- 根目录 mqtav 发布归档迁移并重新生成到 `edge_side_pkg/mqtav.zip`。
 - README、开发笔记和端侧包文档同步更新 Ubuntu 18.04、ROS Melodic、RTSP 8554 和共享配置说明。
 
 ### 修复
@@ -286,8 +313,8 @@
 
 ### 删除
 
-- 删除根目录旧 MQTAV 源码路径和旧 `MQTAV.zip` 副本。
-- 删除 MQTAV 自身配置中的重复 `device` 配置块。
+- 删除根目录旧 mqtav 源码路径和旧 `mqtav.zip` 副本。
+- 删除 mqtav 自身配置中的重复 `device` 配置块。
 
 ## v0.2.0 - 2026-07-31
 
@@ -295,7 +322,7 @@
 
 - 新增 `amqtt` 内嵌 Broker、`paho-mqtt` 订阅器和统一 MQTT 运行时生命周期。
 - 新增 `config/mqtt.json`，配置监听地址、端口、QoS、主题、心跳阈值和日志容量。
-- 新增 MQTAV schema 1.0 的 presence、heartbeat、status 严格解析器和事件模型。
+- 新增 mqtav schema 1.0 的 presence、heartbeat、status 严格解析器和事件模型。
 - 新增 MQTT 设备数据源、1 Hz 心跳检查、2 秒 warning、5 秒 offline/error 及恢复状态机。
 - 新增每设备 500 条环形实时日志，记录连接、心跳、状态帧、断联和恢复事件。
 - 新增飞行模式、解锁状态、MAVLink system status、电池电压/电流、原始任务状态和最后心跳字段。
@@ -303,7 +330,7 @@
 
 ### 调整
 
-- 地面站版本从 `v0.1.0` 升级为 `v0.2.0`；MQTAV 机载包保持 `v0.1.0`。
+- 地面站版本从 `v0.1.0` 升级为 `v0.2.0`；mqtav 机载包保持 `v0.1.0`。
 - 默认运行时数据源由模拟遥测切换为 MQTT，启动设备状态统一为离线和未知。
 - 首页、设备页和地图页统一依赖 `DeviceDataSource` 协议，不直接依赖模拟源或 MQTT 库。
 - 设备页连接标签改为展示 Broker/订阅模块状态，设备卡片增加飞行模式。

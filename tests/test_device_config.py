@@ -26,8 +26,8 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         self.assertEqual(len(profiles), 6)
         self.assertTrue(self.path.exists())
         payload = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(payload["schema_version"], 2)
-        self.assertEqual(tuple(payload["devices"][0]["status_cards"]), DEFAULT_DEVICE_STATUS_CARDS)
+        self.assertEqual(payload["schema_version"], 3)
+        self.assertIsNone(payload["devices"][0]["status_cards"])
 
     def test_create_and_delete_are_persisted(self):
         self.repository.load()
@@ -80,7 +80,7 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         profiles = self.repository.load()
         self.assertEqual(profiles[0].status_card_ids, DEFAULT_DEVICE_STATUS_CARDS)
         migrated = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(migrated["schema_version"], 2)
+        self.assertEqual(migrated["schema_version"], 3)
         selected = ("fastlio2", "mapping_mode")
         updated = self.repository.update_status_cards("uav-001", selected)
         self.assertEqual(updated[0].status_card_ids, selected)
