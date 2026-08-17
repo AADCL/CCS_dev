@@ -1,0 +1,60 @@
+import os
+import unittest
+import zlib
+
+import msgpack
+
+from epgeneral_map_stream.config import load_config
+from epgeneral_map_stream.protocol import ProtocolError, decode_command, encode_cloud_chunks, encode_envelope
+
+
+PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MAPPING = os.path.join(PACKAGE, "config", "mapping.yaml")
+DEVICE = os.path.join(os.path.dirname(PACKAGE), "epgeneral_device_config", "config", "device.yaml")
+
+
+class ProtocolTests(unittest.TestCase):
+    def setUp(self):
+        self.config = load_config(MAPPING, DEVICE)
+        self.identity = {"map_id": "map-1", "session_id": "a" * 32}
+        self.start_payload = {
+            "request_id": "request-1",
+            "return_host": self.config["ground_station_ip"],
+            "return_port": self.config["data_port"],
+            "cloud_rate_hz": 5.0,
+            "voxel_size_m": 0.1,
+            "compression": "zlib",
+            "point_format": "xyz_f32_le",
+            "coordinate_contract": "sensor+map_body+body_sensor",
+        }
+
+    def test_start_command_round_trip(self):
+        encoded = encode_envelope(self.config, self.identity, "start_mapping", 0, self.start_payload)
+        decoded = decode_command(encoded, self.config)
+        self.assertEqual(decoded["payload"], self.start_payload)
+
+    def test_wrong_protocol_is_rejected(self):
+        encoded = encode_envelope(self.config, self.identity, "start_mapping", 0, self.start_payload)
+        raw = msgpack.unpackb(encoded, raw=False)
+        raw["protocol_id"] = "wrong"
+        with self.assertRaisesRegex(ProtocolError, "protocol_id"):
+            decode_command(msgpack.packb(raw, use_bin_type=True), self.config)
+
+    def test_cloud_chunks_fit_and_reassemble(self):
+        compressed = zlib.compress(os.urandom(20000))
+        transform = {"x": 0.0, "y": 0.0, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
+        metadata = {
+            "frame_id": 3,
+            "sample_stamp_ns": 10,
+            "point_count": 100,
+            "map_from_body": transform,
+            "body_from_sensor": transform,
+        }
+        datagrams = encode_cloud_chunks(self.config, self.identity, 7, metadata, compressed)
+        self.assertGreater(len(datagrams), 1)
+        self.assertTrue(all(len(item) <= 1400 for item in datagrams))
+        decoded = [msgpack.unpackb(item, raw=False) for item in datagrams]
+        self.assertEqual([item["sequence"] for item in decoded], list(range(7, 7 + len(decoded))))
+        rebuilt = b"".join(item["payload"]["data"] for item in decoded)
+        self.assertEqual(rebuilt, compressed)
+        self.assertEqual(decoded[0]["payload"]["frame_crc32"], zlib.crc32(compressed) & 0xFFFFFFFF)

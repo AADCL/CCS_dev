@@ -1,0 +1,9 @@
+<launch>
+  <arg name="mapping_config_file" default="$(find epgeneral_map_stream)/config/mapping.yaml" />
+  <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
+
+  <node pkg="epgeneral_map_stream" type="epgeneral_map_stream_node.py" name="epgeneral_map_stream" output="screen">
+    <param name="mapping_config_file" value="$(arg mapping_config_file)" />
+    <param name="device_config_file" value="$(arg device_config_file)" />
+  </node>
+</launch>

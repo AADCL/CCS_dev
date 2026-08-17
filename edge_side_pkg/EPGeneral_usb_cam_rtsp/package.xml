@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>epgeneral_usb_cam_rtsp</name>
+  <version>0.1.0</version>
+  <description>Low-latency H.264 RTSP streaming for ROS USB camera images.</description>
+  <maintainer email="maintainer@example.com">CCS Maintainer</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>cv_bridge</build_depend>
+  <build_depend>epgeneral_device_config</build_depend>
+  <build_depend>image_transport</build_depend>
+  <build_depend>libgstreamer1.0-dev</build_depend>
+  <build_depend>libgstrtspserver-1.0-dev</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>epgeneral_device_config</exec_depend>
+  <exec_depend>gstreamer1.0-libav</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-base</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-good</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-ugly</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>usb_cam</exec_depend>
+
+  <export />
+</package>

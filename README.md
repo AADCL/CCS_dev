@@ -2,7 +2,7 @@
 
 当前地面站版本：**v0.10.0**
 
-端侧包版本：MQTAV **v0.3.0**、ros_udp_telemetry **v0.2.1**、usb_cam_rtsp **v0.1.0**、ros_map_stream **v0.1.0**、ros_task_control **v0.1.0**
+端侧包版本：mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
@@ -28,13 +28,13 @@ CCS_dev/
 ├── data/device_type_assets/       # 设备类型图标及 .trash 回收目录
 ├── data/map_server/               # 地图元数据、PCD 与 .trash 回收目录
 ├── edge_side_pkg/
-│   ├── edge_device_config/        # 共享设备 ID/IP，v0.1.0
-│   ├── MQTAV/                     # ROS1 MQTT 遥测包，v0.3.0
-│   ├── usb_cam_rtsp/              # USB 相机 RTSP 推流包，v0.1.0
-│   ├── ros_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
-│   ├── ros_map_stream/             # ROS 实时建图上行包，v0.1.0
-│   ├── ros_task_control/            # ROS 任务接收与执行协调包，v0.1.0
-│   ├── MQTAV.zip                  # 端侧部署归档
+│   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
+│   ├── mqtav/                     # ROS1 MQTT 遥测包，v0.3.0
+│   ├── epgeneral_usb_cam_rtsp/              # USB 相机 RTSP 推流包，v0.1.0
+│   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
+│   ├── epgeneral_map_stream/             # ROS 实时建图上行包，v0.1.0
+│   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
+│   ├── EPGeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
 ├── docs/DEVELOPMENT_NOTES.md
 ├── docs/EDGE_DEVICE_INTERFACES.md # 端侧交互协议总册
@@ -137,13 +137,13 @@ catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
-将 `edge_device_config/config/device.yaml` 的 ID/IP 与地面站 `config/devices.json` 对齐，并检查：
+将 `epgeneral_device_config/config/device.yaml` 的 ID/IP 与地面站 `config/devices.json` 对齐，并检查：
 
-- `MQTAV/config/config.yaml` 的地面站 MQTT 地址。
-- `ros_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
-- `usb_cam_rtsp/config/video.yaml` 的摄像头、分辨率、帧率和码率。
-- `ros_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。
-- `ros_task_control/config/task_control.yaml` 的端口、XML 目录和 command/feedback 话题。
+- `mqtav/config/config.yaml` 的地面站 MQTT 地址。
+- `epgeneral_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
+- `epgeneral_usb_cam_rtsp/config/video.yaml` 的摄像头、分辨率、帧率和码率。
+- `epgeneral_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。
+- `epgeneral_task_control/config/task_control.yaml` 的端口、XML 目录和 command/feedback 话题。
 
 端侧放行 TCP 8554、UDP 14561、14563。每个新终端先执行：
 
@@ -155,14 +155,14 @@ source ~/catkin_ws/devel/setup.bash
 按需启动：
 
 ```bash
-roslaunch mqtav mqtav.launch
-roslaunch usb_cam_rtsp usb_cam_rtsp.launch
-roslaunch ros_udp_telemetry ros_udp_telemetry.launch destination_host:=<地面站IP>
-roslaunch ros_map_stream ros_map_stream.launch
-roslaunch ros_task_control ros_task_control.launch
+roslaunch epgeneral_mqtav epgeneral_mqtav.launch
+roslaunch epgeneral_usb_cam_rtsp epgeneral_usb_cam_rtsp.launch
+roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>
+roslaunch epgeneral_map_stream epgeneral_map_stream.launch
+roslaunch epgeneral_task_control epgeneral_task_control.launch
 ```
 
-`ros_task_control` 不直接操作 MAVROS。真实运动还需设备控制节点实现该包的 command/feedback 消息接口。
+`epgeneral_task_control` 不直接操作 MAVROS。真实运动还需设备控制节点实现该包的 command/feedback 消息接口。
 
 ### 3. 部署后验证
 
@@ -254,7 +254,7 @@ MQTT 与 UDP 是独立链路。检查 `destination_host`、ROS 话题频率和 U
 
 ### 新建设备后端侧无法连接
 
-新建设备不会自动修改端侧配置。将 ID/IP 同步到 `edge_device_config/config/device.yaml` 并重启端侧节点。
+新建设备不会自动修改端侧配置。将 ID/IP 同步到 `epgeneral_device_config/config/device.yaml` 并重启端侧节点。
 
 ### 类型图标无法上传或地图仍显示圆点
 
@@ -281,7 +281,7 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 ### 任务无法下发或同步执行
 
-确认设备和 IP 有效、UDP 14563/14564 可达、ros_task_control 已启动、子任务已保存且无未处理冲突。共同执行还需两端 NTP 同步；地图变化后必须重新复核航点。
+确认设备和 IP 有效、UDP 14563/14564 可达、epgeneral_task_control 已启动、子任务已保存且无未处理冲突。共同执行还需两端 NTP 同步；地图变化后必须重新复核航点。
 
 ### 误删地图或任务
 

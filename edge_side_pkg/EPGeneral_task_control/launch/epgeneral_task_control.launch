@@ -1,0 +1,8 @@
+<launch>
+  <arg name="task_config_file" default="$(find epgeneral_task_control)/config/task_control.yaml" />
+  <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
+  <node pkg="epgeneral_task_control" type="epgeneral_task_control_node.py" name="epgeneral_task_control" output="screen">
+    <param name="task_config_file" value="$(arg task_config_file)" />
+    <param name="device_config_file" value="$(arg device_config_file)" />
+  </node>
+</launch>

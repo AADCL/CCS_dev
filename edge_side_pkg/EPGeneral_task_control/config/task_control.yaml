@@ -1,0 +1,25 @@
+schema_version: 1
+protocol_id: "ccs-task-control-v1"
+network:
+  bind_host: "0.0.0.0"
+  control_port: 14563
+  ground_station_ip: "192.168.151.100"
+  status_port: 14564
+  max_datagram_bytes: 1400
+storage:
+  directory: "~/.ros/epgeneral_task_control/tasks"
+ros:
+  command_topic: "/epgeneral_task_control/execution_command"
+  feedback_topic: "/epgeneral_task_control/execution_feedback"
+  map_frame: "map"
+timeouts:
+  ack_cache_seconds: 60.0
+  transfer_seconds: 10.0
+  adapter_feedback_seconds: 2.0
+  execution_feedback_seconds: 5.0
+  utc_tolerance_seconds: 2.0
+limits:
+  max_waypoints: 500
+  max_compressed_bytes: 1048576
+  max_raw_bytes: 8388608
+  max_chunks: 2048

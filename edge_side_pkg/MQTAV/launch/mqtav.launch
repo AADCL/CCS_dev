@@ -1,8 +1,0 @@
-<launch>
-  <arg name="config_file" default="$(find mqtav)/config/config.yaml" />
-  <arg name="device_config_file" default="$(find edge_device_config)/config/device.yaml" />
-  <arg name="log_dir" default="$(env HOME)/.ros/log/mqtav" />
-
-  <node pkg="mqtav" type="mqtav_node.py" name="mqtav" output="screen"
-        args="--config-file $(arg config_file) --device-config-file $(arg device_config_file) --log-dir $(arg log_dir)" />
-</launch>
