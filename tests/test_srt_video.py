@@ -15,6 +15,7 @@ from ccs_monitor.models import DeviceSnapshot
 from ccs_monitor.srt_video import (
     SrtEndpoint, SrtFfmpegReceiver, SrtVideoConfig, SrtVideoConfigError,
     SrtVideoWidget, build_srt_url, load_srt_video_config, protocols_include_srt,
+    resolve_ffmpeg_executable,
 )
 
 
@@ -126,6 +127,51 @@ class SrtVideoTests(unittest.TestCase):
             path.write_text(json.dumps(payload), encoding="utf-8")
             config = load_srt_video_config(path)
             self.assertTrue(Path(config.ffmpeg_executable).is_absolute())
+
+    def test_resolves_ffmpeg_from_process_and_windows_user_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            process_bin = root / "process-bin"
+            user_bin = root / "user-bin"
+            process_bin.mkdir()
+            user_bin.mkdir()
+            executable_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+            process_ffmpeg = process_bin / executable_name
+            user_ffmpeg = user_bin / executable_name
+            process_ffmpeg.touch()
+            user_ffmpeg.touch()
+
+            resolved = resolve_ffmpeg_executable(
+                executable_name, root, environ={"PATH": str(process_bin)},
+                user_path="", machine_path="", local_app_data="",
+            )
+            self.assertEqual(Path(resolved), process_ffmpeg.resolve())
+
+            resolved = resolve_ffmpeg_executable(
+                executable_name, root, environ={"PATH": str(root / "stale")},
+                user_path=str(user_bin), machine_path="", local_app_data="",
+            )
+            self.assertEqual(Path(resolved), user_ffmpeg.resolve())
+
+    def test_resolves_ffmpeg_from_standard_local_app_data_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ffmpeg = root / "Programs" / "ffmpeg" / "bin" / "ffmpeg.exe"
+            ffmpeg.parent.mkdir(parents=True)
+            ffmpeg.touch()
+            resolved = resolve_ffmpeg_executable(
+                "ffmpeg", root, environ={"PATH": ""}, user_path="",
+                machine_path="", local_app_data=root,
+            )
+            self.assertEqual(Path(resolved), ffmpeg.resolve())
+
+    def test_missing_ffmpeg_error_includes_attempted_executable(self):
+        receiver = SrtFfmpegReceiver(SrtVideoConfig(ffmpeg_executable="missing-ffmpeg"))
+        errors = []
+        receiver.error_occurred.connect(errors.append)
+        receiver._requested = True
+        receiver._on_process_error(receiver._process_factory.ProcessError.FailedToStart)
+        self.assertEqual(errors, ["未找到 FFmpeg：missing-ffmpeg"])
 
     def test_unexpected_exit_retries_are_bounded_and_stop_cancels_timer(self):
         receiver = SrtFfmpegReceiver(SrtVideoConfig(retry_delay_ms=50, max_retries=2))

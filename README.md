@@ -1,6 +1,6 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.14.0**
+当前地面站版本：**v0.14.1**
 
 端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
@@ -18,6 +18,7 @@
 - **任务系统**：支持 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态，支持全屏及面板折叠。
 - **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、SRT 推流、实时建图和任务协调包。
+- **离线授时**：指控平台内置 NTPv4 Server；端侧一键启动脚本先从地面站校时，成功后再启动 ROS 功能包。
 
 各通信通道互相独立。单个模块故障不会阻止其他页面或本地编辑功能运行。完整端侧协议见 [EDGE_DEVICE_INTERFACES.md](docs/EDGE_DEVICE_INTERFACES.md)。
 
@@ -68,6 +69,7 @@ CCS_dev/
 | 端口 | 方向 | 用途 |
 | --- | --- | --- |
 | TCP 1883 | 端侧 → 地面站 | MQTT 状态与心跳 |
+| UDP 123 | 端侧 → 地面站 | 离线 NTP 时间同步 |
 | UDP 9000 | 地面站 → 端侧 | SRT H.264/MPEG-TS 视频 |
 | UDP 14560 | 端侧 → 地面站 | 高频遥测与心跳 |
 | UDP 14561 | 地面站 → 端侧 | 实时建图控制 |
@@ -115,12 +117,20 @@ ffmpeg -hide_banner -protocols
 - `config/map_fusion_algorithms.json`：融合算法、默认参数、启用状态和脚本指纹。
 - `config/task_system.json`：任务系统 14563/14564 参数。
 - `config/srt_video.json`：系统 FFmpeg 命令、显示尺寸、探测/连接超时和重试参数。带目录的 FFmpeg 路径必须相对软件根目录。
+- `config/ntp.json`：内置 NTP Server 的监听地址、端口、层级和参考时钟标识。
 
 `ffmpeg -protocols` 的 Input 列表必须包含 `srt`；不同发行版提供的 FFmpeg 构建选项可能不同。
 
-放行地面站 TCP 1883、UDP 14560、14562、14564，然后启动：
+放行地面站 TCP 1883、UDP 123、14560、14562、14564，然后启动。Windows 自带
+`W32Time` 若正在占用 UDP 123，需要在管理员 PowerShell 中停止并禁用该服务，再为
+Private/LocalSubnet 放行 UDP 123，由 CCS 内置 NTP Server 独占端口：
 
 ```powershell
+Stop-Service W32Time -Force
+Set-Service W32Time -StartupType Disabled
+New-NetFirewallRule -DisplayName "CCS NTP Server (Private LAN)" `
+  -Direction Inbound -Action Allow -Protocol UDP -LocalPort 123 `
+  -Profile Private -RemoteAddress LocalSubnet
 python run.py
 ```
 
@@ -133,6 +143,7 @@ python run.py
 ```bash
 sudo apt update
 sudo apt install python3-paho-mqtt python3-yaml python3-msgpack python3-numpy \
+  ntpdate \
   python3-catkin-pkg python3-rospkg ros-noetic-mavros ros-noetic-mavros-extras \
   ros-noetic-cv-bridge ros-noetic-image-transport ros-noetic-sensor-msgs \
   ros-noetic-nav-msgs ros-noetic-geometry-msgs libgstreamer1.0-dev gstreamer1.0-tools \
@@ -162,6 +173,22 @@ source devel/setup.bash
 source /opt/ros/noetic/setup.bash
 source ~/catkin_ws/devel/setup.bash
 ```
+
+部署 profile 中的 `timesyncd-ccs.conf` 和 `start_ccs_edge_dev.sh`。`systemd-timesyncd`
+持续从地面站校时，一键脚本确认授时服务器和同步状态后才启动 ROS；校时失败时不会启动任何新的功能包：
+
+```bash
+sudo install -D -m 0644 edge_side_pkg/deploy/go2_edu/config/timesyncd-ccs.conf \
+  /etc/systemd/timesyncd.conf.d/ccs.conf
+sudo systemctl restart systemd-timesyncd
+sudo install -m 0750 edge_side_pkg/deploy/go2_edu/start_ccs_edge_dev.sh \
+  /home/nvidia/ccs_edge_ws/start_ccs_edge_dev.sh
+/home/nvidia/ccs_edge_ws/start_ccs_edge_dev.sh
+```
+
+脚本在控制终端逐项输出时间同步、ROS Master 和功能包启动结果。全部节点就绪后脚本保持
+前台运行；按 `Ctrl+C` 会停止四个功能节点、对应 roslaunch 进程，以及由脚本自身创建的
+ROS Master。各组件完整日志保存在 `~/.ros/ccs_edge_dev/log/`。
 
 按需启动：
 

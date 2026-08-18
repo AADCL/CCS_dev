@@ -121,7 +121,7 @@ class VideoSrtNode {
              << "! h264parse config-interval=-1 ! mpegtsmux alignment=7 "
              << "! srtsink name=srt_output uri=\"srt://" << bind_address_ << ":" << srt_port_
              << "?mode=listener\" latency=" << srt_latency_ms_
-             << " wait-for-connection=false sync=false";
+             << " sync=false";
     return pipeline.str();
   }
 
@@ -139,7 +139,10 @@ class VideoSrtNode {
     if (appsrc_ == nullptr) throw std::runtime_error("failed to locate GStreamer appsrc");
     srt_sink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "srt_output");
     if (srt_sink_ == nullptr) throw std::runtime_error("failed to locate GStreamer srtsink");
-    g_signal_connect(srt_sink_, "caller-connecting", G_CALLBACK(&VideoSrtNode::callerConnecting), this);
+    if (g_signal_lookup("caller-connecting", G_OBJECT_TYPE(srt_sink_)) != 0) {
+      g_signal_connect(srt_sink_, "caller-connecting",
+                       G_CALLBACK(&VideoSrtNode::callerConnecting), this);
+    }
     g_signal_connect(srt_sink_, "caller-added", G_CALLBACK(&VideoSrtNode::callerAdded), this);
     g_signal_connect(srt_sink_, "caller-removed", G_CALLBACK(&VideoSrtNode::callerRemoved), this);
     GstBus* bus = gst_element_get_bus(pipeline_);

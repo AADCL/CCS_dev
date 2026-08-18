@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from .map_repository import MapRepository
 from .mqtt_config import MqttConfigError, default_mqtt_config, load_mqtt_config
 from .mqtt_data_source import MqttDeviceSource
 from .mqtt_services import MqttMonitoringRuntime
+from .ntp_config import NtpConfigError, load_ntp_config
+from .ntp_services import NtpServerService
 from .udp_config import UdpConfigError, load_udp_config
 from .udp_services import UdpMonitoringRuntime
 from .udp_store import UdpTelemetryStore
@@ -23,6 +26,9 @@ from .task_config import TaskSystemConfigError, load_task_system_config
 from .task_repository import TaskRepository
 from .task_services import TaskExecutionService
 from .version import __version__
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def configure_application_font(app: QApplication) -> None:
@@ -56,6 +62,13 @@ def main() -> int:
         mqtt_config = default_mqtt_config()
         mqtt_error = str(exc)
     source = MqttDeviceSource(mqtt_config, DeviceConfigRepository(DEFAULT_CONFIG_PATH))
+    ntp_runtime = None
+    try:
+        ntp_config = load_ntp_config()
+        if ntp_config.enabled:
+            ntp_runtime = NtpServerService(ntp_config)
+    except NtpConfigError as exc:
+        LOGGER.error("NTP Server 配置无效：%s", exc)
     udp_runtime = None
     udp_store = None
     try:
@@ -95,6 +108,14 @@ def main() -> int:
         task_execution_service=task_service,
     )
     runtime = MqttMonitoringRuntime(mqtt_config, source) if mqtt_error is None else None
+    if ntp_runtime is not None:
+        ntp_runtime.status_changed.connect(
+            lambda message, healthy: LOGGER.log(
+                logging.INFO if healthy else logging.ERROR, message
+            )
+        )
+        app.aboutToQuit.connect(ntp_runtime.stop)
+        ntp_runtime.start()
     if mqtt_error:
         source.set_module_status(mqtt_error, False)
     else:

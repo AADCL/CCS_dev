@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 from urllib.parse import urlencode
 
 from PySide6.QtCore import QObject, QProcess, QTimer, Qt, Signal
@@ -65,6 +67,80 @@ def build_srt_url(endpoint: SrtEndpoint | str, port: int = 9000,
     return f"srt://{host}:{endpoint.port}?{query}"
 
 
+def _windows_environment_path(scope: str) -> str:
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+
+        if scope == "user":
+            root = winreg.HKEY_CURRENT_USER
+            key_name = "Environment"
+        else:
+            root = winreg.HKEY_LOCAL_MACHINE
+            key_name = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+        with winreg.OpenKey(root, key_name) as key:
+            value, _ = winreg.QueryValueEx(key, "Path")
+        return os.path.expandvars(str(value))
+    except (ImportError, OSError):
+        return ""
+
+
+def resolve_ffmpeg_executable(
+    configured: str,
+    application_root: str | Path,
+    environ: Mapping[str, str] | None = None,
+    user_path: str | None = None,
+    machine_path: str | None = None,
+    local_app_data: str | Path | None = None,
+) -> str:
+    """Resolve FFmpeg without relying on the GUI process' inherited PATH."""
+    def existing_file(candidate: Path) -> str | None:
+        try:
+            return str(candidate.resolve()) if candidate.is_file() else None
+        except OSError:
+            return None
+
+    configured = configured.strip()
+    configured_path = Path(configured)
+    if "/" in configured or "\\" in configured or configured_path.parent != Path("."):
+        return str((Path(application_root) / configured_path).resolve())
+
+    environment = os.environ if environ is None else environ
+    process_path = environment.get("PATH", "")
+    direct_match = shutil.which(configured, path=process_path)
+    if direct_match:
+        return str(Path(direct_match).resolve())
+
+    if os.name == "nt" or user_path is not None or machine_path is not None or local_app_data is not None:
+        resolved_user_path = _windows_environment_path("user") if user_path is None else user_path
+        resolved_machine_path = _windows_environment_path("machine") if machine_path is None else machine_path
+        merged_path = os.pathsep.join(filter(None, (
+            process_path, resolved_user_path, resolved_machine_path,
+        )))
+        merged_match = shutil.which(configured, path=merged_path)
+        if merged_match:
+            return str(Path(merged_match).resolve())
+
+        local_root = local_app_data or environment.get("LOCALAPPDATA")
+        if local_root:
+            candidate = Path(local_root) / "Programs" / "ffmpeg" / "bin" / "ffmpeg.exe"
+            match = existing_file(candidate)
+            if match:
+                return match
+
+        app_root = Path(application_root)
+        for candidate in (
+            app_root / "tools" / "ffmpeg" / "bin" / "ffmpeg.exe",
+            app_root / "tools" / "ffmpeg.exe",
+        ):
+            match = existing_file(candidate)
+            if match:
+                return match
+
+    return configured
+
+
 def load_srt_video_config(path: str | Path | None = None) -> SrtVideoConfig:
     application_root = Path(__file__).resolve().parents[1]
     config_path = Path(path) if path is not None else application_root / "config" / "srt_video.json"
@@ -80,8 +156,7 @@ def load_srt_video_config(path: str | Path | None = None) -> SrtVideoConfig:
     executable_path = Path(executable)
     if executable_path.is_absolute():
         raise SrtVideoConfigError("FFmpeg 静态路径必须相对软件根目录配置")
-    if "/" in executable or "\\" in executable or executable_path.parent != Path("."):
-        executable = str((application_root / executable_path).resolve())
+    executable = resolve_ffmpeg_executable(executable, application_root)
     values = {name: int(payload.get(name, default)) for name, default in (
         ("output_width", 640), ("output_height", 480), ("output_fps", 30),
         ("probe_size_bytes", 1_000_000), ("analyze_duration_us", 1_000_000),
@@ -221,7 +296,7 @@ class SrtFfmpegReceiver(QObject):
         if not self._requested:
             return
         if error == QProcess.ProcessError.FailedToStart:
-            self._fail("未找到系统 FFmpeg，请安装带 SRT 支持的 FFmpeg")
+            self._fail(f"未找到 FFmpeg：{self.config.ffmpeg_executable}")
 
     def _on_process_finished(self, exit_code: int, _exit_status) -> None:
         process = self.sender()
