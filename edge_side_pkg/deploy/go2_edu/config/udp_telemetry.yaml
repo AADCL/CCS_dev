@@ -1,6 +1,6 @@
 schema_version: 1
 protocol_id: "ccs-udp-telemetry-v1"
-network: {destination_host: "192.168.151.100", destination_port: 14560, max_datagram_bytes: 16384}
+network: {destination_host: "192.168.50.101", destination_port: 14560, max_datagram_bytes: 16384}
 descriptors:
   - {name: global_pose, display_name: "全局位姿", type: pose, level: 1, source: {topic: /qrd/QRD_001/odometry, message_type: nav_msgs/Odometry, mapping: {position: pose.pose.position, orientation: pose.pose.orientation}}}
   - {name: vision_pose, display_name: "视觉传感器位姿", type: pose, level: 1, source: {topic: /qrd/QRD_001/vision_pose, message_type: geometry_msgs/PoseStamped, mapping: {position: pose.position, orientation: pose.orientation}}}

@@ -1,10 +1,10 @@
-# mqtav
+# epgeneral_mqtav
 
-<!-- mqtav_VERSION: 0.3.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.3.0 -->
 
 当前版本：`v0.3.0`
 
-mqtav 是运行在无人机机载计算机上的 ROS1 功能包。它订阅 MAVROS 健康状态并通过 MQTT 向地面站上报在线状态、飞控链路、电量、飞行模式和任务状态。
+`epgeneral_mqtav` 是运行在端侧计算机上的 ROS1 功能包。它订阅 ROS 健康状态并通过 MQTT 向地面站上报在线状态、设备链路、电量、模式和任务状态。为兼容既有地面站协议，MQTT topic 根和客户端 ID 前缀继续使用 `mqtav`。
 
 ## 功能与协议
 
@@ -64,7 +64,7 @@ mqtt:
     status: "mqtav/{device_id}/status"
 
 ros:
-  node_name: "mqtav"
+  node_name: "epgeneral_mqtav"
   state:
     topic: "/mavros/state"
     message_type: "mavros_msgs/State"
@@ -114,14 +114,14 @@ roslaunch epgeneral_mqtav epgeneral_mqtav.launch \
 可通过启动参数把日志写入指定目录：
 
 ```bash
-roslaunch epgeneral_mqtav epgeneral_mqtav.launch log_dir:=/var/log/mqtav
+roslaunch epgeneral_mqtav epgeneral_mqtav.launch log_dir:=/var/log/epgeneral_mqtav
 ```
 
-默认日志为 `~/.ros/log/mqtav/mqtav.log`，单个文件达到 10 MiB 后轮转，最多保留 5 份历史日志。每条日志均同步刷盘并输出到 `roslaunch` 控制台；启动、配置加载、订阅、连接、断联、重连失败、数据发送、每次心跳、关闭和未捕获异常均有记录。
+默认日志为 `~/.ros/log/epgeneral_mqtav/epgeneral_mqtav.log`，单个文件达到 10 MiB 后轮转，最多保留 5 份历史日志。每条日志均同步刷盘并输出到 `roslaunch` 控制台；启动、配置加载、订阅、连接、断联、重连失败、数据发送、每次心跳、关闭和未捕获异常均有记录。
 
 ### Melodic Python 解释器报错
 
-ROS Melodic 默认会使用 Python 2.7。mqtav v0.3.0 已兼容 Python 3.6.9，但必须让整个 catkin 工作空间使用 Python 3 构建。若启动日志出现 `devel/lib/python2.7`，说明仍在使用旧缓存。清理旧构建产物后重新编译：
+ROS Melodic 默认会使用 Python 2.7。`epgeneral_mqtav` v0.3.0 已兼容 Python 3.6.9，但必须让整个 catkin 工作空间使用 Python 3 构建。若启动日志出现 `devel/lib/python2.7`，说明仍在使用旧缓存。清理旧构建产物后重新编译：
 
 ```bash
 cd ~/catkin_ws
@@ -130,11 +130,11 @@ python3 --version  # 预期 Python 3.6.9
 rm -rf build devel
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
-python3 -c "import mqtav; print(mqtav.get_version())"
+python3 -c "import epgeneral_mqtav; print(epgeneral_mqtav.get_version())"
 roslaunch epgeneral_mqtav epgeneral_mqtav.launch
 ```
 
-重建后，`devel/lib/python3/dist-packages/mqtav` 应存在，启动脚本的第一行应为 `#!/usr/bin/python3`。同一工作空间中的 Python ROS 节点也应与 Python 3 配套；不能混用 `devel/lib/python2.7` 和本包。
+重建后，`devel/lib/python3/dist-packages/epgeneral_mqtav` 应存在，启动脚本的第一行应为 `#!/usr/bin/python3`。同一工作空间中的 Python ROS 节点也应与 Python 3 配套；不能混用 `devel/lib/python2.7` 和本包。
 
 ## 验证
 
@@ -144,7 +144,7 @@ roslaunch epgeneral_mqtav epgeneral_mqtav.launch
 source /opt/ros/melodic/setup.bash
 catkin clean -y
 catkin config --cmake-args -DPYTHON_EXECUTABLE=/usr/bin/python3
-catkin build mqtav
+catkin build epgeneral_mqtav
 source devel/setup.bash
 ```
 

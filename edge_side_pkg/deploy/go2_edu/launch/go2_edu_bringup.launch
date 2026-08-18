@@ -6,7 +6,7 @@
     <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
   </include>
   <include file="$(find epgeneral_mqtav)/launch/epgeneral_mqtav.launch">
-    <arg name="config_file" value="$(arg profile_dir)/mqtav.yaml" />
+    <arg name="config_file" value="$(arg profile_dir)/epgeneral_mqtav.yaml" />
     <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
   </include>
   <include file="$(find epgeneral_udp_telemetry)/launch/epgeneral_udp_telemetry.launch">

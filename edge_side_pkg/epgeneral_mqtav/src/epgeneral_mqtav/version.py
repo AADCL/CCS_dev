@@ -27,4 +27,4 @@ def get_version(package_xml=None):
 
         return _version_from_xml(Path(rospkg.RosPack().get_path("epgeneral_mqtav")) / "package.xml")
     except (ImportError, OSError, RuntimeError) as exc:
-        raise RuntimeError("cannot locate mqtav package.xml") from exc
+        raise RuntimeError("cannot locate epgeneral_mqtav package.xml") from exc

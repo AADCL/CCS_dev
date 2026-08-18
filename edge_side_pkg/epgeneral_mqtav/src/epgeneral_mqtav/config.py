@@ -1,4 +1,4 @@
-"""Python 3.6 compatible configuration loading and validation for mqtav."""
+"""Python 3.6 compatible configuration for epgeneral_mqtav."""
 
 import ipaddress
 from pathlib import Path
@@ -152,7 +152,7 @@ def load_device_config(path):
 
 
 def load_config(path, device_config_path):
-    """Load mqtav and shared device configs and reject unsafe deployments."""
+    """Load epgeneral_mqtav and shared device configs."""
     data = _load_yaml(Path(path))
     device = load_device_config(device_config_path)
 

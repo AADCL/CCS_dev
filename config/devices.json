@@ -28,12 +28,15 @@
     },
     {
       "device_id": "QRD_001",
-      "device_name": "测试机器狗001",
+      "device_name": "宇树Go2_demo",
       "device_type": "QRD",
-      "ip_address": "192.168.31.123",
-      "availability": "unavailable",
-      "last_tested_at": "2026-08-17T15:19:42.116912+00:00",
-      "status_cards": null
+      "ip_address": "192.168.50.100",
+      "availability": "available",
+      "last_tested_at": "2026-08-18T04:27:17.098587+00:00",
+      "status_cards": [
+        "livox_driver",
+        "fastlio2"
+      ]
     }
   ]
 }

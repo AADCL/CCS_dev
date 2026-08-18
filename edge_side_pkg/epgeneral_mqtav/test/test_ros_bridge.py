@@ -2,13 +2,13 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from mqtav.config import MissionConfig, load_config
-from mqtav.ros_bridge import RosBridge, read_field
-from mqtav.state import HealthState
+from epgeneral_mqtav.config import MissionConfig, load_config
+from epgeneral_mqtav.ros_bridge import RosBridge, read_field
+from epgeneral_mqtav.state import HealthState
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEVICE_CONFIG = ROOT.parent / "epgeneral_device_config" / "config" / "device.yaml"
+DEVICE_CONFIG = ROOT.parent / "EPGeneral_device_config" / "config" / "device.yaml"
 
 
 class FakeLogger(object):

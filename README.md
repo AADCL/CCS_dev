@@ -2,7 +2,7 @@
 
 当前地面站版本：**v0.13.1**
 
-端侧包版本：mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
+端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
@@ -33,12 +33,12 @@ CCS_dev/
 ├── examples/                      # 地图融合插件等扩展示例
 ├── edge_side_pkg/
 │   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
-│   ├── mqtav/                     # ROS1 MQTT 遥测包，v0.3.0
+│   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.0
 │   ├── epgeneral_usb_cam_rtsp/              # USB 相机 RTSP 推流包，v0.1.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
 │   ├── epgeneral_map_stream/             # ROS 实时建图上行包，v0.1.0
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
-│   ├── EPGeneral_mqtav.zip                  # 端侧部署归档
+│   ├── epgeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
 ├── docs/DEVELOPMENT_NOTES.md
 ├── docs/EDGE_DEVICE_INTERFACES.md # 端侧交互协议总册
@@ -144,7 +144,7 @@ source devel/setup.bash
 
 将 `epgeneral_device_config/config/device.yaml` 的 ID/IP 与地面站 `config/devices.json` 对齐，并检查：
 
-- `mqtav/config/config.yaml` 的地面站 MQTT 地址。
+- `epgeneral_mqtav/config/config.yaml` 的地面站 MQTT 地址。
 - `epgeneral_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
 - `epgeneral_usb_cam_rtsp/config/video.yaml` 的摄像头、分辨率、帧率和码率。
 - `epgeneral_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。

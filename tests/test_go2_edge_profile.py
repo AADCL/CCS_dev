@@ -23,7 +23,7 @@ class Go2EdgeProfileTests(unittest.TestCase):
     def test_device_and_prefixed_topics_are_consistent(self):
         device = yaml.safe_load((PROFILE / "device.yaml").read_text(encoding="utf-8"))["device"]
         bridge = yaml.safe_load((PROFILE / "go2.yaml").read_text(encoding="utf-8"))
-        mqtt = yaml.safe_load((PROFILE / "mqtav.yaml").read_text(encoding="utf-8"))
+        mqtt = yaml.safe_load((PROFILE / "epgeneral_mqtav.yaml").read_text(encoding="utf-8"))
         telemetry = yaml.safe_load((PROFILE / "udp_telemetry.yaml").read_text(encoding="utf-8"))
         self.assertEqual(device["id"], "QRD_001")
         self.assertRegex(device["id"], r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -34,7 +34,7 @@ class Go2EdgeProfileTests(unittest.TestCase):
         self.assertEqual(sources["imu"], "/qrd/QRD_001/imu")
 
     def test_wire_protocols_remain_unchanged(self):
-        mqtt = yaml.safe_load((PROFILE / "mqtav.yaml").read_text(encoding="utf-8"))
+        mqtt = yaml.safe_load((PROFILE / "epgeneral_mqtav.yaml").read_text(encoding="utf-8"))
         telemetry = yaml.safe_load((PROFILE / "udp_telemetry.yaml").read_text(encoding="utf-8"))
         self.assertEqual(mqtt["mqtt"]["topics"]["status"], "mqtav/{device_id}/status")
         self.assertEqual(telemetry["protocol_id"], "ccs-udp-telemetry-v1")
