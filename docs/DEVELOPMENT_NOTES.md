@@ -1,5 +1,43 @@
 # 开发笔记
 
+## v0.13.1
+
+### 已保存地图同步融合
+
+- `MapFusionJob.sync_pgm` 将同步栅格作为离线点云融合的可选阶段。源 PGM 使用与 PCD 相同的主从关系，其中平移取 X/Y、旋转取 yaw；Z/roll/pitch 不参与二维栅格变换。
+- 点云插件先生成并校验最终 PCD，`PgmFusionEngine` 再以该 PCD 的 XY 边界执行逆向最近邻融合，分辨率默认取来源最细值，冲突规则保持 `occupied > free > unknown`。
+- `MapRepository.commit_fusion_result()` 在创建正式地图前验证 PCD 与 PGM；正式目录中的 `map.pcd`、`map.pgm`、`map.yaml` 和 schema 5 元数据作为一个提交单元写入，失败时移除新目录并保留 `.fusion/<job_id>`。
+
+## v0.13.0
+
+### PGM 文件传输
+
+- `MapBuildingService` 继续独占 UDP 14562 socket，并把 PGM 扩展消息分发给 `PgmDownloadCoordinator`。下载协调器不创建第二个 socket，因此能严格保证实时建图与 PGM 下载互斥。
+- 每个来源独立校验设备 IP、地图/设备/session 标识、manifest、CRC32、SHA-256、zlib 解压尺寸和 P2/P5 内容。分片可乱序并忽略重复，已接收分片与 `chunk-state.json` 落在 `.pgm_fusion/<job_id>`，重启后只请求缺片。
+
+### 栅格融合与提交
+
+- `PgmFusionEngine` 先按每个来源自己的 negate 和阈值分类，再从目标 PCD XY 栅格中心逆向映射到来源，使用最近邻采样避免旋转后的前向投影空洞。
+- 合并优先级为 occupied、free、unknown；输出固定为 0/254/205、negate=0、origin yaw=0。分辨率不得细于来源最细值，输出范围固定为目标 PCD XY 边界。
+- schema 5 的 `pgm_fusion` 保存目标 PCD SHA-256、来源、二维外参、产物哈希、分辨率和裁剪统计。提交前重新计算 PCD 指纹，并通过双文件备份和单次元数据写入替换 PGM/YAML。
+
+## v0.12.0
+
+### 配准插件样例
+
+- NumPy RANSAC 插件先应用用户外参，再用分块最近邻、三点随机采样和 SVD 刚体估计修正残差；固定随机种子保证测试可重复，并通过体素采样限制计算规模。
+- Open3D 插件采用 point-to-point ICP。两种插件均检查重叠质量，失败时抛出异常，由现有独立工作进程和输出校验机制阻止错误 PCD 提交。
+
+### PCD 投影栅格
+
+- `PcdToPgmGenerator` 在指定 Z 范围内把 XYZ 投影至 XY 栅格，PGM 文件按 ROS 图像方向上下翻转，使用 occupied=0、free=254、unknown=205 和 yaw=0。
+- 未命中区域默认 unknown。地面站没有传感器射线观测，不能仅凭表面点云可靠推断 free；用户可为特定数据显式选择 free。
+- 仓储在临时目录生成 PGM/YAML，再复用导入流程的双文件备份与原子替换。像素上限防止异常分辨率耗尽内存。
+
+### 数字输入控件
+
+- `NoButtonSpinBox` 和 `NoButtonDoubleSpinBox` 固定使用 `ButtonSymbols.NoButtons`，页面仍保留范围、精度、单位、键盘编辑和信号行为；QSS 同步隐藏原生子控件作为主题兜底。
+
 ## v0.11.1
 
 ### 共享地图拖动速度

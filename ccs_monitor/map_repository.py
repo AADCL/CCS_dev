@@ -25,13 +25,17 @@ from .models import (
     MapDefinition,
     MapStatus,
     MapTransform,
+    PgmFusionProvenance,
+    PgmFusionSource,
     PgmMapMetadata,
+    PgmTransform2D,
 )
-from .pgm_map import PgmMapError, PgmMapLoader
+from .pgm_map import PcdToPgmGenerator, PcdToPgmOptions, PgmMapError, PgmMapLoader
+from .pgm_fusion import pcd_sha256
 from .point_cloud import MapPointCloudLoader, PointCloudError
 
 
-MAP_SCHEMA_VERSION = 4
+MAP_SCHEMA_VERSION = 5
 DEFAULT_MAP_ROOT = Path(__file__).resolve().parent.parent / "data" / "map_server"
 
 
@@ -59,6 +63,7 @@ class MapRepository(QObject):
         root: str | Path = DEFAULT_MAP_ROOT,
         loader: MapPointCloudLoader | None = None,
         pgm_loader: PgmMapLoader | None = None,
+        pgm_generator: PcdToPgmGenerator | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
@@ -66,6 +71,7 @@ class MapRepository(QObject):
         self.fusion_root = self.root / ".fusion"
         self.loader = loader or MapPointCloudLoader()
         self.pgm_loader = pgm_loader or PgmMapLoader()
+        self.pgm_generator = pgm_generator or PcdToPgmGenerator(self.loader)
         self._maps: list[MapDefinition] = []
         self.root.mkdir(parents=True, exist_ok=True)
         self.trash_root.mkdir(parents=True, exist_ok=True)
@@ -302,6 +308,160 @@ class MapRepository(QObject):
         self._refresh_and_emit()
         return self.map_by_id(map_id) or updated
 
+    def generate_pgm(
+        self, map_id: str, options: PcdToPgmOptions | None = None
+    ) -> MapDefinition:
+        current = self._require_map(map_id)
+        if not current.pcd_path:
+            raise MapRepositoryError("该地图没有可用于生成 PGM 的点云")
+        pcd_path = self.root / current.directory_name / current.pcd_path
+        if not pcd_path.is_file():
+            raise MapRepositoryError("地图点云文件不存在")
+        try:
+            with tempfile.TemporaryDirectory(prefix="ccs-pgm-generation-") as directory:
+                temporary_root = Path(directory)
+                self.pgm_generator.generate(
+                    pcd_path,
+                    temporary_root / "map.pgm",
+                    temporary_root / "map.yaml",
+                    options,
+                )
+                return self.import_pgm(map_id, temporary_root / "map.yaml")
+        except PgmMapError as exc:
+            raise MapRepositoryError(f"PGM 生成失败：{exc}") from exc
+
+    def pcd_fingerprint(self, map_id: str) -> str:
+        current = self._require_map(map_id)
+        if not current.pcd_path:
+            raise MapRepositoryError("目标地图没有有效 PCD")
+        path = self.root / current.directory_name / current.pcd_path
+        if not path.is_file():
+            raise MapRepositoryError("目标地图 PCD 文件不存在")
+        try:
+            return pcd_sha256(path)
+        except OSError as exc:
+            raise MapRepositoryError(f"PCD 指纹计算失败：{exc}") from exc
+
+    def pgm_fusion_job_directory(self, map_id: str, job_id: str, *, create: bool = True) -> Path:
+        current = self._require_map(map_id)
+        safe_job_id = re.sub(r"[^A-Za-z0-9_-]", "", job_id)
+        if not safe_job_id or safe_job_id != job_id:
+            raise MapRepositoryError("PGM 融合任务 ID 无效")
+        root = self.root / current.directory_name / ".pgm_fusion" / safe_job_id
+        if create:
+            root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def write_pgm_fusion_job(self, map_id: str, job_id: str, payload: dict[str, Any]) -> Path:
+        root = self.pgm_fusion_job_directory(map_id, job_id)
+        self._atomic_json(root / "job.json", payload)
+        return root
+
+    def interrupted_pgm_fusion_jobs(self, map_id: str) -> list[dict[str, Any]]:
+        current = self._require_map(map_id)
+        root = self.root / current.directory_name / ".pgm_fusion"
+        results: list[dict[str, Any]] = []
+        if not root.is_dir():
+            return results
+        for job_file in sorted(root.glob("*/job.json")):
+            try:
+                payload = json.loads(job_file.read_text(encoding="utf-8"))
+                if isinstance(payload, dict) and payload.get("state") != "completed":
+                    results.append(payload)
+            except (OSError, json.JSONDecodeError):
+                continue
+        return results
+
+    def discard_pgm_fusion_job(self, map_id: str, job_id: str) -> Path:
+        source = self.pgm_fusion_job_directory(map_id, job_id, create=False)
+        if not source.is_dir():
+            raise MapRepositoryError("PGM 融合临时任务不存在")
+        trash = self.root / self._require_map(map_id).directory_name / ".pgm_fusion" / ".trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        target = trash / job_id
+        suffix = 2
+        while target.exists():
+            target = trash / f"{job_id}_{suffix}"
+            suffix += 1
+        shutil.move(str(source), str(target))
+        return target
+
+    def commit_pgm_fusion_result(
+        self, map_id: str, job_id: str, yaml_path: str | Path,
+        provenance: PgmFusionProvenance,
+    ) -> MapDefinition:
+        current = self._require_map(map_id)
+        if self.pcd_fingerprint(map_id) != provenance.target_pcd_sha256:
+            raise MapRepositoryError("目标 PCD 已变化，必须重新执行 PGM 融合")
+        try:
+            data = self.pgm_loader.load_yaml(yaml_path)
+        except PgmMapError as exc:
+            raise MapRepositoryError(f"融合 PGM 校验失败：{exc}") from exc
+        directory = self.root / current.directory_name
+        image_target, yaml_target = directory / "map.pgm", directory / "map.yaml"
+        image_temporary = directory / ".map.fusion.pgm"
+        yaml_temporary = directory / ".map.fusion.yaml"
+        image_backup, yaml_backup = directory / ".map.pgm.backup", directory / ".map.yaml.backup"
+        backed_image = backed_yaml = installed_image = installed_yaml = False
+
+        def restore() -> None:
+            if installed_image:
+                image_target.unlink(missing_ok=True)
+            if installed_yaml:
+                yaml_target.unlink(missing_ok=True)
+            if backed_image:
+                os.replace(image_backup, image_target)
+            if backed_yaml:
+                os.replace(yaml_backup, yaml_target)
+
+        try:
+            shutil.copy2(data.source_image_path, image_temporary)
+            normalized = replace(data.metadata, image_path="map.pgm", yaml_path="map.yaml")
+            yaml_temporary.write_text(
+                yaml.safe_dump(self.pgm_loader.normalized_yaml(normalized), allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            image_backup.unlink(missing_ok=True)
+            yaml_backup.unlink(missing_ok=True)
+            if image_target.exists():
+                os.replace(image_target, image_backup)
+                backed_image = True
+            if yaml_target.exists():
+                os.replace(yaml_target, yaml_backup)
+                backed_yaml = True
+            os.replace(image_temporary, image_target)
+            installed_image = True
+            os.replace(yaml_temporary, yaml_target)
+            installed_yaml = True
+            updated = replace(
+                current, pgm=normalized, pgm_fusion=provenance,
+                status=MapStatus.READY, updated_at=datetime.now(timezone.utc), error_message=None,
+            )
+            self._write_metadata(updated)
+        except Exception as exc:
+            image_temporary.unlink(missing_ok=True)
+            yaml_temporary.unlink(missing_ok=True)
+            try:
+                restore()
+            except OSError as restore_exc:
+                raise MapRepositoryError(f"PGM 融合提交失败且旧图层恢复失败：{restore_exc}") from exc
+            if isinstance(exc, MapRepositoryError):
+                raise
+            raise MapRepositoryError(f"PGM 融合提交失败：{exc}") from exc
+        image_backup.unlink(missing_ok=True)
+        yaml_backup.unlink(missing_ok=True)
+        job_root = self.pgm_fusion_job_directory(map_id, job_id, create=False)
+        if (job_root / "job.json").is_file():
+            try:
+                payload = json.loads((job_root / "job.json").read_text(encoding="utf-8"))
+                payload["state"] = "completed"
+                payload["completed_at"] = datetime.now(timezone.utc).isoformat()
+                self._atomic_json(job_root / "job.json", payload)
+            except (OSError, json.JSONDecodeError):
+                pass
+        self._refresh_and_emit()
+        return self.map_by_id(map_id) or updated
+
     def delete(self, map_id: str) -> Path:
         current = self.map_by_id(map_id)
         if current is None:
@@ -419,12 +579,28 @@ class MapRepository(QObject):
         provenance: MapBuildProvenance,
         *,
         now: datetime | None = None,
+        output_pgm_yaml: str | Path | None = None,
+        pgm_provenance: PgmFusionProvenance | None = None,
     ) -> MapDefinition:
         source = Path(output_pcd)
         try:
             cloud = self.loader.load(source)
         except (OSError, PointCloudError) as exc:
             raise MapRepositoryError(f"融合结果校验失败：{exc}") from exc
+        pgm_data = None
+        if output_pgm_yaml is not None:
+            try:
+                pgm_data = self.pgm_loader.load_yaml(output_pgm_yaml)
+            except PgmMapError as exc:
+                raise MapRepositoryError(f"同步融合 PGM 校验失败：{exc}") from exc
+            if pgm_provenance is None:
+                raise MapRepositoryError("同步融合 PGM 缺少来源元数据")
+            try:
+                output_fingerprint = pcd_sha256(source)
+            except OSError as exc:
+                raise MapRepositoryError(f"融合 PCD 指纹计算失败：{exc}") from exc
+            if pgm_provenance.target_pcd_sha256 != output_fingerprint:
+                raise MapRepositoryError("同步融合 PGM 绑定的 PCD 指纹不匹配")
         self._ensure_unique_name(name)
         definition = self.create(
             name, tuple(creator_devices), frame_id, now=now,
@@ -436,10 +612,28 @@ class MapRepository(QObject):
             temporary = directory / ".fusion-result.pcd"
             shutil.copy2(source, temporary)
             os.replace(temporary, target)
+            pgm_metadata = None
+            if pgm_data is not None:
+                image_temporary = directory / ".fusion-result.pgm"
+                yaml_temporary = directory / ".fusion-result.yaml"
+                shutil.copy2(pgm_data.source_image_path, image_temporary)
+                pgm_metadata = replace(
+                    pgm_data.metadata, image_path="map.pgm", yaml_path="map.yaml"
+                )
+                yaml_temporary.write_text(
+                    yaml.safe_dump(
+                        self.pgm_loader.normalized_yaml(pgm_metadata),
+                        allow_unicode=True, sort_keys=False,
+                    ),
+                    encoding="utf-8",
+                )
+                os.replace(image_temporary, directory / "map.pgm")
+                os.replace(yaml_temporary, directory / "map.yaml")
             updated = replace(
                 definition, status=MapStatus.READY, pcd_path="map.pcd",
                 point_count=cloud.point_count, bounds=cloud.bounds,
                 width_m=cloud.bounds.width, height_m=cloud.bounds.height,
+                pgm=pgm_metadata, pgm_fusion=pgm_provenance,
                 updated_at=datetime.now(timezone.utc), build_provenance=provenance,
             )
             self._write_metadata(updated)
@@ -691,7 +885,7 @@ class MapRepository(QObject):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             schema_version = payload.get("schema_version") if isinstance(payload, dict) else None
-            if schema_version not in {1, 2, 3, MAP_SCHEMA_VERSION}:
+            if schema_version not in {1, 2, 3, 4, MAP_SCHEMA_VERSION}:
                 raise ValueError("schema_version 不受支持")
             devices = tuple(
                 MapCreatorDevice(str(item["device_id"]), str(item["device_name"]), str(item["device_type"]))
@@ -729,6 +923,7 @@ class MapRepository(QObject):
                 fused_points=int(mapping_payload["fused_points"]),
             ) if mapping_payload else None
             provenance = self._parse_provenance(payload.get("build_provenance"))
+            pgm_fusion = self._parse_pgm_fusion(payload.get("pgm_fusion"))
             if pgm is not None:
                 pgm_numbers = (
                     pgm.resolution,
@@ -762,6 +957,7 @@ class MapRepository(QObject):
                 trajectory_path=str(payload["trajectory_file"]) if payload.get("trajectory_file") else None,
                 directory_name=directory_name,
                 build_provenance=provenance,
+                pgm_fusion=pgm_fusion,
             )
             if not definition.map_id or not definition.name:
                 raise ValueError("地图 ID 和名称不能为空")
@@ -816,6 +1012,7 @@ class MapRepository(QObject):
             "trajectory_file": definition.trajectory_path,
             "last_mapping": self._serialize_mapping(definition.last_mapping),
             "build_provenance": self._serialize_provenance(definition.build_provenance),
+            "pgm_fusion": self._serialize_pgm_fusion(definition.pgm_fusion),
         }
         temporary: Path | None = None
         try:
@@ -891,6 +1088,81 @@ class MapRepository(QObject):
             "started_at": metadata.started_at.isoformat() if metadata.started_at else None,
             "ended_at": metadata.ended_at.isoformat() if metadata.ended_at else None,
         }
+
+    @staticmethod
+    def _serialize_pgm_fusion(metadata: PgmFusionProvenance | None) -> dict[str, Any] | None:
+        if metadata is None:
+            return None
+        return {
+            "job_id": metadata.job_id,
+            "target_pcd_sha256": metadata.target_pcd_sha256,
+            "sources": [
+                {
+                    "source_id": item.source_id,
+                    "source_map_id": item.source_map_id,
+                    "source_frame_id": item.source_frame_id or (
+                        item.manifest.frame_id if item.manifest else None
+                    ),
+                    "device_id": item.device_id,
+                    "device_name": item.device_name,
+                    "existing_target_layer": item.existing_target_layer,
+                    "transform": {
+                        "x_m": item.transform.x_m,
+                        "y_m": item.transform.y_m,
+                        "yaw_deg": item.transform.yaw_deg,
+                    },
+                    "artifact_sha256": item.artifact_sha256 or (item.manifest.sha256 if item.manifest else None),
+                    "frame_id": item.manifest.frame_id if item.manifest else None,
+                }
+                for item in metadata.sources
+            ],
+            "output_resolution": metadata.output_resolution,
+            "merge_policy": metadata.merge_policy,
+            "clipped_cells": metadata.clipped_cells,
+            "clipped_area_m2": metadata.clipped_area_m2,
+            "created_at": metadata.created_at.isoformat(),
+        }
+
+    @staticmethod
+    def _parse_pgm_fusion(payload: Any) -> PgmFusionProvenance | None:
+        if payload is None:
+            return None
+        if not isinstance(payload, dict):
+            raise ValueError("PGM 融合来源元数据必须是对象")
+        sources = []
+        for item in payload.get("sources", []):
+            transform_payload = item.get("transform", {})
+            transform = PgmTransform2D(
+                float(transform_payload.get("x_m", 0.0)),
+                float(transform_payload.get("y_m", 0.0)),
+                float(transform_payload.get("yaw_deg", 0.0)),
+            )
+            if not all(math.isfinite(value) for value in (transform.x_m, transform.y_m, transform.yaw_deg)):
+                raise ValueError("PGM 融合二维外参必须为有限数")
+            artifact_sha = item.get("artifact_sha256")
+            sources.append(PgmFusionSource(
+                source_id=str(item["source_id"]),
+                source_map_id=str(item["source_map_id"]),
+                transform=transform,
+                source_frame_id=str(item.get("source_frame_id") or ""),
+                device_id=str(item["device_id"]) if item.get("device_id") else None,
+                device_name=str(item.get("device_name", "")),
+                artifact_sha256=str(artifact_sha) if artifact_sha else None,
+                existing_target_layer=bool(item.get("existing_target_layer", False)),
+            ))
+        target_hash = str(payload["target_pcd_sha256"])
+        if len(target_hash) != 64:
+            raise ValueError("PGM 融合目标 PCD 指纹无效")
+        return PgmFusionProvenance(
+            job_id=str(payload["job_id"]),
+            target_pcd_sha256=target_hash,
+            sources=tuple(sources),
+            output_resolution=float(payload["output_resolution"]),
+            merge_policy=str(payload.get("merge_policy", "occupied>free>unknown")),
+            clipped_cells=int(payload.get("clipped_cells", 0)),
+            clipped_area_m2=float(payload.get("clipped_area_m2", 0.0)),
+            created_at=datetime.fromisoformat(str(payload["created_at"])),
+        )
 
     @staticmethod
     def _parse_provenance(payload: Any) -> MapBuildProvenance | None:

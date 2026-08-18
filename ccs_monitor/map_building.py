@@ -83,7 +83,8 @@ class MapBuildingJobSnapshot:
 class MapBuildingProtocol:
     MESSAGE_TYPES = {
         "start_mapping", "stop_mapping", "command_ack", "session_heartbeat",
-        "cloud_chunk", "session_status",
+        "cloud_chunk", "session_status", "request_pgm_artifact",
+        "request_pgm_chunks", "pgm_manifest", "pgm_chunk", "pgm_transfer_status",
     }
 
     def __init__(self, config: MapBuildingConfig) -> None:
@@ -175,7 +176,9 @@ class MapBuildingProtocol:
 
     def _validate_command_ack(self, payload: dict[str, Any]) -> None:
         self._require_string(payload, "request_id")
-        if payload.get("command") not in {"start_mapping", "stop_mapping"}:
+        if payload.get("command") not in {
+            "start_mapping", "stop_mapping", "request_pgm_artifact", "request_pgm_chunks"
+        }:
             raise MapBuildingProtocolError("ACK command 无效")
         if not isinstance(payload.get("accepted"), bool):
             raise MapBuildingProtocolError("ACK accepted 必须是布尔值")
@@ -203,6 +206,65 @@ class MapBuildingProtocol:
             raise MapBuildingProtocolError("cloud_chunk.data 必须是非空二进制")
         self._validate_transform(payload.get("map_from_body"), "map_from_body")
         self._validate_transform(payload.get("body_from_sensor"), "body_from_sensor")
+
+    def _validate_request_pgm_artifact(self, payload: dict[str, Any]) -> None:
+        self._require_string(payload, "request_id")
+        self._require_string(payload, "source_map_id")
+        self._require_string(payload, "return_host")
+        self._require_int(payload, "return_port", 1, 65535)
+        if payload.get("compression") != "zlib":
+            raise MapBuildingProtocolError("PGM 请求仅支持 zlib")
+
+    def _validate_request_pgm_chunks(self, payload: dict[str, Any]) -> None:
+        self._require_string(payload, "request_id")
+        self._require_string(payload, "source_map_id")
+        missing = payload.get("missing_chunks")
+        if (not isinstance(missing, list) or not missing or len(missing) > 100000
+                or any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in missing)):
+            raise MapBuildingProtocolError("missing_chunks 无效")
+
+    def _validate_pgm_manifest(self, payload: dict[str, Any]) -> None:
+        self._require_string(payload, "source_map_id")
+        self._require_string(payload, "frame_id")
+        if payload.get("pgm_format") not in {"P2", "P5"}:
+            raise MapBuildingProtocolError("PGM 格式无效")
+        self._require_int(payload, "width", 1)
+        self._require_int(payload, "height", 1)
+        self._require_number(payload, "resolution", 1e-9)
+        origin = payload.get("origin")
+        if (not isinstance(origin, list) or len(origin) != 3
+                or any(not isinstance(value, (int, float)) or isinstance(value, bool)
+                       or not math.isfinite(float(value)) for value in origin)):
+            raise MapBuildingProtocolError("PGM origin 无效")
+        if not isinstance(payload.get("negate"), (bool, int)) or payload.get("negate") not in {0, 1, False, True}:
+            raise MapBuildingProtocolError("PGM negate 无效")
+        free = self._require_number(payload, "free_thresh", 0.0)
+        occupied = self._require_number(payload, "occupied_thresh", 0.0)
+        if not 0 <= free < occupied <= 1:
+            raise MapBuildingProtocolError("PGM 阈值无效")
+        self._require_int(payload, "generated_at_ns", 0)
+        self._require_int(payload, "uncompressed_size", 1, 64 * 1024 * 1024)
+        self._require_int(payload, "compressed_size", 1, 64 * 1024 * 1024)
+        self._require_int(payload, "chunk_count", 1, 100000)
+        self._require_int(payload, "crc32", 0, 0xFFFFFFFF)
+        digest = self._require_string(payload, "sha256")
+        if len(digest) != 64 or any(char not in "0123456789abcdefABCDEF" for char in digest):
+            raise MapBuildingProtocolError("PGM SHA-256 无效")
+
+    def _validate_pgm_chunk(self, payload: dict[str, Any]) -> None:
+        self._require_string(payload, "source_map_id")
+        chunk_count = self._require_int(payload, "chunk_count", 1, 100000)
+        self._require_int(payload, "chunk_index", 0, chunk_count - 1)
+        data = payload.get("data")
+        if not isinstance(data, bytes) or not data:
+            raise MapBuildingProtocolError("pgm_chunk.data 必须是非空二进制")
+
+    def _validate_pgm_transfer_status(self, payload: dict[str, Any]) -> None:
+        self._require_string(payload, "source_map_id")
+        if payload.get("state") not in {"complete", "error"}:
+            raise MapBuildingProtocolError("PGM 传输状态无效")
+        if payload.get("reason") is not None and not isinstance(payload.get("reason"), str):
+            raise MapBuildingProtocolError("PGM 传输原因无效")
 
     def _validate_transform(self, value: Any, name: str) -> None:
         if not isinstance(value, dict):

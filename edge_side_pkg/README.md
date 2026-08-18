@@ -4,7 +4,7 @@
 
 命名规则：通用包目录使用 `EPGeneral_<function>`，ROS/catkin 包名使用全小写 `epgeneral_<function>`。设备专属扩展使用 `EPDQUAV_`、`EPUGV_`、`EPQRD_`、`EPDATUGV_` 或 `EPAGUAV_` 目录前缀，对应 ROS 前缀为 `epdquav_`、`epugv_`、`epqrd_`、`epdatugv_`、`epaguav_`。
 
-地面站当前为 v0.11.1；本次仅修复地面站三维地图拖动速度，不修改任何端侧包代码、配置 schema、通信协议或包版本。v0.11.0 新增的离线地图融合和多设备建图调度保持不变。
+地面站当前为 v0.13.1；已保存地图的 PCD/PGM 同步融合完全在地面站本地执行，不修改端侧协议或包版本。v0.13.0 在 `ccs-map-stream-v1` 中定义的可选 PGM 文件服务仍尚未由 `epgeneral_map_stream` v0.1.0 实现。
 
 本次新增独立版本的端侧 `epgeneral_task_control` v0.1.0，不修改既有协议字段或其他端侧包版本。
 

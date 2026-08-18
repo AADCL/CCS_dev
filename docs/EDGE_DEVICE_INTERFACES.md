@@ -1,9 +1,9 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.11.1`，更新日期：2026-08-17。
+文档版本：`v0.13.1`，更新日期：2026-08-18。
 
-地面站 v0.11.1 仅调整本地三维地图拖动灵敏度，不改变任何端侧接口。v0.11.0 在不改变端口和 schema 的前提下，为 `ccs-map-stream-v1` 的 `start_mapping` 增加三个可选联合建图字段。MQTT、RTSP、UDP 14560 和任务 UDP 14563/14564 均保持不变。
-端侧 `epgeneral_map_stream` v0.1.0 可忽略新增字段并继续按独立会话上传；主从外参、预览融合和最终算法插件均由地面站执行。本版本不修改任何端侧包代码或版本。
+地面站 v0.13.1 新增的已保存地图 PCD/PGM 同步融合仅使用本地文件，不产生端侧消息。v0.13.0 的 PGM 产物下载继续复用 UDP 14561/14562，不改变公共信封 schema。MQTT、RTSP、UDP 14560 和任务 UDP 14563/14564 均保持不变。
+端侧 `epgeneral_map_stream` v0.1.0 尚未实现 PGM 文件服务；本版本不修改任何真实端侧包代码或版本。旧端侧可继续执行实时建图，但 PGM 下载会超时并显示“不支持”。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -240,6 +240,54 @@ p_map = T_map_body * T_body_sensor * p_sensor
 - 端侧重启必须停止旧 session；只有收到新的 start_mapping 才开始新 session。禁止跨 session 复用 frame/sequence 状态。
 - 地面站每 5 秒原子更新 `.mapping/<session_id>/session.json`、`partial.pcd`、`trajectory.csv`。正式提交成功后删除会话目录。
 
+### PGM 产物下载扩展（v0.13.0）
+
+PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封保持 schema 1；`map_id` 是地面站目标地图 ID，`device_id` 是来源设备 ID，`session_id` 由每次下载生成。端侧产物由 payload 中独立的 `source_map_id` 标识。
+
+下行 `request_pgm_artifact` payload：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `request_id` | string | 幂等请求 ID |
+| `source_map_id` | string | 端侧完整 ROS PGM 产物 ID |
+| `return_host` / `return_port` | string / int | 地面站可达地址与 UDP 14562 |
+| `compression` | string | 固定 `zlib` |
+
+端侧必须先返回 `command_ack`，其中 `command=request_pgm_artifact`。拒绝时 `reason` 使用 `ARTIFACT_NOT_FOUND`、`UNSUPPORTED_COMMAND`、`BUSY` 或可读错误；旧版本无 ACK 时地面站按 500 ms 最多重试 5 次。
+
+上行 `pgm_manifest` payload：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `source_map_id`, `frame_id` | string | 产物与来源坐标系 |
+| `pgm_format` | string | `P2` 或 `P5` |
+| `width`, `height` | int | PGM 像素尺寸 |
+| `resolution` | float | 米/像素 |
+| `origin` | float[3] | ROS `[x, y, yaw]`，yaw 为弧度 |
+| `negate` | bool/int | ROS map_server 语义 |
+| `occupied_thresh`, `free_thresh` | float | 满足 `0 <= free < occupied <= 1` |
+| `generated_at_ns` | int | 端侧产物时间，Unix ns |
+| `uncompressed_size`, `compressed_size` | int | PGM 原始/压缩字节数 |
+| `chunk_count` | int | 分片总数，最大 100000 |
+| `crc32` | uint32 | 完整 zlib 压缩流 CRC32 |
+| `sha256` | string | 解压后完整 PGM 字节 SHA-256 |
+
+上行 `pgm_chunk` payload 包含 `source_map_id`、`chunk_index`、`chunk_count` 和二进制 `data`。分片可乱序；同一 index 重复分片必须内容一致，地面站只采用首个。单个数据报仍不得超过 `config/map_building.json` 的约 1400 字节上限。
+
+缺片 10 秒后，地面站发送 `request_pgm_chunks`，payload 包含新的 `request_id`、`source_map_id` 和升序去重的 `missing_chunks`。最多补传 5 轮。端侧可使用 `pgm_transfer_status` 报告 `state=complete|error` 及可选 `reason`，但完整性最终以 CRC、SHA、zlib、P2/P5 和 manifest/YAML 字段校验为准。
+
+单个未压缩 PGM 上限 64 MiB。地面站严格校验来源 IP、map/device/session/source_map ID、尺寸、分片数、解压尺寸和哈希。下载检查点保存在目标地图 `.pgm_fusion/<job_id>/<device_id>/`；包含 manifest、分片文件和 `chunk-state.json`，重启后只请求缺失分片。
+
+坐标外参由用户在地面站输入，方向固定为 `目标 PCD frame <- 来源 PGM frame`，只包含 X/Y 米制平移和 yaw 角度。端侧不负责融合或坐标转换。输出采用逆向最近邻采样和 `occupied > free > unknown`，超出目标 PCD XY 边界的内容必须经用户确认后裁剪。
+
+端侧后续实现检查清单：
+
+- 从 `source_map_id` 安全定位同一时刻的完整 PGM 与 ROS YAML 元数据，不允许目录穿越。
+- 在内存或稳定快照中读取完整 P2/P5 文件，zlib 压缩后计算压缩流 CRC32 和原始文件 SHA-256。
+- 保持 session 内 manifest 和分片不可变，支持任意缺片索引补发和重复请求幂等。
+- 执行 64 MiB、100000 分片和数据报尺寸限制；不存在、忙碌或传感器错误时明确 ACK 拒绝。
+- 不修改现有 start/stop/cloud_chunk 路径；PGM 传输期间拒绝实时建图请求，实时建图期间拒绝 PGM 请求。
+
 ## 配置对应关系
 
 | 地面站 | 端侧 | 必须一致/可达内容 |
@@ -268,7 +316,7 @@ p_map = T_map_body * T_body_sensor * p_sensor
 
 ### 兼容性与网络
 
-- 地面站版本：v0.11.1；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
+- 地面站版本：v0.13.1；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
 - 可信内网明文 MessagePack，schema 1；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。

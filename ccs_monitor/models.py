@@ -254,6 +254,7 @@ class MapDefinition:
     directory_name: str = ""
     error_message: str | None = None
     build_provenance: "MapBuildProvenance | None" = None
+    pgm_fusion: "PgmFusionProvenance | None" = None
 
 
 @dataclass(frozen=True)
@@ -343,6 +344,7 @@ class MapFusionJob:
     primary_map_id: str
     transforms: tuple[MapTransform, ...]
     algorithm_id: str
+    sync_pgm: bool = False
 
 
 @dataclass(frozen=True)
@@ -366,6 +368,92 @@ class PgmMapMetadata:
     @property
     def height_m(self) -> float:
         return self.image_height * self.resolution
+
+
+@dataclass(frozen=True)
+class PgmTransform2D:
+    """Rigid transform expressed as target frame <- source PGM frame."""
+
+    x_m: float = 0.0
+    y_m: float = 0.0
+    yaw_deg: float = 0.0
+
+
+@dataclass(frozen=True)
+class PgmArtifactManifest:
+    device_id: str
+    source_map_id: str
+    session_id: str
+    frame_id: str
+    pgm_format: str
+    width: int
+    height: int
+    resolution: float
+    origin: tuple[float, float, float]
+    negate: bool
+    occupied_thresh: float
+    free_thresh: float
+    generated_at: datetime
+    uncompressed_size: int
+    compressed_size: int
+    chunk_count: int
+    crc32: int
+    sha256: str
+
+
+@dataclass(frozen=True)
+class PgmFusionSource:
+    source_id: str
+    source_map_id: str
+    transform: PgmTransform2D = field(default_factory=PgmTransform2D)
+    source_frame_id: str = ""
+    device_id: str | None = None
+    device_name: str = ""
+    device_ip: str = ""
+    pgm_path: str | None = None
+    yaml_path: str | None = None
+    manifest: PgmArtifactManifest | None = None
+    artifact_sha256: str | None = None
+    existing_target_layer: bool = False
+
+
+@dataclass(frozen=True)
+class PgmFusionJob:
+    job_id: str
+    target_map_id: str
+    target_frame_id: str
+    target_pcd_sha256: str
+    sources: tuple[PgmFusionSource, ...]
+    output_resolution: float
+    created_at: datetime = field(default_factory=utc_now)
+
+
+@dataclass(frozen=True)
+class PgmFusionProvenance:
+    job_id: str
+    target_pcd_sha256: str
+    sources: tuple[PgmFusionSource, ...]
+    output_resolution: float
+    merge_policy: str = "occupied>free>unknown"
+    clipped_cells: int = 0
+    clipped_area_m2: float = 0.0
+    created_at: datetime = field(default_factory=utc_now)
+
+
+@dataclass(frozen=True)
+class PgmDownloadSnapshot:
+    source_id: str
+    device_id: str
+    source_map_id: str
+    session_id: str
+    state: str
+    message: str
+    received_chunks: int = 0
+    chunk_count: int = 0
+    received_bytes: int = 0
+    compressed_size: int = 0
+    retransmission_rounds: int = 0
+    artifact_path: str | None = None
 
 
 @dataclass(frozen=True)

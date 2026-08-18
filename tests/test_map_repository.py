@@ -14,6 +14,7 @@ PYSIDE_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 if PYSIDE_AVAILABLE:
     from ccs_monitor.map_repository import DuplicateMapNameError, MapRepository, MapRepositoryError
     from ccs_monitor.models import MapBuildingResultMetadata, MapCreatorDevice, MapStatus
+    from ccs_monitor.pgm_map import PcdToPgmOptions
     from tests.test_point_cloud import write_ascii_pcd
     from tests.test_pgm_map import write_map_yaml
 
@@ -82,6 +83,22 @@ class MapRepositoryTests(unittest.TestCase):
         with zipfile.ZipFile(archive_path) as archive:
             self.assertEqual(set(archive.namelist()), {"map.json", "map.yaml", "map.pgm"})
 
+    def test_generates_pgm_from_existing_pcd(self):
+        definition = self.repository.create("点云栅格", [self.device], now=self.created_at)
+        source = Path(self.temp_dir.name) / "source.pcd"
+        write_ascii_pcd(source, [(0, 0, 0), (1, 1, 0)])
+        ready = self.repository.import_pcd(definition.map_id, source)
+        generated = self.repository.generate_pgm(
+            ready.map_id,
+            PcdToPgmOptions(
+                resolution=1.0, min_z=0.0, max_z=0.0, padding_m=0.0,
+            ),
+        )
+        self.assertIsNotNone(generated.pgm)
+        yaml_path, image_path = self.repository.pgm_paths(generated.map_id)
+        self.assertTrue(yaml_path.is_file())
+        self.assertTrue(image_path.is_file())
+
     def test_invalid_pgm_metadata_isolated_as_error_map(self):
         definition = self.repository.create("异常栅格", [self.device], now=self.created_at)
         metadata_path = self.root / definition.directory_name / "map.json"
@@ -135,6 +152,30 @@ class MapRepositoryTests(unittest.TestCase):
         self.assertEqual(stored_yaml.read_bytes(), old_yaml)
         self.assertEqual(stored_image.read_bytes(), old_image)
 
+    def test_failed_pgm_generation_preserves_existing_layer(self):
+        from ccs_monitor.pgm_map import PgmMapError
+
+        definition = self.repository.create("生成回滚", [self.device], now=self.created_at)
+        source = Path(self.temp_dir.name) / "source.pcd"
+        write_ascii_pcd(source, [(0, 0, 0), (1, 1, 0)])
+        ready = self.repository.import_pcd(definition.map_id, source)
+        pgm_root = Path(self.temp_dir.name) / "existing"
+        pgm_root.mkdir()
+        (pgm_root / "source.pgm").write_bytes(b"P5\n2 2\n255\n" + bytes((0, 1, 2, 3)))
+        write_map_yaml(pgm_root / "source.yaml")
+        self.repository.import_pgm(ready.map_id, pgm_root / "source.yaml")
+        stored_yaml, stored_image = self.repository.pgm_paths(ready.map_id)
+        old_yaml, old_image = stored_yaml.read_bytes(), stored_image.read_bytes()
+        with patch.object(
+            self.repository.pgm_generator,
+            "generate",
+            side_effect=PgmMapError("simulated generation failure"),
+        ):
+            with self.assertRaises(MapRepositoryError):
+                self.repository.generate_pgm(ready.map_id)
+        self.assertEqual(stored_yaml.read_bytes(), old_yaml)
+        self.assertEqual(stored_image.read_bytes(), old_image)
+
     def test_schema_three_mapping_checkpoint_commit_and_export(self):
         import numpy as np
         from ccs_monitor.map_building import write_binary_pcd
@@ -163,7 +204,7 @@ class MapRepositoryTests(unittest.TestCase):
         self.assertEqual(committed.point_count, 2)
         self.assertEqual(committed.trajectory_path, "trajectory.csv")
         stored = json.loads((self.root / committed.directory_name / "map.json").read_text(encoding="utf-8"))
-        self.assertEqual(stored["schema_version"], 4)
+        self.assertEqual(stored["schema_version"], 5)
         archive_path = Path(self.temp_dir.name) / "mapping.zip"
         self.repository.export_zip(definition.map_id, archive_path)
         with zipfile.ZipFile(archive_path) as archive:

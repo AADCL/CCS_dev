@@ -6,7 +6,7 @@ from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSplitter,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -22,6 +22,7 @@ from ..task_models import (
     TaskSafetySettings, TaskWaypoint,
 )
 from ..task_repository import TaskRepository, TaskRepositoryError, map_fingerprint
+from ..widgets import NoButtonDoubleSpinBox
 from .map_page import PointCloudViewer
 
 
@@ -277,7 +278,7 @@ class TaskEditorPage(QWidget):
 
     @staticmethod
     def _spin(minimum, maximum, value, suffix):
-        control = QDoubleSpinBox()
+        control = NoButtonDoubleSpinBox()
         control.setRange(minimum, maximum)
         control.setDecimals(2)
         control.setValue(value)

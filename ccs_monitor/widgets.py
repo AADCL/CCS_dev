@@ -3,7 +3,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
-    QCheckBox, QFrame, QGridLayout, QLabel, QProgressBar, QSizePolicy, QVBoxLayout, QWidget,
+    QAbstractSpinBox, QCheckBox, QDoubleSpinBox, QFrame, QGridLayout, QLabel,
+    QProgressBar, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from .models import ConnectionStatus, DeviceSnapshot, LocalizationStatus, TaskStatus
@@ -24,6 +25,22 @@ STATUS_TEXT = {
     TaskStatus.COMPLETED: "已完成",
     TaskStatus.UNKNOWN: "未知",
 }
+
+
+class NoButtonSpinBox(QSpinBox):
+    """Integer input without mouse increment/decrement buttons."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+
+
+class NoButtonDoubleSpinBox(QDoubleSpinBox):
+    """Floating-point input without mouse increment/decrement buttons."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
 
 
 class TypeBadge(QWidget):
