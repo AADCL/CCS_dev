@@ -37,10 +37,9 @@ class MqttConfig(object):
 
 
 class RosTopicConfig(object):
-    def __init__(self, topic, message_type, mapping=None):
+    def __init__(self, topic, message_type):
         self.topic = topic
         self.message_type = message_type
-        self.mapping = mapping or {}
 
 
 class MissionConfig(object):
@@ -105,7 +104,7 @@ def _ip(value, path):
         raise ConfigError("{0} must be a valid IPv4 or IPv6 address".format(path)) from exc
 
 
-def _topic_config(value, path, mapping_fields=None):
+def _topic_config(value, path):
     data = _mapping(value, path)
     topic = _string(data.get("topic"), "{0}.topic".format(path))
     message_type = _string(data.get("message_type"), "{0}.message_type".format(path))
@@ -113,17 +112,7 @@ def _topic_config(value, path, mapping_fields=None):
         raise ConfigError("{0}.topic must start with '/'".format(path))
     if message_type.count("/") != 1:
         raise ConfigError("{0}.message_type must use package/Message syntax".format(path))
-    mapping = {}
-    if mapping_fields is not None:
-        raw_mapping = data.get("mapping", {})
-        if not isinstance(raw_mapping, dict):
-            raise ConfigError("{0}.mapping must be a mapping".format(path))
-        for field, default_path in mapping_fields.items():
-            value = raw_mapping.get(field, default_path)
-            if value is not None and (not isinstance(value, str) or not value.strip()):
-                raise ConfigError("{0}.mapping.{1} must be a field path or null".format(path, field))
-            mapping[field] = value.strip() if isinstance(value, str) else None
-    return RosTopicConfig(topic, message_type, mapping)
+    return RosTopicConfig(topic, message_type)
 
 
 def _load_yaml(path):
@@ -195,11 +184,7 @@ def load_config(path, device_config_path):
         mission = MissionConfig(False)
     ros = RosConfig(
         _string(ros_data.get("node_name"), "ros.node_name"),
-        _topic_config(
-            ros_data.get("state"),
-            "ros.state",
-            {"connected": "connected", "armed": "armed", "system_status": "system_status", "mode": "mode"},
-        ),
+        _topic_config(ros_data.get("state"), "ros.state"),
         _topic_config(ros_data.get("battery"), "ros.battery"),
         mission,
     )

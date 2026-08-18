@@ -295,6 +295,8 @@
 ### 端侧目录与共享配置
 
 - `edge_side_pkg` 是端侧部署容器，当前包含 `epgeneral_device_config`、`mqtav`、`epgeneral_usb_cam_rtsp`、`epgeneral_udp_telemetry` 和 `epgeneral_map_stream` 五个 ROS 包。
+- 2026-08-18 新增独立 `EPGeneral_multi_map` 目录（ROS 包名 `epgeneral_multi_map`）v0.1.0。它面向 Ubuntu 20.04/ROS1 Noetic/Python 3.8+，按地面站统一绝对时间完成点云/位姿插值配准和切片上传；端侧不融合、不落盘、不新增滤波，并与 `epgeneral_map_stream` 单机互斥。
+- 新包自动化已覆盖严格联合命令、窗口/尾片/超时/复位、Python 3.8 语法、真实 localhost UDP 单节点链路和当前 `CloudFrameAssembler` 重组。当前地面站 v0.13.1 还缺严格联合下行字段，且 Windows 环境不能执行 Noetic Catkin 或双机器人实机验收；详见 `docs/地面站兼容扩展说明.md`。
 - `epgeneral_device_config/config/device.yaml` 是设备 ID/IP 的唯一端侧来源，根测试与 `config/devices.json` 做一致性校验。
 - mqtav `v0.3.0` 将设备身份加载与 MQTT/ROS 运行配置拆开，新增 `--device-config-file`；保留 Python 3.6.9 与 ROS Melodic 兼容实现。
 

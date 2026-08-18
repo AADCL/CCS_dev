@@ -24,6 +24,7 @@ from .point_cloud import MapPointCloudLoader, PointCloudError
 
 PLUGIN_API_VERSION = 1
 BUILTIN_ALGORITHM_ID = "builtin_voxel_merge"
+EPGENERAL_MULTI_MAP_FUSION_ID = "epgeneral_multi_map_fusion"
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "config" / "map_fusion_algorithms.json"
 DEFAULT_ASSET_ROOT = Path(__file__).resolve().parent.parent / "data" / "map_fusion_algorithms"
 
@@ -100,7 +101,7 @@ class MapFusionRepository:
         self.read_only = False
         self.error_message = ""
         if not self.registry_path.exists():
-            self._algorithms = [self._builtin()]
+            self._algorithms = self._builtins()
             self._save()
             return self.algorithms()
         try:
@@ -120,13 +121,19 @@ class MapFusionRepository:
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
             self.read_only = True
             self.error_message = f"融合算法配置无效，已使用只读内置算法：{exc}"
-            self._algorithms = [self._builtin()]
+            self._algorithms = self._builtins()
             return self.algorithms()
-        configured_builtin = next(
-            (item for item in algorithms if item.algorithm_id == BUILTIN_ALGORITHM_ID), None
-        )
-        builtin = replace(self._builtin(), is_default=bool(configured_builtin and configured_builtin.is_default))
-        algorithms = [builtin] + [item for item in algorithms if item.algorithm_id != BUILTIN_ALGORITHM_ID]
+        configured_builtins = {item.algorithm_id: item for item in algorithms if item.builtin}
+        builtins = [
+            replace(
+                item,
+                is_default=configured_builtins.get(item.algorithm_id, item).is_default,
+                default_options=configured_builtins.get(item.algorithm_id, item).default_options,
+            )
+            for item in self._builtins()
+        ]
+        builtin_ids = {item.algorithm_id for item in builtins}
+        algorithms = builtins + [item for item in algorithms if item.algorithm_id not in builtin_ids]
         defaults = [item for item in algorithms if item.enabled and item.is_default]
         if len(defaults) > 1:
             self.read_only = True
@@ -228,6 +235,21 @@ class MapFusionRepository:
             hashlib.sha256(b"ccs-builtin-voxel-merge-v1").hexdigest(), True, True, True,
             {"voxel_size_m": 0.1},
         )
+
+    @staticmethod
+    def _epgeneral_builtin() -> MapFusionAlgorithm:
+        from .epgeneral_multi_map_fusion import DEFAULT_OPTIONS
+
+        return MapFusionAlgorithm(
+            EPGENERAL_MULTI_MAP_FUSION_ID, "离线多地图 ICP 融合", "1.0.0",
+            "builtin:epgeneral_multi_map_fusion",
+            hashlib.sha256(b"ccs-builtin-epgeneral-multi-map-fusion-v1").hexdigest(),
+            True, False, True, dict(DEFAULT_OPTIONS),
+        )
+
+    @classmethod
+    def _builtins(cls) -> list[MapFusionAlgorithm]:
+        return [cls._builtin(), cls._epgeneral_builtin()]
 
     @staticmethod
     def _inspect_script(path: Path) -> dict[str, Any]:

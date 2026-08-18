@@ -15,19 +15,27 @@
       }
     },
     {
-      "algorithm_id": "open3d_point_to_point_icp",
-      "display_name": "Open3D ICP 配准融合",
-      "version": "0.1.0",
-      "script_path": "D:\\Projects\\AI_assisted\\CCS_dev\\data\\map_fusion_algorithms\\open3d_point_to_point_icp_d52a550e.py",
-      "sha256": "329de01e844f7babaa7cc45bd62e31e50cfcc9b4bc58c2fd856791e3abbffd34",
+      "algorithm_id": "epgeneral_multi_map_fusion",
+      "display_name": "离线多地图 ICP 融合",
+      "version": "1.0.0",
+      "script_path": "builtin:epgeneral_multi_map_fusion",
+      "sha256": "2640fd0e86d48177a2773bfcc8f41ac33db594bdf56e6c3f1330c910f331f810",
       "enabled": true,
       "is_default": false,
-      "builtin": false,
+      "builtin": true,
       "default_options": {
-        "voxel_size_m": 0.1,
-        "max_correspondence_distance_m": 0.3,
-        "max_iterations": 80,
-        "min_fitness": 0.2
+        "max_sample_points": 4000,
+        "max_iterations": 30,
+        "max_correspondence_distance_m": 0.5,
+        "convergence_translation_m": 0.001,
+        "convergence_rotation_deg": 0.05,
+        "min_correspondences": 50,
+        "min_source_fitness": 0.2,
+        "min_target_fitness": 0.05,
+        "max_inlier_rmse_m": 0.25,
+        "output_voxel_size_m": 0.1,
+        "max_input_points_per_map": 5000000,
+        "max_output_voxels": 5000000
       }
     }
   ]

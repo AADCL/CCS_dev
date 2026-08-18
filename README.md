@@ -2,11 +2,9 @@
 
 当前地面站版本：**v0.13.1**
 
-端侧包版本：mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
+端侧包版本：mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_multi_map **v0.1.0**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
-
-- Go2 EDU：`EPQRD_go2_bridge` 基于 Unitree SDK2 发布 prefixed ROS 电池、IMU、里程计、SDK 心跳和诊断信息；部署 profile 位于 `edge_side_pkg/deploy/go2_edu/`。
 
 本仓库包含基于 PySide6 的多异构智能体指挥与控制地面站，以及部署到 ROS 端侧设备的配套功能包。系统面向可信局域网中的无人机、无人车、移动机器人和无人船。
 
@@ -37,6 +35,7 @@ CCS_dev/
 │   ├── epgeneral_usb_cam_rtsp/              # USB 相机 RTSP 推流包，v0.1.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
 │   ├── epgeneral_map_stream/             # ROS 实时建图上行包，v0.1.0
+│   ├── EPGeneral_multi_map/               # Noetic 端侧联合切片上传包，v0.1.0
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
 │   ├── EPGeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
@@ -59,7 +58,7 @@ CCS_dev/
 
 ### 端侧
 
-- Ubuntu 18.04、ROS Melodic、Python 3.6.9、MAVROS。
+- 主线：Ubuntu 20.04、ROS1 Noetic、Python 3.8+；旧包的 Ubuntu 18.04/ROS Melodic 部署仅作为维护基线。
 - GStreamer 1.0、GStreamer RTSP Server、usb_cam、cv_bridge、image_transport 及相关 ROS 消息包。
 - USB 摄像头默认 `/dev/video0`；实时建图需要 PointCloud2 和同步位姿来源。
 
@@ -121,14 +120,14 @@ python run.py
 
 ### 2. 从零部署端侧
 
-在已安装 ROS Melodic 的 Ubuntu 18.04 上执行：
+在已安装 ROS1 Noetic 的 Ubuntu 20.04 上执行：
 
 ```bash
 sudo apt update
 sudo apt install python3-paho-mqtt python3-yaml python3-msgpack python3-numpy \
-  python3-catkin-pkg python3-rospkg ros-melodic-mavros ros-melodic-mavros-extras \
-  ros-melodic-usb-cam ros-melodic-cv-bridge ros-melodic-image-transport \
-  ros-melodic-sensor-msgs ros-melodic-nav-msgs ros-melodic-geometry-msgs \
+  python3-catkin-pkg python3-rospkg ros-noetic-mavros ros-noetic-mavros-extras \
+  ros-noetic-usb-cam ros-noetic-cv-bridge ros-noetic-image-transport \
+  ros-noetic-sensor-msgs ros-noetic-nav-msgs ros-noetic-geometry-msgs \
   libgstreamer1.0-dev libgstrtspserver-1.0-dev gstreamer1.0-tools \
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
   gstreamer1.0-plugins-ugly gstreamer1.0-libav
@@ -136,7 +135,7 @@ sudo apt install python3-paho-mqtt python3-yaml python3-msgpack python3-numpy \
 mkdir -p ~/catkin_ws/src
 cp -r /path/to/CCS_dev/edge_side_pkg/* ~/catkin_ws/src/
 cd ~/catkin_ws
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
@@ -148,12 +147,13 @@ source devel/setup.bash
 - `epgeneral_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
 - `epgeneral_usb_cam_rtsp/config/video.yaml` 的摄像头、分辨率、帧率和码率。
 - `epgeneral_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。
+- `EPGeneral_multi_map/config/multi_mapping.yaml` 的联合时间窗、点云/位姿话题、外参、超时和资源参数；它与 `epgeneral_map_stream` 互斥，不能同时占用 UDP 14561。
 - `epgeneral_task_control/config/task_control.yaml` 的端口、XML 目录和 command/feedback 话题。
 
 端侧放行 TCP 8554、UDP 14561、14563。每个新终端先执行：
 
 ```bash
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 source ~/catkin_ws/devel/setup.bash
 ```
 
@@ -164,6 +164,8 @@ roslaunch epgeneral_mqtav epgeneral_mqtav.launch
 roslaunch epgeneral_usb_cam_rtsp epgeneral_usb_cam_rtsp.launch
 roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>
 roslaunch epgeneral_map_stream epgeneral_map_stream.launch
+# 联合切片端侧改用下一行，不能与上一行同时启动：
+roslaunch epgeneral_multi_map epgeneral_multi_map.launch
 roslaunch epgeneral_task_control epgeneral_task_control.launch
 ```
 

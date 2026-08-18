@@ -6,18 +6,16 @@
 
 地面站当前为 v0.13.1；已保存地图的 PCD/PGM 同步融合完全在地面站本地执行，不修改端侧协议或包版本。v0.13.0 在 `ccs-map-stream-v1` 中定义的可选 PGM 文件服务仍尚未由 `epgeneral_map_stream` v0.1.0 实现。
 
-本次新增独立版本的端侧 `epgeneral_task_control` v0.1.0，不修改既有协议字段或其他端侧包版本。
+新增独立端侧 `epgeneral_multi_map` v0.1.0，不修改 `epgeneral_map_stream`；联合任务的真实融合仍由地面站完成。地面站生产代码本次未修改。
 
 ## 包含内容
-
-- `EPQRD_go2_bridge` / `epqrd_go2_bridge` v0.1.0：将 Go2 EDU Unitree SDK2 状态转换为带设备前缀的标准 ROS 电池、IMU、里程计、心跳和诊断话题。
-- `deploy/go2_edu`：Go2 EDU 基础监控套件配置、统一 bringup 和部署指南。
 
 - `epgeneral_device_config` v0.1.0：保存端侧设备 ID/IP 的共享配置。地面站 `config/devices.json` 必须有同 ID 且 IP 相同的记录。
 - `mqtav` v0.3.0：订阅 MAVROS 状态和电池信息，并向地面站 MQTT Broker 发布 presence、heartbeat、status。
 - `epgeneral_usb_cam_rtsp` v0.1.0：启动 ROS USB 摄像头图像链路，并通过 GStreamer 提供 `rtsp://<device.ip>:8554/usb_cam`。
 - `epgeneral_udp_telemetry` v0.2.1：按配置订阅 MAVROS/ROS 位姿、IMU、点云、地图生成状态和建图模式，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测。
 - `epgeneral_map_stream` v0.1.0：监听 UDP 14561 建图指令，同步预处理 PointCloud2 与位姿，并向地面站 UDP 14562 上传分片点云、同步位姿和静态外参。
+- `EPGeneral_multi_map` 目录 / `epgeneral_multi_map` v0.1.0 ROS 包：Noetic 机器人端接收严格联合指令，按统一绝对时间配准并上传固定时间窗切片；不执行融合或落盘。
 - `epgeneral_task_control` v0.1.0：监听 UDP 14563 任务指令，原子保存 XML，通过 ROS 强类型接口协调执行，并向 UDP 14564 回传状态和进度。
 - `EPGeneral_mqtav.zip`：包含 mqtav 与共享配置包的部署归档。
 
@@ -31,6 +29,8 @@
 
 地面站可同时为多台设备建立独立 `ccs-map-stream-v1` 会话，并在 `start_mapping` 中增加可选 `job_id`、`role` 和 `primary_device_id`。`epgeneral_map_stream` v0.1.0 会忽略额外字段，仍可作为单机或独立子会话上传点云；主从外参、实时预览和最终插件融合均由地面站处理。后续端侧版本可读取这些字段以展示联合任务关系，但不得改变现有点云载荷和坐标契约。
 
+`epgeneral_multi_map` v0.1.0 采用严格联合模式，另要求 `participant_device_ids`、`start_at_ns`、`slice_duration_ns`，stop 要求 `job_id`、`stop_at_ns`。所有机器人共享逻辑 job/参与集合/绝对窗口，但 session、sequence 和 frame ID 独立。当前地面站 v0.13.1 仍需按 `docs/地面站兼容扩展说明.md` 补齐下行字段；已有 `_ActiveJob`、多 session、融合和保存无需重做。
+
 ## v0.9.0 任务接口状态
 
 地面站新增 `ccs-task-control-v1`，向端侧 UDP 14563 下发轨迹任务，并在 UDP 14564 接收 ACK、任务心跳、状态和航点进度。完整字段、时钟约束与错误码见根目录 `docs/EDGE_DEVICE_INTERFACES.md`。
@@ -43,14 +43,14 @@
 mkdir -p ~/catkin_ws/src
 cp -r edge_side_pkg ~/catkin_ws/src/
 cd ~/catkin_ws
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
-修改 `epgeneral_device_config/config/device.yaml` 后，使用 `roslaunch epgeneral_mqtav epgeneral_mqtav.launch`、`roslaunch epgeneral_usb_cam_rtsp epgeneral_usb_cam_rtsp.launch`、`roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>`、`roslaunch epgeneral_map_stream epgeneral_map_stream.launch` 和 `roslaunch epgeneral_task_control epgeneral_task_control.launch` 启动对应功能。任务网络、XML 目录和 ROS 适配话题位于 `epgeneral_task_control/config/task_control.yaml`。
+修改 `epgeneral_device_config/config/device.yaml` 后按需启动各包。常规实时建图使用 `roslaunch epgeneral_map_stream epgeneral_map_stream.launch`；严格联合切片使用 `roslaunch epgeneral_multi_map epgeneral_multi_map.launch`。两者不能在同一机器人上同时启动或同时占用 UDP 14561。其余启动命令见各包 README。
 
 每次新增或更新 Python ROS 包后，执行 `catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3` 并在启动 roslaunch 的同一终端执行 `source devel/setup.bash`。
 
-端侧默认面向 Ubuntu 18.04、ROS Melodic、Python 3.6.9 和可信局域网，不提供 MQTT/RTSP/UDP 认证、TLS、录制、可靠重传或下行控制。
+端侧 Alpha 主线面向 Ubuntu 20.04、ROS1 Noetic、Python 3.8+ 和可信局域网，不提供 MQTT/RTSP/UDP 认证、TLS、录制或可靠重传。旧 Melodic 包保留维护说明。`epgeneral_multi_map` 已完成纯 Python/localhost 单节点测试，尚未完成 Noetic Catkin、真实话题或双机器人实机验收。

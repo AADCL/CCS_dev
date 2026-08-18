@@ -1,0 +1,9 @@
+<launch>
+  <arg name="mapping_config_file" default="$(find epgeneral_multi_map)/config/multi_mapping.yaml" />
+  <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
+
+  <node pkg="epgeneral_multi_map" type="epgeneral_multi_map_node.py" name="epgeneral_multi_map" output="screen">
+    <param name="mapping_config_file" value="$(arg mapping_config_file)" />
+    <param name="device_config_file" value="$(arg device_config_file)" />
+  </node>
+</launch>

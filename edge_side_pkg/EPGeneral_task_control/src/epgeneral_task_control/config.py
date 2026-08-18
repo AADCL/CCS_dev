@@ -77,7 +77,6 @@ def load_config(task_path, device_path):
         "storage_directory": os.path.abspath(os.path.expanduser(_text(storage, "directory", "storage.directory"))),
         "command_topic": _text(ros, "command_topic", "ros.command_topic"),
         "feedback_topic": _text(ros, "feedback_topic", "ros.feedback_topic"),
-        "status_topic": _text(ros, "status_topic", "ros.status_topic"),
         "map_frame": _text(ros, "map_frame", "ros.map_frame"),
         "ack_cache_seconds": _number(timeouts.get("ack_cache_seconds"), "timeouts.ack_cache_seconds", 1.0),
         "transfer_seconds": _number(timeouts.get("transfer_seconds"), "timeouts.transfer_seconds", 0.1),

@@ -14,20 +14,14 @@
 | MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | mqtav v0.3.0 |
 | UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.2.1 |
 | RTSP 视频 | 地面站拉取端侧 | TCP 8554 `/usb_cam` | H.264/RTP/RTSP | epgeneral_usb_cam_rtsp v0.1.0 |
-| UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
-| UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
+| UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | epgeneral_map_stream / epgeneral_multi_map v0.1.0（二选一） |
+| UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | epgeneral_map_stream / epgeneral_multi_map v0.1.0（二选一） |
 | UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 | UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 
 端侧身份由 `edge_side_pkg/EPGeneral_device_config/config/device.yaml` 提供，`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。MQTT、遥测、建图和任务协议中的 `device_id` 均使用该 ID。
 
 ## MQTT presence、heartbeat、status
-
-### Go2 EDU ROS 状态桥接
-
-`epqrd_go2_bridge` v0.1.0 从 Unitree SDK2 `rt/lowstate` 和 `rt/sportmodestate` 读取只读状态。默认发布 `/qrd/QRD_001/battery`、`imu`、`odometry`、`robot_mode`、`link/sdk`、`heartbeat` 和 `diagnostics`。`epgeneral_mqtav` 将 SDK 链路新鲜度映射为既有 `fcu_connected` 字段，不增加 MQTT schema 字段；`epgeneral_udp_telemetry` 从 prefixed Odometry 和 Imu 继续生成 `ccs-udp-telemetry-v1` 数据。
-
-`/qrd/QRD_001/link/udp_tx` 仅表示本机 UDP socket 最近一次发送成功。端到端 UDP 在线状态仍由地面站的 heartbeat 接收超时判断。任务协调包在 `/qrd/QRD_001/task_status` 发布 latched `std_msgs/String`，供 MQTT mission 状态订阅。
 
 Broker 由地面站监听 `0.0.0.0:1883`，QoS 1，无认证/TLS。设备 ID 为 `UAV_001` 时主题如下：
 
@@ -158,6 +152,10 @@ heartbeat 为 1 Hz，`level=None` 且 payload 为空。合法心跳使 UDP 链�
 
 `job_id`、`role` 和 `primary_device_id` 为 v0.11.0 的可选兼容字段。`role` 只允许 `primary|secondary`。同一联合任务中每台设备仍使用独立 `session_id`、sequence、frame ID 和 ACK 重试；端侧不得把不同设备的数据合并到一个会话。旧端侧可以忽略这些字段。
 
+#### `epgeneral_multi_map` 严格联合扩展
+
+新包在上述字段之外强制要求 `participant_device_ids`（至少两台、包含本机和主设备）、绝对 UTC `start_at_ns` 及可配置 `slice_duration_ns`。同一逻辑任务的全部机器人必须收到相同 job、参与集合、开始时间和切片时长，但继续使用独立 session。当前地面站 v0.13.1 尚未生成全部严格字段，因此需要先完成 `docs/地面站兼容扩展说明.md`；旧 `epgeneral_map_stream` 契约保持不变。
+
 ### 多设备会话与外参
 
 - 地面站必须等待参与设备全部确认 start，才将逻辑任务标记为建图中。
@@ -170,7 +168,7 @@ heartbeat 为 1 Hz，`level=None` 且 payload 为空。合法心跳使 UDP 链�
 ### 下行 stop_mapping
 
 ```python
-{"request_id": "<UUID>", "reason": "用户结束建图"}
+{"request_id": "<UUID>", "reason": "用户结束建图", "job_id": "<严格联合任务 ID>", "stop_at_ns": 1785900005000000000}
 ```
 
 端侧停止新增帧、完成或丢弃当前不完整帧、释放订阅/缓存并返回 ACK，随后可发送 `session_status: stopped`。地面站在 ACK 后保存；ACK 超时后也会保存已经完整接收的数据。
@@ -237,6 +235,8 @@ p_map = T_map_body * T_body_sensor * p_sensor
 ```
 
 端侧负责在同一 ROS 时钟下同步点云和位姿；地面站不接收独立位姿流、不插值。首版不发送 intensity、RGB、ring 或 timestamp-per-point。
+
+`epgeneral_multi_map` 的 cloud chunk 还附带 `job_id`、`slice_id`、`slice_start_ns`、`slice_end_ns`、`frame_index/frame_count`、`partial/error_tail/truncated` 以及插值前后位姿时间依据。当前 `CloudFrameAssembler` 会忽略附加字段并仍可完成帧重组；未来地面站必须保存/校验这些字段，并在现有 `_ActiveJob` 内按 device/session/slice 汇总。迟到 stop 后还必须按 `stop_at_ns` 二次过滤。真实融合始终在地面站执行。
 
 ### 限制、超时与会话恢复
 
@@ -316,7 +316,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 - stop 后停止发送，释放 ROS subscriber、位姿缓存和会话资源；控制 socket 保持监听以接受下一次 start，进程退出时再关闭。
 - 在 localhost/局域网测试乱序、重复、缺片、CRC 错误、点云/位姿超时、重复命令和干净退出。
 
-当前结论：地面站 v0.8.0 与端侧 `epgeneral_map_stream` v0.1.0 已实现上述协议。自动测试覆盖协议、处理、会话与 localhost UDP 契约；ROS Melodic 真机上的雷达、里程计和局域网联调仍需在部署设备执行。
+当前结论：旧 `epgeneral_map_stream` 契约保持不变；`epgeneral_multi_map` v0.1.0 已完成纯 Python、Python 3.8 语法、单节点 localhost UDP 和现有地面站帧重组契约测试。地面站严格联合下行字段、Ubuntu 20.04/Noetic Catkin、真实 PointCloud2/位姿以及双机器人实机融合均尚未验收。
 
 ## UDP 地图任务控制接口（ccs-task-control-v1）
 

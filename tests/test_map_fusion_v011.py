@@ -59,6 +59,36 @@ class MapFusionV011Tests(unittest.TestCase):
             self.assertEqual(imported.algorithm_id, "example_concat")
             self.assertTrue(Path(imported.script_path).is_file())
 
+    def test_epgeneral_multi_map_fusion_is_selectable_and_refines_coarse_pose(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            algorithms = MapFusionRepository(root / "algorithms.json", root / "assets")
+            algorithm = algorithms.algorithm("epgeneral_multi_map_fusion")
+            self.assertIsNotNone(algorithm)
+            self.assertTrue(algorithm.enabled)
+
+            target = np.asarray([
+                [
+                    0.123 + x * 1.3 + y * 0.02,
+                    0.234 + y * 0.9 + z * 0.03,
+                    0.345 + z * 1.1 + x * 0.01,
+                ]
+                for x in range(4) for y in range(5) for z in range(5)
+            ], dtype=np.float32)
+            translation = np.asarray([0.2, -0.1, 0.05], dtype=np.float32)
+            primary = root / "primary.pcd"
+            secondary = root / "secondary.pcd"
+            output = root / "fused.pcd"
+            write_binary_pcd(primary, target)
+            write_binary_pcd(secondary, target - translation)
+
+            result = MapFusionRunner(timeout_seconds=10).run(
+                algorithm, [primary, secondary], "map",
+                [MapTransform("primary", True), MapTransform("secondary", False)], output,
+            )
+            self.assertEqual(result["point_count"], len(target))
+            self.assertIn("ICP", result["message"])
+
     def test_schema_four_empty_map_and_atomic_fusion_commit(self):
         with tempfile.TemporaryDirectory() as directory:
             repository = MapRepository(Path(directory) / "maps")

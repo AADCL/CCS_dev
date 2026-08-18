@@ -71,6 +71,20 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：参考设备能连续上传点云和同步位姿；话题超时发送 session error；缺片/CRC/非有限点不会产生半帧；重启和重复命令幂等。
 
+## 5A. `epgeneral_multi_map` v0.1.0
+
+**当前状态**：独立 Noetic/Python 3.8+ 包已实现严格联合 start/stop、通用位姿字段路径、位姿插值、绝对时间窗、迟到宽限、完整/空/截断/停止/错误切片、1400 字节分片、输入超时和 standby 复位。纯 Python、Python 3.8 语法、当前 Python、单节点 localhost UDP 和 v0.13.1 地面站帧重组契约测试已通过；没有修改地面站或旧 `epgeneral_map_stream`。
+
+**待验收任务**：
+
+1. 在 Ubuntu 20.04 + ROS1 Noetic + 系统 Python 3.8 执行 rosdep、Catkin 构建、roslaunch 和节点关闭测试。
+2. 以现场 PointCloud2 和通用配置的位姿消息验证 header/frame、时间偏差、插值和断流。
+3. 地面站按 `docs/地面站兼容扩展说明.md` 补齐参与集合、统一开始/切片时长、统一停止时间；复用现有 `_ActiveJob`、多 session、融合和保存。
+4. 使用至少两台不同机器人验证相同绝对时间窗、独立 session、最后不完整尾片、迟到 stop 二次过滤和最终地面站融合。
+5. `epgeneral_map_stream` 与 `epgeneral_multi_map` 在单机上互斥；不得将 localhost 单节点协议测试标记为多机器人实机验收。
+
+**验收**：两台物理机器人在同一 job 下按相同绝对窗口上传，各自停止后回到 standby；地面站只融合 stop 边界内数据。端侧不得保存 PCD/切片，不新增滤波或执行跨机器人融合。
+
 ## 6. `epgeneral_task_control` v0.1.0
 
 **当前状态**：UDP 14563/14564、任务分片、CRC/zlib、XML 原子保存、UTC 调度、ACK/心跳/状态、强类型 ROS 消息和状态机已实现；真实运动控制适配器缺失。

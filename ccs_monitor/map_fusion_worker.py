@@ -21,6 +21,13 @@ def main() -> int:
                 request["pcd_files"], request["transforms"], request["output_pcd"],
                 float(request.get("options", {}).get("voxel_size_m", 0.1)),
             )
+        elif request["script_path"] == "builtin:epgeneral_multi_map_fusion":
+            from .epgeneral_multi_map_fusion import fuse_maps
+
+            result = fuse_maps(
+                request["pcd_files"], request["primary_frame"], request["transforms"],
+                request["output_pcd"], request.get("options", {}),
+            )
         else:
             script = Path(request["script_path"])
             spec = importlib.util.spec_from_file_location(f"ccs_fusion_{uuid.uuid4().hex}", script)
