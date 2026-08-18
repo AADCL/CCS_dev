@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ import numpy as np
 import yaml
 
 from .models import PgmMapMetadata
+from .point_cloud import MapPointCloudLoader, PointCloudError
 
 
 class PgmMapError(RuntimeError):
@@ -31,6 +33,180 @@ class PgmMapData:
         rgba[occupied] = (0.92, 0.20, 0.48, 0.92)
         rgba[unknown] = (0.12, 0.18, 0.28, 0.28)
         return rgba
+
+
+@dataclass(frozen=True)
+class PcdToPgmOptions:
+    resolution: float = 0.05
+    min_z: float | None = None
+    max_z: float | None = None
+    padding_m: float = 0.5
+    min_points_per_cell: int = 1
+    inflation_radius_m: float = 0.0
+    empty_cell: str = "unknown"
+    occupied_thresh: float = 0.65
+    free_thresh: float = 0.196
+
+
+@dataclass(frozen=True)
+class PcdToPgmResult:
+    metadata: PgmMapMetadata
+    occupied_cells: int
+    selected_points: int
+
+
+class PcdToPgmGenerator:
+    """Project finite PCD XYZ points into a ROS map_server occupancy image."""
+
+    OCCUPIED = 0
+    FREE = 254
+    UNKNOWN = 205
+
+    def __init__(self, loader: MapPointCloudLoader | None = None,
+                 *, max_grid_cells: int = 20_000_000,
+                 max_inflation_operations: int = 50_000_000) -> None:
+        self.loader = loader or MapPointCloudLoader()
+        self.max_grid_cells = max(1, int(max_grid_cells))
+        self.max_inflation_operations = max(1, int(max_inflation_operations))
+
+    def generate(
+        self,
+        pcd_path: str | Path,
+        pgm_path: str | Path,
+        yaml_path: str | Path,
+        options: PcdToPgmOptions | None = None,
+    ) -> PcdToPgmResult:
+        settings = options or PcdToPgmOptions()
+        self._validate_options(settings)
+        try:
+            cloud = self.loader.load(pcd_path)
+        except PointCloudError as exc:
+            raise PgmMapError(f"点云读取失败：{exc}") from exc
+        points = np.asarray(cloud.points, dtype=np.float64)
+        depth = cloud.bounds.max_z - cloud.bounds.min_z
+        automatic_min = cloud.bounds.min_z + (0.15 if depth >= 0.15 else 0.0)
+        min_z = automatic_min if settings.min_z is None else float(settings.min_z)
+        max_z = cloud.bounds.max_z if settings.max_z is None else float(settings.max_z)
+        if not np.isfinite((min_z, max_z)).all() or min_z > max_z:
+            raise PgmMapError("投影高度必须为有限数且最低高度不能大于最高高度")
+        selected = points[(points[:, 2] >= min_z) & (points[:, 2] <= max_z)]
+        if len(selected) == 0:
+            raise PgmMapError("指定高度范围内没有可用于生成栅格的点")
+
+        resolution = float(settings.resolution)
+        padding = float(settings.padding_m)
+        origin_x = math.floor((float(selected[:, 0].min()) - padding) / resolution) * resolution
+        origin_y = math.floor((float(selected[:, 1].min()) - padding) / resolution) * resolution
+        maximum_x = float(selected[:, 0].max()) + padding
+        maximum_y = float(selected[:, 1].max()) + padding
+        width = max(1, int(math.floor((maximum_x - origin_x) / resolution)) + 1)
+        height = max(1, int(math.floor((maximum_y - origin_y) / resolution)) + 1)
+        if width * height > self.max_grid_cells:
+            raise PgmMapError(
+                f"生成栅格包含 {width * height} 个像素，超过上限 {self.max_grid_cells}"
+            )
+
+        x_indices = np.floor((selected[:, 0] - origin_x) / resolution).astype(np.int64)
+        y_indices = np.floor((selected[:, 1] - origin_y) / resolution).astype(np.int64)
+        x_indices = np.clip(x_indices, 0, width - 1)
+        y_indices = np.clip(y_indices, 0, height - 1)
+        counts = np.zeros((height, width), dtype=np.uint32)
+        np.add.at(counts, (y_indices, x_indices), 1)
+        occupied = counts >= int(settings.min_points_per_cell)
+        occupied = self._inflate(
+            occupied,
+            float(settings.inflation_radius_m),
+            resolution,
+            self.max_inflation_operations,
+        )
+        fill = self.UNKNOWN if settings.empty_cell == "unknown" else self.FREE
+        pixels = np.full((height, width), fill, dtype=np.uint8)
+        pixels[occupied] = self.OCCUPIED
+        stored_pixels = np.flipud(pixels)
+
+        image_target = Path(pgm_path)
+        yaml_target = Path(yaml_path)
+        image_target.parent.mkdir(parents=True, exist_ok=True)
+        yaml_target.parent.mkdir(parents=True, exist_ok=True)
+        metadata = PgmMapMetadata(
+            image_path=image_target.name,
+            yaml_path=yaml_target.name,
+            resolution=resolution,
+            origin_x=origin_x,
+            origin_y=origin_y,
+            origin_yaw=0.0,
+            image_width=width,
+            image_height=height,
+            negate=False,
+            occupied_thresh=float(settings.occupied_thresh),
+            free_thresh=float(settings.free_thresh),
+        )
+        try:
+            image_target.write_bytes(
+                f"P5\n{width} {height}\n255\n".encode("ascii") + stored_pixels.tobytes()
+            )
+            yaml_target.write_text(
+                yaml.safe_dump(
+                    PgmMapLoader.normalized_yaml(metadata),
+                    allow_unicode=True,
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+        except (OSError, yaml.YAMLError) as exc:
+            image_target.unlink(missing_ok=True)
+            yaml_target.unlink(missing_ok=True)
+            raise PgmMapError(f"PGM 生成文件写入失败：{exc}") from exc
+        return PcdToPgmResult(metadata, int(occupied.sum()), len(selected))
+
+    @staticmethod
+    def _inflate(occupied: np.ndarray, radius_m: float, resolution: float,
+                 max_operations: int) -> np.ndarray:
+        radius = int(math.ceil(radius_m / resolution))
+        if radius <= 0 or not occupied.any():
+            return occupied
+        result = occupied.copy()
+        rows, columns = np.nonzero(occupied)
+        offsets = [
+            (dy, dx)
+            for dy in range(-radius, radius + 1)
+            for dx in range(-radius, radius + 1)
+            if dx * dx + dy * dy <= radius * radius
+        ]
+        if len(offsets) * len(rows) > max_operations:
+            raise PgmMapError("障碍膨胀计算量超过安全上限，请增大分辨率或减小膨胀半径")
+        for dy, dx in offsets:
+            target_rows = rows + dy
+            target_columns = columns + dx
+            valid = (
+                (target_rows >= 0) & (target_rows < occupied.shape[0])
+                & (target_columns >= 0) & (target_columns < occupied.shape[1])
+            )
+            result[target_rows[valid], target_columns[valid]] = True
+        return result
+
+    @staticmethod
+    def _validate_options(options: PcdToPgmOptions) -> None:
+        values = (
+            options.resolution, options.padding_m, options.inflation_radius_m,
+            options.occupied_thresh, options.free_thresh,
+        )
+        if not np.isfinite(values).all():
+            raise PgmMapError("PGM 生成参数必须为有限数")
+        if options.resolution <= 0 or options.resolution > 1000:
+            raise PgmMapError("分辨率必须大于 0 且不超过 1000 米")
+        if options.padding_m < 0 or options.inflation_radius_m < 0:
+            raise PgmMapError("边缘留白和障碍膨胀半径不能为负数")
+        if (
+            not isinstance(options.min_points_per_cell, int)
+            or isinstance(options.min_points_per_cell, bool)
+            or options.min_points_per_cell < 1
+        ):
+            raise PgmMapError("单栅格最少点数必须是正整数")
+        if options.empty_cell not in {"unknown", "free"}:
+            raise PgmMapError("未命中栅格类型必须为 unknown 或 free")
+        if not 0 <= options.free_thresh < options.occupied_thresh <= 1:
+            raise PgmMapError("阈值必须满足 0 <= free_thresh < occupied_thresh <= 1")
 
 
 class PgmMapLoader:

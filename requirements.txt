@@ -6,3 +6,4 @@ msgpack>=1,<2
 numpy>=1.24,<3
 vispy>=0.14,<1
 pypcd4>=1.3,<2
+open3d>=0.18,<1

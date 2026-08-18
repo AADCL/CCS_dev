@@ -32,7 +32,6 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QScrollArea,
     QSizePolicy,
-    QDoubleSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
@@ -57,12 +56,19 @@ from ..models import (
     MapMarkerShape,
     MapStatus,
     MapTransform,
+    PgmDownloadSnapshot,
+    PgmFusionJob,
+    PgmFusionProvenance,
+    PgmFusionSource,
+    PgmTransform2D,
     PoseTelemetry,
     UdpLinkStatus,
 )
-from ..pgm_map import PgmMapError, PgmMapLoader
+from ..pgm_map import PcdToPgmOptions, PgmMapError, PgmMapLoader
+from ..pgm_fusion import PgmFusionEngine, PgmFusionError, pcd_sha256
 from ..point_cloud import MapPointCloudLoader, PointCloudError
 from ..styles import ThemeMode, ThemePalette, theme_palette
+from ..widgets import NoButtonDoubleSpinBox, NoButtonSpinBox
 
 
 STATUS_TEXT = {
@@ -326,7 +332,7 @@ class TransformTable(QTableWidget):
             old = previous.get(source_id)
             values = (*old.translation_m, *old.rotation_rpy_deg) if old else (0.0,) * 6
             for column, value in enumerate(values, 1):
-                spin = QDoubleSpinBox()
+                spin = NoButtonDoubleSpinBox()
                 spin.setRange(-1_000_000.0, 1_000_000.0)
                 spin.setDecimals(4)
                 spin.setValue(0.0 if source_id == primary_id else float(value))
@@ -499,11 +505,17 @@ class MapFusionDialog(QDialog):
             if algorithm.is_default:
                 self.algorithm_combo.setCurrentIndex(self.algorithm_combo.count() - 1)
         form.addRow("融合算法", self.algorithm_combo)
+        self.sync_pgm = QCheckBox("同步融合 PGM 图")
+        self.sync_pgm.setToolTip("使用相同主从外参融合所选地图携带的 ROS PGM，并绑定到新点云地图")
+        form.addRow("栅格图层", self.sync_pgm)
         root.addLayout(form)
         root.addWidget(QLabel("选择至少两张具有有效 PCD 的地图"))
         self.map_list = QListWidget()
         for definition in maps:
-            item = QListWidgetItem(f"{definition.name} · {definition.point_count:,} 点 · {definition.frame_id}")
+            layers = "PCD + PGM" if definition.pgm else "仅 PCD"
+            item = QListWidgetItem(
+                f"{definition.name} · {definition.point_count:,} 点 · {definition.frame_id} · {layers}"
+            )
             item.setData(Qt.ItemDataRole.UserRole, definition.map_id)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Unchecked)
@@ -529,6 +541,7 @@ class MapFusionDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
         self.name_input.textChanged.connect(self._validate)
+        self.sync_pgm.toggled.connect(self._validate)
         self._validate()
 
     def selected_map_ids(self) -> tuple[str, ...]:
@@ -561,19 +574,284 @@ class MapFusionDialog(QDialog):
         )
 
     def _validate(self) -> None:
+        selected_ids = self.selected_map_ids()
+        selected_maps = [item for item in self.maps if item.map_id in selected_ids]
+        pgm_missing = self.sync_pgm.isChecked() and any(item.pgm is None for item in selected_maps)
         valid = (
-            bool(self.name_input.text().strip()) and len(self.selected_map_ids()) >= 2
+            bool(self.name_input.text().strip()) and len(selected_ids) >= 2
             and self.primary_combo.currentData() is not None
             and self.algorithm_combo.currentData() is not None
+            and not pgm_missing
         )
         self.fuse_button.setEnabled(valid)
-        self.validation.setText("" if valid else "请填写名称、选择至少两张地图并指定主地图")
+        if pgm_missing:
+            message = "同步融合 PGM 要求所有选中的地图都携带有效 PGM 图层"
+        else:
+            message = "请填写名称、选择至少两张地图并指定主地图"
+        self.validation.setText("" if valid else message)
 
     def job(self) -> MapFusionJob:
         return MapFusionJob(
             uuid.uuid4().hex, self.name_input.text().strip(), self.selected_map_ids(),
             str(self.primary_combo.currentData()), self.transform_table.transforms(),
-            str(self.algorithm_combo.currentData()),
+            str(self.algorithm_combo.currentData()), self.sync_pgm.isChecked(),
+        )
+
+
+class PgmFusionDialog(QDialog):
+    start_requested = Signal(object)
+    retry_requested = Signal()
+    remove_requested = Signal()
+
+    def __init__(self, maps: list[MapDefinition], devices: list[DeviceSnapshot],
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.maps = maps
+        self.devices = devices
+        self._running = False
+        self.setWindowTitle("端侧 PGM 下载与融合")
+        self.setMinimumSize(900, 620)
+        root = QVBoxLayout(self)
+        title = QLabel("PGM 栅格融合")
+        title.setObjectName("dialogTitle")
+        root.addWidget(title)
+        note = QLabel("外参方向：目标 PCD frame <- 来源 PGM frame；至少两个图层且至少一个来自端侧。")
+        note.setObjectName("muted")
+        root.addWidget(note)
+        form = QFormLayout()
+        self.target_combo = QComboBox()
+        for definition in maps:
+            self.target_combo.addItem(f"{definition.name} · {definition.frame_id}", definition.map_id)
+        self.include_existing = QCheckBox("将目标地图已有 PGM 作为单位变换来源")
+        self.resolution = NoButtonDoubleSpinBox()
+        self.resolution.setRange(0.001, 1000.0)
+        self.resolution.setDecimals(3)
+        self.resolution.setValue(0.05)
+        self.resolution.setSuffix(" m/px")
+        self.resolution_user_modified = False
+        form.addRow("目标点云地图", self.target_combo)
+        form.addRow("已有图层", self.include_existing)
+        form.addRow("输出分辨率", self.resolution)
+        root.addLayout(form)
+        self.table = QTableWidget(len(devices), 7)
+        self.table.setHorizontalHeaderLabels(("选择", "来源设备", "source_map_id", "X (m)", "Y (m)", "Yaw (deg)", "状态"))
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._controls = {}
+        for row, device in enumerate(devices):
+            selected = QCheckBox()
+            selected.setEnabled(bool(device.ip_address))
+            selected.setToolTip("" if device.ip_address else "设备缺少有效 IP，不能下载")
+            name = QLabel(f"{device.device_name}\n{device.device_id} · {device.ip_address or '无 IP'}")
+            source_map = QLineEdit()
+            source_map.setPlaceholderText("端侧地图 ID")
+            x, y, yaw = self._transform_input(), self._transform_input(), self._transform_input()
+            status = QLabel("待选择" if device.ip_address else "缺少 IP")
+            for column, widget in enumerate((selected, name, source_map, x, y, yaw, status)):
+                self.table.setCellWidget(row, column, widget)
+            self._controls[device.device_id] = (selected, source_map, x, y, yaw, status)
+            selected.toggled.connect(self._validate)
+            source_map.textChanged.connect(self._validate)
+        root.addWidget(self.table, 1)
+        self.progress = QLabel("尚未开始下载")
+        self.progress.setObjectName("muted")
+        root.addWidget(self.progress)
+        self.validation = QLabel()
+        self.validation.setObjectName("validationError")
+        root.addWidget(self.validation)
+        actions = QHBoxLayout()
+        self.retry_button = QPushButton("重试当前来源")
+        self.retry_button.setEnabled(False)
+        self.retry_button.clicked.connect(self.retry_requested)
+        self.remove_button = QPushButton("移除当前来源")
+        self.remove_button.setEnabled(False)
+        self.remove_button.clicked.connect(self.remove_requested)
+        actions.addWidget(self.retry_button)
+        actions.addWidget(self.remove_button)
+        actions.addStretch()
+        cancel = QPushButton("取消")
+        cancel.clicked.connect(self.reject)
+        self.start_button = QPushButton("开始下载并融合")
+        self.start_button.setObjectName("primaryButton")
+        self.start_button.clicked.connect(self._start)
+        actions.addWidget(cancel)
+        actions.addWidget(self.start_button)
+        root.addLayout(actions)
+        self.target_combo.currentIndexChanged.connect(self._target_changed)
+        self.include_existing.toggled.connect(self._validate)
+        self.resolution.valueChanged.connect(self._resolution_edited)
+        self._target_changed()
+
+    @staticmethod
+    def _transform_input() -> NoButtonDoubleSpinBox:
+        control = NoButtonDoubleSpinBox()
+        control.setRange(-1_000_000.0, 1_000_000.0)
+        control.setDecimals(3)
+        return control
+
+    def target(self) -> MapDefinition:
+        map_id = str(self.target_combo.currentData())
+        return next(item for item in self.maps if item.map_id == map_id)
+
+    def selected_remote_sources(self) -> tuple[PgmFusionSource, ...]:
+        result = []
+        for device in self.devices:
+            selected, source_map, x, y, yaw, _ = self._controls[device.device_id]
+            if selected.isChecked():
+                result.append(PgmFusionSource(
+                    source_id=f"device:{device.device_id}", source_map_id=source_map.text().strip(),
+                    transform=PgmTransform2D(x.value(), y.value(), yaw.value()),
+                    device_id=device.device_id, device_name=device.device_name,
+                    device_ip=device.ip_address,
+                ))
+        return tuple(result)
+
+    def output_resolution(self) -> float:
+        return self.resolution.value()
+
+    def set_minimum_resolution(self, value: float) -> None:
+        self.resolution.blockSignals(True)
+        self.resolution.setMinimum(value)
+        if not self.resolution_user_modified or self.resolution.value() < value:
+            self.resolution.setValue(value)
+        self.resolution.blockSignals(False)
+
+    def _resolution_edited(self) -> None:
+        self.resolution_user_modified = True
+
+    def update_snapshot(self, snapshot: PgmDownloadSnapshot) -> None:
+        controls = self._controls.get(snapshot.device_id)
+        if controls:
+            controls[-1].setText(snapshot.message)
+        self.progress.setText(
+            f"{snapshot.message} · {snapshot.received_chunks}/{snapshot.chunk_count} 分片 · "
+            f"补传 {snapshot.retransmission_rounds} 轮"
+        )
+        failed = snapshot.state == "failed"
+        self.retry_button.setEnabled(failed)
+        self.remove_button.setEnabled(failed)
+
+    def set_finishing(self, message: str) -> None:
+        self.progress.setText(message)
+        self.retry_button.setEnabled(False)
+        self.remove_button.setEnabled(False)
+
+    def _target_changed(self) -> None:
+        target = self.target()
+        self.include_existing.setEnabled(target.pgm is not None)
+        if target.pgm is None:
+            self.include_existing.setChecked(False)
+        self._validate()
+
+    def _validate(self) -> None:
+        remote = self.selected_remote_sources()
+        valid = bool(remote) and len(remote) + int(self.include_existing.isChecked()) >= 2
+        valid = valid and all(item.source_map_id for item in remote)
+        self.start_button.setEnabled(not self._running and valid)
+        self.validation.setText("" if valid else "至少选择一个端侧来源、合计两个图层，并填写全部 source_map_id")
+
+    def _start(self) -> None:
+        self._running = True
+        self.start_button.setEnabled(False)
+        self.target_combo.setEnabled(False)
+        self.include_existing.setEnabled(False)
+        for controls in self._controls.values():
+            for control in controls[:-1]:
+                control.setEnabled(False)
+        self.start_requested.emit(self)
+
+
+class PgmGenerationDialog(QDialog):
+    def __init__(self, definition: MapDefinition, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.definition = definition
+        self.setWindowTitle("从 PCD 生成 PGM")
+        self.setMinimumWidth(520)
+        root = QVBoxLayout(self)
+        title = QLabel(f"生成占据栅格 · {definition.name}")
+        title.setObjectName("dialogTitle")
+        root.addWidget(title)
+        description = QLabel("点云按 XY 平面投影；未命中区域默认保持未知。")
+        description.setObjectName("muted")
+        root.addWidget(description)
+        form = QFormLayout()
+        self.resolution = self._double(0.001, 1000.0, 0.05, 3, " m/px")
+        minimum_z = definition.bounds.min_z if definition.bounds else 0.0
+        maximum_z = definition.bounds.max_z if definition.bounds else 2.0
+        depth = maximum_z - minimum_z
+        default_min_z = minimum_z + (0.15 if depth >= 0.15 else 0.0)
+        self.min_z = self._double(-1_000_000.0, 1_000_000.0, default_min_z, 3, " m")
+        self.max_z = self._double(-1_000_000.0, 1_000_000.0, maximum_z, 3, " m")
+        self.padding = self._double(0.0, 10_000.0, 0.5, 3, " m")
+        self.min_points = NoButtonSpinBox()
+        self.min_points.setRange(1, 1_000_000)
+        self.min_points.setValue(1)
+        self.inflation = self._double(0.0, 10_000.0, 0.0, 3, " m")
+        self.empty_cell = QComboBox()
+        self.empty_cell.addItem("未知（unknown）", "unknown")
+        self.empty_cell.addItem("空闲（free）", "free")
+        self.free_threshold = self._double(0.0, 1.0, 0.196, 3, "")
+        self.occupied_threshold = self._double(0.0, 1.0, 0.65, 3, "")
+        for label, control in (
+            ("分辨率", self.resolution),
+            ("最低投影高度", self.min_z),
+            ("最高投影高度", self.max_z),
+            ("地图边缘留白", self.padding),
+            ("单栅格最少点数", self.min_points),
+            ("障碍膨胀半径", self.inflation),
+            ("未命中栅格", self.empty_cell),
+            ("空闲阈值", self.free_threshold),
+            ("占据阈值", self.occupied_threshold),
+        ):
+            form.addRow(label, control)
+        root.addLayout(form)
+        self.validation = QLabel()
+        self.validation.setObjectName("validationError")
+        root.addWidget(self.validation)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.generate_button = buttons.addButton("生成 PGM", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.generate_button.setObjectName("primaryButton")
+        self.generate_button.clicked.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+        for control in (
+            self.resolution, self.min_z, self.max_z, self.padding, self.min_points,
+            self.inflation, self.free_threshold, self.occupied_threshold,
+        ):
+            control.valueChanged.connect(self._validate)
+        self._validate()
+
+    @staticmethod
+    def _double(minimum: float, maximum: float, value: float,
+                decimals: int, suffix: str) -> NoButtonDoubleSpinBox:
+        control = NoButtonDoubleSpinBox()
+        control.setRange(minimum, maximum)
+        control.setDecimals(decimals)
+        control.setValue(value)
+        control.setSuffix(suffix)
+        return control
+
+    def _validate(self) -> None:
+        message = ""
+        if self.min_z.value() > self.max_z.value():
+            message = "最低投影高度不能大于最高投影高度"
+        elif self.free_threshold.value() >= self.occupied_threshold.value():
+            message = "空闲阈值必须小于占据阈值"
+        self.validation.setText(message)
+        self.generate_button.setEnabled(not message)
+
+    def options(self) -> PcdToPgmOptions:
+        return PcdToPgmOptions(
+            resolution=self.resolution.value(),
+            min_z=self.min_z.value(),
+            max_z=self.max_z.value(),
+            padding_m=self.padding.value(),
+            min_points_per_cell=self.min_points.value(),
+            inflation_radius_m=self.inflation.value(),
+            empty_cell=str(self.empty_cell.currentData()),
+            occupied_thresh=self.occupied_threshold.value(),
+            free_thresh=self.free_threshold.value(),
         )
 
 
@@ -1351,6 +1629,8 @@ class MapDetailPage(QWidget):
 
 class MapPage(QWidget):
     fusion_finished = Signal(object, object)
+    pgm_generation_finished = Signal(str, object, object)
+    pgm_fusion_finished = Signal(object, object)
 
     def __init__(
         self,
@@ -1380,6 +1660,12 @@ class MapPage(QWidget):
         )
         self.fusion_runner = fusion_runner or getattr(mapping_service, "fusion_runner", None) or MapFusionRunner()
         self._fusion_thread: threading.Thread | None = None
+        self._pgm_thread: threading.Thread | None = None
+        self._pgm_fusion_thread: threading.Thread | None = None
+        self._pgm_fusion_dialog: PgmFusionDialog | None = None
+        self._pgm_fusion_job: PgmFusionJob | None = None
+        self._pgm_fusion_include_existing = False
+        self.pgm_fusion_engine = PgmFusionEngine()
         self.telemetry_store = telemetry_store
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self._build(viewer_factory)
@@ -1387,6 +1673,8 @@ class MapPage(QWidget):
         self.repository.maps_updated.connect(self._on_maps_updated)
         self.source.devices_updated.connect(self._on_devices_updated)
         self.fusion_finished.connect(self._on_fusion_finished)
+        self.pgm_generation_finished.connect(self._on_pgm_generation_finished)
+        self.pgm_fusion_finished.connect(self._on_pgm_fusion_finished)
         if self.mapping_service is not None:
             self.mapping_service.session_updated.connect(self._on_mapping_updated)
             self.mapping_service.preview_updated.connect(self._on_mapping_preview)
@@ -1394,6 +1682,9 @@ class MapPage(QWidget):
             self.mapping_service.failed.connect(self._on_mapping_failed)
             self.mapping_service.availability_changed.connect(self._on_mapping_availability)
             self.mapping_service.degraded.connect(self._on_mapping_degraded)
+            self.mapping_service.pgm_source_updated.connect(self._on_pgm_source_updated)
+            self.mapping_service.pgm_download_failed.connect(self._on_pgm_download_failed)
+            self.mapping_service.pgm_download_completed.connect(self._on_pgm_download_completed)
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
@@ -1439,12 +1730,15 @@ class MapPage(QWidget):
         self.new_button.clicked.connect(self._create_map)
         self.fusion_button = QPushButton("地图融合")
         self.fusion_button.clicked.connect(self._open_map_fusion)
+        self.pgm_fusion_button = QPushButton("PGM 融合")
+        self.pgm_fusion_button.clicked.connect(self._open_pgm_fusion)
         self.algorithm_button = QPushButton("融合算法")
         self.algorithm_button.clicked.connect(self._open_algorithm_manager)
         self.edit_button = QPushButton("编辑")
         self.edit_button.clicked.connect(self._toggle_edit)
         header.addWidget(self.new_button)
         header.addWidget(self.fusion_button)
+        header.addWidget(self.pgm_fusion_button)
         header.addWidget(self.algorithm_button)
         header.addWidget(self.edit_button)
         layout.addLayout(header)
@@ -1454,11 +1748,13 @@ class MapPage(QWidget):
         self.rename_button = QPushButton("修改名称")
         self.import_button = QPushButton("导入 / 替换 PCD")
         self.import_pgm_button = QPushButton("导入 / 替换 PGM")
+        self.generate_pgm_button = QPushButton("从 PCD 生成 PGM")
         self.export_button = QPushButton("下载地图")
         self.delete_button = QPushButton("删除")
         self.delete_button.setObjectName("dangerButton")
         for button in (
             self.rename_button, self.import_button, self.import_pgm_button,
+            self.generate_pgm_button,
             self.export_button, self.delete_button,
         ):
             button.setVisible(False)
@@ -1467,6 +1763,7 @@ class MapPage(QWidget):
         self.rename_button.clicked.connect(self._rename_selected)
         self.import_button.clicked.connect(self._import_selected)
         self.import_pgm_button.clicked.connect(self._import_pgm_selected)
+        self.generate_pgm_button.clicked.connect(self._generate_pgm_selected)
         self.export_button.clicked.connect(self._export_selected)
         self.delete_button.clicked.connect(self._delete_selected)
         layout.addLayout(self.action_bar)
@@ -1572,6 +1869,170 @@ class MapPage(QWidget):
             self.fusion_repository, self, active_algorithm_ids=active
         ).exec()
 
+    def _open_pgm_fusion(self) -> None:
+        if self.mapping_service is None or not self.mapping_service.available:
+            message = self.mapping_service.module_message if self.mapping_service else "UDP 建图模块未配置"
+            QMessageBox.warning(self, "PGM 融合不可用", message)
+            return
+        if self.mapping_service.active:
+            QMessageBox.information(self, "PGM 融合", "实时建图或 PGM 下载任务正在运行")
+            return
+        candidates = [
+            item for item in self.maps
+            if item.status == MapStatus.READY and item.pcd_path and item.bounds
+        ]
+        if not candidates:
+            QMessageBox.warning(self, "PGM 融合", "至少需要一张具有有效 PCD 的目标地图")
+            return
+        dialog = PgmFusionDialog(candidates, self.devices, self)
+        self._pgm_fusion_dialog = dialog
+        dialog.start_requested.connect(self._start_pgm_fusion_download)
+        dialog.retry_requested.connect(self.mapping_service.retry_pgm_download)
+        dialog.remove_requested.connect(self.mapping_service.remove_failed_pgm_source)
+        dialog.rejected.connect(self._cancel_pgm_fusion)
+        dialog.exec()
+        if self._pgm_fusion_dialog is dialog:
+            self._pgm_fusion_dialog = None
+
+    def _start_pgm_fusion_download(self, dialog: PgmFusionDialog) -> None:
+        target = dialog.target()
+        try:
+            fingerprint = self.repository.pcd_fingerprint(target.map_id)
+            job_id = uuid.uuid4().hex
+            sources = dialog.selected_remote_sources()
+            job = PgmFusionJob(
+                job_id, target.map_id, target.frame_id, fingerprint,
+                sources, dialog.output_resolution(),
+            )
+            root = self.repository.write_pgm_fusion_job(target.map_id, job_id, {
+                "schema_version": 1, "job_id": job_id, "state": "downloading",
+                "target_map_id": target.map_id, "target_frame_id": target.frame_id,
+                "target_pcd_sha256": fingerprint,
+                "include_existing_pgm": dialog.include_existing.isChecked(),
+                "output_resolution": dialog.output_resolution(),
+                "sources": [
+                    {
+                        "source_id": item.source_id, "device_id": item.device_id,
+                        "source_map_id": item.source_map_id,
+                        "device_ip": item.device_ip,
+                        "transform": item.transform.__dict__,
+                    }
+                    for item in sources
+                ],
+                "created_at": job.created_at.isoformat(),
+            })
+            self._pgm_fusion_job = job
+            self._pgm_fusion_include_existing = dialog.include_existing.isChecked()
+            dialog.set_finishing("正在按设备顺序下载 PGM…")
+            self.mapping_service.start_pgm_download(target.map_id, sources, root)
+        except (MapRepositoryError, RuntimeError, ValueError) as exc:
+            QMessageBox.critical(dialog, "PGM 下载失败", str(exc))
+            dialog.reject()
+
+    def _on_pgm_source_updated(self, snapshot: object) -> None:
+        if self._pgm_fusion_dialog and isinstance(snapshot, PgmDownloadSnapshot):
+            self._pgm_fusion_dialog.update_snapshot(snapshot)
+
+    def _on_pgm_download_failed(self, source_id: str, message: str) -> None:
+        dialog = self._pgm_fusion_dialog
+        if dialog:
+            dialog.set_finishing(f"来源 {source_id} 失败：{message}。可重试或移除。")
+            dialog.retry_button.setEnabled(True)
+            dialog.remove_button.setEnabled(True)
+
+    def _on_pgm_download_completed(self, completed: object) -> None:
+        dialog, job = self._pgm_fusion_dialog, self._pgm_fusion_job
+        if dialog is None or job is None:
+            return
+        remote_sources = tuple(completed) if isinstance(completed, tuple) else ()
+        sources = list(remote_sources)
+        target = self.repository.map_by_id(job.target_map_id)
+        if target is None or target.bounds is None:
+            QMessageBox.critical(dialog, "PGM 融合失败", "目标地图或 PCD 边界已失效")
+            return
+        if self._pgm_fusion_include_existing and target.pgm:
+            image_path, yaml_path = self.repository.pgm_paths(target.map_id)
+            sources.append(PgmFusionSource(
+                source_id=f"target:{target.map_id}", source_map_id=target.map_id,
+                transform=PgmTransform2D(), source_frame_id=target.frame_id,
+                pgm_path=str(image_path), yaml_path=str(yaml_path),
+                artifact_sha256=pcd_sha256(image_path),
+                existing_target_layer=True,
+            ))
+        if len(sources) < 2 or not remote_sources:
+            QMessageBox.warning(dialog, "PGM 融合", "移除失败来源后不足两个有效图层，无法融合")
+            return
+        try:
+            finest, outside = self.pgm_fusion_engine.inspect(sources, target.bounds, None)
+            dialog.set_minimum_resolution(finest)
+            resolution = dialog.output_resolution()
+        except PgmFusionError as exc:
+            QMessageBox.critical(dialog, "PGM 融合失败", str(exc))
+            return
+        summary = f"有效来源：{len(sources)}\n输出分辨率：{resolution:g} m/px"
+        if outside > 1e-9:
+            summary += f"\n约 {outside:.3f} m² 位于目标 PCD XY 边界之外，将被裁剪。是否继续？"
+            answer = QMessageBox.question(
+                dialog, "确认裁剪", summary,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                dialog.set_finishing("已取消裁剪提交，临时下载结果已保留")
+                return
+        else:
+            QMessageBox.information(dialog, "下载完成", summary)
+        final_job = PgmFusionJob(
+            job.job_id, job.target_map_id, job.target_frame_id,
+            job.target_pcd_sha256, tuple(sources), resolution, job.created_at,
+        )
+        self._pgm_fusion_job = final_job
+        dialog.set_finishing("正在融合栅格并原子提交…")
+        self._pgm_fusion_thread = threading.Thread(
+            target=self._run_pgm_fusion, args=(final_job,),
+            name="ccs-pgm-fusion", daemon=True,
+        )
+        self._pgm_fusion_thread.start()
+
+    def _run_pgm_fusion(self, job: PgmFusionJob) -> None:
+        try:
+            target = self.repository.map_by_id(job.target_map_id)
+            if target is None or target.bounds is None:
+                raise MapRepositoryError("目标地图不存在或缺少 PCD 边界")
+            if self.repository.pcd_fingerprint(job.target_map_id) != job.target_pcd_sha256:
+                raise MapRepositoryError("目标 PCD 已变化，必须重新融合")
+            root = self.repository.pgm_fusion_job_directory(job.target_map_id, job.job_id)
+            result = self.pgm_fusion_engine.fuse(
+                job.sources, target.bounds, root / "fused.pgm", root / "fused.yaml",
+                job.output_resolution,
+            )
+            provenance = PgmFusionProvenance(
+                job.job_id, job.target_pcd_sha256, job.sources, result.metadata.resolution,
+                clipped_cells=result.clipped_cells, clipped_area_m2=result.clipped_area_m2,
+            )
+            definition = self.repository.commit_pgm_fusion_result(
+                job.target_map_id, job.job_id, root / "fused.yaml", provenance,
+            )
+            self.pgm_fusion_finished.emit(definition, None)
+        except Exception as exc:
+            self.pgm_fusion_finished.emit(None, str(exc))
+
+    def _on_pgm_fusion_finished(self, definition: object, error: object) -> None:
+        dialog = self._pgm_fusion_dialog
+        if error:
+            if dialog:
+                dialog.set_finishing(f"融合失败：{error}，临时结果已保留")
+            QMessageBox.critical(dialog or self, "PGM 融合失败", str(error))
+            return
+        if dialog:
+            dialog.accept()
+        QMessageBox.information(self, "PGM 融合", "融合 PGM 已绑定到目标点云地图")
+        self._pgm_fusion_job = None
+
+    def _cancel_pgm_fusion(self) -> None:
+        if self.mapping_service and self.mapping_service.pgm_download_active:
+            self.mapping_service.cancel_pgm_download()
+
     def _open_map_fusion(self) -> None:
         if self._fusion_thread and self._fusion_thread.is_alive():
             QMessageBox.information(self, "地图融合", "已有地图融合任务正在运行")
@@ -1585,7 +2046,8 @@ class MapPage(QWidget):
             return
         job = dialog.job()
         self.fusion_button.setEnabled(False)
-        self.fusion_button.setText("融合中…")
+        self.pgm_fusion_button.setEnabled(False)
+        self.fusion_button.setText("PCD + PGM 融合中…" if job.sync_pgm else "融合中…")
         self._fusion_thread = threading.Thread(
             target=self._run_offline_fusion, args=(job,), name="ccs-map-fusion", daemon=True,
         )
@@ -1605,6 +2067,7 @@ class MapPage(QWidget):
                 "schema_version": 1, "job_id": job.job_id, "state": "running",
                 "output_name": job.output_name, "source_map_ids": list(job.source_map_ids),
                 "primary_map_id": job.primary_map_id, "algorithm_id": job.algorithm_id,
+                "sync_pgm": job.sync_pgm,
                 "transforms": [
                     {"source_id": item.source_id, "is_primary": item.is_primary,
                      "translation_m": list(item.translation_m),
@@ -1615,6 +2078,39 @@ class MapPage(QWidget):
             output = directory / "plugin-output.pcd"
             inputs = [self.repository.pcd_path(item.map_id) for item in maps]
             self.fusion_runner.run(algorithm, inputs, primary.frame_id, list(job.transforms), output)
+            output_pgm_yaml = None
+            pgm_provenance = None
+            if job.sync_pgm:
+                output_cloud = self.repository.loader.load(output)
+                transforms = {item.source_id: item for item in job.transforms}
+                pgm_sources = []
+                for source_map in maps:
+                    if source_map.pgm is None:
+                        raise MapFusionError(f"源地图“{source_map.name}”缺少有效 PGM 图层")
+                    yaml_path, image_path = self.repository.pgm_paths(source_map.map_id)
+                    transform = transforms[source_map.map_id]
+                    pgm_sources.append(PgmFusionSource(
+                        source_id=f"map:{source_map.map_id}",
+                        source_map_id=source_map.map_id,
+                        transform=PgmTransform2D(
+                            transform.translation_m[0], transform.translation_m[1],
+                            transform.rotation_rpy_deg[2],
+                        ),
+                        source_frame_id=source_map.frame_id,
+                        pgm_path=str(image_path), yaml_path=str(yaml_path),
+                        artifact_sha256=pcd_sha256(image_path),
+                    ))
+                pgm_output = directory / "plugin-output.pgm"
+                output_pgm_yaml = directory / "plugin-output.yaml"
+                pgm_result = self.pgm_fusion_engine.fuse(
+                    pgm_sources, output_cloud.bounds, pgm_output, output_pgm_yaml, None,
+                )
+                pgm_provenance = PgmFusionProvenance(
+                    job.job_id, pcd_sha256(output), tuple(pgm_sources),
+                    pgm_result.metadata.resolution,
+                    clipped_cells=pgm_result.clipped_cells,
+                    clipped_area_m2=pgm_result.clipped_area_m2,
+                )
             creators_by_id = {
                 creator.device_id: creator for definition in maps for creator in definition.creator_devices
             }
@@ -1626,19 +2122,22 @@ class MapPage(QWidget):
             )
             definition = self.repository.commit_fusion_result(
                 job.output_name, job.job_id, output, creators_by_id.values(),
-                primary.frame_id, provenance,
+                primary.frame_id, provenance, output_pgm_yaml=output_pgm_yaml,
+                pgm_provenance=pgm_provenance,
             )
             self.fusion_finished.emit(definition, None)
         except Exception as exc:
             self.fusion_finished.emit(None, str(exc))
 
     def _on_fusion_finished(self, definition: object, error: object) -> None:
-        self.fusion_button.setEnabled(True)
+        self.fusion_button.setEnabled(not self.edit_mode)
+        self.pgm_fusion_button.setEnabled(not self.edit_mode)
         self.fusion_button.setText("地图融合")
         if error:
             QMessageBox.critical(self, "地图融合失败", f"{error}\n临时输入已保留，可调整算法后重试。")
         elif isinstance(definition, MapDefinition):
-            QMessageBox.information(self, "地图融合", f"融合地图“{definition.name}”已创建")
+            layers = "PCD 与 PGM" if definition.pgm else "PCD"
+            QMessageBox.information(self, "地图融合", f"融合地图“{definition.name}”已创建（{layers}）")
             self.show_detail(definition.map_id)
 
     def _toggle_edit(self) -> None:
@@ -1647,9 +2146,11 @@ class MapPage(QWidget):
         self.edit_button.setText("取消编辑" if self.edit_mode else "编辑")
         self.new_button.setEnabled(not self.edit_mode)
         self.fusion_button.setEnabled(not self.edit_mode)
+        self.pgm_fusion_button.setEnabled(not self.edit_mode)
         self.algorithm_button.setEnabled(not self.edit_mode)
         for button in (
             self.rename_button, self.import_button, self.import_pgm_button,
+            self.generate_pgm_button,
             self.export_button, self.delete_button,
         ):
             button.setVisible(self.edit_mode)
@@ -1667,6 +2168,7 @@ class MapPage(QWidget):
         self.rename_button.setEnabled(editable)
         self.import_button.setEnabled(editable)
         self.import_pgm_button.setEnabled(editable)
+        self.generate_pgm_button.setEnabled(bool(editable and selected and selected.pcd_path))
         self.export_button.setEnabled(editable)
         self.delete_button.setEnabled(bool(self.selected_map_ids))
 
@@ -1716,6 +2218,55 @@ class MapPage(QWidget):
             self.repository.import_pgm(map_id, filename)
         except MapRepositoryError as exc:
             QMessageBox.critical(self, "PGM 导入失败", str(exc))
+
+    def _generate_pgm_selected(self) -> None:
+        map_id = self._selected_id()
+        definition = self.repository.map_by_id(map_id) if map_id else None
+        if definition is None or not definition.pcd_path:
+            return
+        if self._pgm_thread and self._pgm_thread.is_alive():
+            QMessageBox.information(self, "生成 PGM", "已有 PGM 生成任务正在运行")
+            return
+        if definition.pgm is not None:
+            answer = QMessageBox.question(
+                self,
+                "替换 PGM",
+                "该地图已有 PGM 图层。确定使用点云生成结果替换吗？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        dialog = PgmGenerationDialog(definition, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.generate_pgm_button.setEnabled(False)
+        self.generate_pgm_button.setText("生成中…")
+        self._pgm_thread = threading.Thread(
+            target=self._run_pgm_generation,
+            args=(definition.map_id, dialog.options()),
+            name="ccs-pgm-generation",
+            daemon=True,
+        )
+        self._pgm_thread.start()
+
+    def _run_pgm_generation(self, map_id: str, options: PcdToPgmOptions) -> None:
+        try:
+            definition = self.repository.generate_pgm(map_id, options)
+            self.pgm_generation_finished.emit(map_id, definition, None)
+        except Exception as exc:
+            self.pgm_generation_finished.emit(map_id, None, str(exc))
+
+    def _on_pgm_generation_finished(self, map_id: str, definition: object, error: object) -> None:
+        self.generate_pgm_button.setText("从 PCD 生成 PGM")
+        selected = self.repository.map_by_id(map_id)
+        self.generate_pgm_button.setEnabled(
+            self.edit_mode and self._selected_id() == map_id and bool(selected and selected.pcd_path)
+        )
+        if error:
+            QMessageBox.critical(self, "PGM 生成失败", str(error))
+        elif isinstance(definition, MapDefinition):
+            QMessageBox.information(self, "生成 PGM", "PGM 栅格图层已生成并保存")
 
     def _delete_selected(self) -> None:
         if not self.selected_map_ids:

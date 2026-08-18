@@ -18,6 +18,7 @@ from .map_building import (
 from .map_building_config import MapBuildingConfig
 from .map_fusion import MapFusionRepository, MapFusionRunner, transform_points
 from .map_repository import MapRepository, MapRepositoryError
+from .pgm_fusion import PgmDownloadCoordinator
 from .models import (
     DeviceSnapshot, MapBuildMode, MapBuildProvenance, MapBuildingResultMetadata,
     MapDefinition, MapFusionAlgorithm, MapTransform,
@@ -71,6 +72,10 @@ class MapBuildingService(QObject):
     job_updated = Signal(object)
     device_session_updated = Signal(object)
     degraded = Signal(object)
+    pgm_source_updated = Signal(object)
+    pgm_source_completed = Signal(object)
+    pgm_download_failed = Signal(str, str)
+    pgm_download_completed = Signal(object)
 
     def __init__(self, config: MapBuildingConfig, repository: MapRepository,
                  fusion_repository: MapFusionRepository | None = None,
@@ -86,6 +91,13 @@ class MapBuildingService(QObject):
         self.clock = clock
         self.socket_factory = socket_factory
         self.protocol = MapBuildingProtocol(config)
+        self.pgm_download = PgmDownloadCoordinator(
+            config, self._send_pgm_envelope, return_host=config.bind_host, clock=clock,
+        )
+        self.pgm_download.source_updated.connect(self.pgm_source_updated)
+        self.pgm_download.source_completed.connect(self.pgm_source_completed)
+        self.pgm_download.failed.connect(self.pgm_download_failed)
+        self.pgm_download.all_completed.connect(self.pgm_download_completed)
         self._socket: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
@@ -97,7 +109,16 @@ class MapBuildingService(QObject):
     @property
     def active(self) -> bool:
         with self._lock:
+            return self._job is not None or self.pgm_download.active
+
+    @property
+    def mapping_active(self) -> bool:
+        with self._lock:
             return self._job is not None
+
+    @property
+    def pgm_download_active(self) -> bool:
+        return self.pgm_download.active
 
     @property
     def current_job_snapshot(self) -> MapBuildingJobSnapshot | None:
@@ -149,6 +170,7 @@ class MapBuildingService(QObject):
 
     def stop(self) -> None:
         self.interrupt_mapping("应用退出")
+        self.pgm_download.cancel()
         self._running.clear()
         udp_socket = self._socket
         self._socket = None
@@ -196,8 +218,8 @@ class MapBuildingService(QObject):
             raise ValueError("主设备必须是唯一使用单位变换的坐标系")
         selected_algorithm = self._resolve_algorithm(algorithm)
         with self._lock:
-            if self._job is not None:
-                raise RuntimeError("已有建图任务正在运行")
+            if self._job is not None or self.pgm_download.active:
+                raise RuntimeError("建图或 PGM 下载任务正在运行")
             now = datetime.now(timezone.utc)
             started = self.clock()
             job_id = uuid.uuid4().hex
@@ -273,6 +295,29 @@ class MapBuildingService(QObject):
             if self._job is not None:
                 self._interrupt_job_locked(self._job, reason)
 
+    def start_pgm_download(self, target_map_id: str, sources, job_root) -> None:
+        if not self.available or self._socket is None:
+            raise RuntimeError(self.module_message)
+        with self._lock:
+            if self._job is not None or self.pgm_download.active:
+                raise RuntimeError("实时建图与 PGM 下载不能同时运行")
+            source_list = list(sources)
+            if source_list:
+                self.pgm_download.return_host = self._local_address_for(source_list[0].device_ip)
+            self.pgm_download.start(target_map_id, source_list, job_root)
+
+    def resume_pgm_download(self, target_map_id: str, sources, job_root) -> None:
+        self.start_pgm_download(target_map_id, sources, job_root)
+
+    def retry_pgm_download(self) -> None:
+        self.pgm_download.retry_current()
+
+    def remove_failed_pgm_source(self) -> None:
+        self.pgm_download.remove_current()
+
+    def cancel_pgm_download(self) -> None:
+        self.pgm_download.cancel()
+
     def save_interrupted_session(self, map_id: str, session_id: str) -> MapDefinition:
         sessions = self.repository.interrupted_sessions(map_id)
         payload = next((item for item in sessions if item.get("session_id") == session_id), None)
@@ -341,6 +386,8 @@ class MapBuildingService(QObject):
 
     def _handle_datagram(self, datagram: bytes, peer_ip: str) -> None:
         envelope = self.protocol.decode(datagram)
+        if self.pgm_download.handle_envelope(envelope, peer_ip):
+            return
         with self._lock:
             job = self._job
             if job is None or envelope.map_id != job.definition.map_id:
@@ -436,6 +483,7 @@ class MapBuildingService(QObject):
             self.preview_updated.emit(job.job_id, combined.preview(), combined.bounds())
 
     def _tick(self) -> None:
+        self.pgm_download.tick()
         with self._lock:
             job = self._job
             if job is None:
@@ -581,6 +629,15 @@ class MapBuildingService(QObject):
         self._emit_job(job)
         self.completed.emit(definition)
         self._job = None
+
+    def _send_pgm_envelope(self, envelope: MapBuildingEnvelope, peer_ip: str) -> None:
+        udp_socket = self._socket
+        if udp_socket is None:
+            raise RuntimeError("UDP 建图 socket 未启动")
+        udp_socket.sendto(
+            self.protocol.encode(envelope),
+            (peer_ip, self.config.device_control_port),
+        )
 
     def _mark_degraded(self, job: _ActiveJob, session: _DeviceSession, reason: str) -> None:
         if session.state == "failed":

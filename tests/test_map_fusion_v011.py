@@ -67,7 +67,7 @@ class MapFusionV011Tests(unittest.TestCase):
             payload = json.loads(
                 (repository.root / empty.directory_name / "map.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(payload["schema_version"], 4)
+            self.assertEqual(payload["schema_version"], 5)
             self.assertEqual(payload["build_provenance"]["mode"], "empty")
 
             job_id = "fusion-job"

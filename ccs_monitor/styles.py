@@ -623,6 +623,12 @@ QLineEdit, QComboBox {
 QLineEdit:focus, QComboBox:focus {
     border-color: #37c5a0;
 }
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+    width: 0px;
+    height: 0px;
+    border: none;
+}
 QComboBox QAbstractItemView {
     background: #111a24;
     color: #dfe8f2;
@@ -765,9 +771,9 @@ QWidget#taskEditorPage QDoubleSpinBox:disabled {
 }
 QWidget#taskEditorPage QDoubleSpinBox::up-button,
 QWidget#taskEditorPage QDoubleSpinBox::down-button {
-    width: 18px;
-    background: #1b2a38;
-    border-left: 1px solid #2a3d4d;
+    width: 0px;
+    height: 0px;
+    border: none;
 }
 QListWidget#taskDeviceList, QListWidget#taskConflictList,
 QListWidget#taskAuditList, QTableWidget#taskWaypointTable {

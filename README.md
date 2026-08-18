@@ -1,6 +1,6 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.11.1**
+当前地面站版本：**v0.13.1**
 
 端侧包版本：mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
@@ -12,7 +12,7 @@
 - **设备管理**：支持搜索、筛选、新建、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
 - **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
 - **视频监控**：按需拉取 `rtsp://<设备IP>:8554/usb_cam` H.264 视频流。
-- **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原，并提供离线地图融合、Python 算法插件及 UDP 14561/14562 单机/多机实时建图。
+- **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原，可从点云生成 ROS PGM，并提供离线点云融合、端侧 PGM 下载与二维栅格融合、Python 算法插件及 UDP 14561/14562 单机/多机实时建图。
 - **任务系统**：支持 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态，支持全屏及面板折叠。
 - **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、RTSP 推流、实时建图和任务协调包。
@@ -51,7 +51,7 @@ CCS_dev/
 
 - Windows 10/11，或带桌面环境及 Qt 6 Multimedia 支持的 Linux。
 - Python 3.10+、PySide6 6.6+。
-- `requirements.txt` 中的 amqtt、paho-mqtt、PyYAML、MessagePack、NumPy、VisPy 和 pypcd4。
+- `requirements.txt` 中的 amqtt、paho-mqtt、PyYAML、MessagePack、NumPy、VisPy、pypcd4 和 Open3D。
 - 三维地图需要 OpenGL 2.1+ 兼容驱动；RTSP 播放依赖 Qt Multimedia 的 FFmpeg 后端。
 - 最低窗口尺寸 800×600，建议 1440×900 或更高。
 
@@ -202,9 +202,12 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 ### 地图页面
 
 - 点击“新建地图”后选择单机建图、多机建图或空地图。单机选择一台设备后立即协商；多机至少选择两台设备，并指定主设备及“主坐标系 <- 从坐标系”的 XYZ/RPY 外参。
-- 点击“地图融合”选择至少两张有效 PCD 地图、主地图、各从地图外参和算法，成功后创建独立融合地图；PGM 不参与融合。
-- 点击“融合算法”可导入标准 `.py` 插件、设置默认算法和 JSON 参数。接口示例见 `examples/map_fusion_plugin_example.py`，导入代码属于受信任本地代码并在独立进程运行。
-- 编辑模式支持重命名、导入/替换 PCD 或 PGM、下载 ZIP 和删除。
+- 点击“地图融合”选择至少两张有效 PCD 地图、主地图、各从地图外参和算法，成功后创建独立融合地图；默认只融合 PCD。
+- “地图融合”弹窗可勾选“同步融合 PGM 图”。勾选后所有源地图都必须携带有效 PGM，系统使用同一 X/Y/Yaw 外参同步融合栅格，并将 PCD、PGM、YAML 一并绑定到新地图。
+- 点击“PGM 融合”选择一张有效 PCD 目标地图，添加端侧来源并填写各自 `source_map_id` 和“目标 PCD frame <- 来源 PGM frame”的 X/Y/Yaw 外参。至少需要两个图层，可将目标地图已有 PGM 作为单位变换来源。
+- PGM 下载与实时建图互斥。输出分辨率不得细于来源最细值；若来源超出目标 PCD XY 边界，确认后才会裁剪并原子替换目标 PGM。
+- 点击“融合算法”可导入标准 `.py` 插件、设置默认算法和 JSON 参数。`examples/` 提供直接拼接、NumPy RANSAC 和 Open3D ICP 示例；导入代码属于受信任本地代码并在独立进程运行。
+- 编辑模式支持重命名、导入/替换 PCD 或 PGM、从 PCD 生成 PGM、下载 ZIP 和删除。生成参数包含分辨率、高度范围、留白、点数阈值、障碍膨胀、空白区语义及 ROS 阈值。
 - 双击卡片进入三维详情：左键旋转、滚轮缩放、右键拖动快速平移。任务页和指控大屏使用相同的三维操作速度。
 - 点击“重新建图”可统一发起单机或多机任务。实时预览使用内置体素融合，结束时由所选算法生成正式 PCD。
 - 单个从设备掉线时任务进入降级态，可剔除后继续或中止全部；主设备掉线必须中止。中断结果保存在 `.mapping`，离线融合临时结果保存在 `.fusion`。
@@ -284,9 +287,17 @@ gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/usb_cam latency=100 \
 
 PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server YAML 指定 image、resolution、origin 和阈值。失败不会覆盖旧地图。
 
+从 PCD 生成 PGM 时，确认高度范围内存在点，并避免使用过小分辨率生成超大栅格。未命中区域默认是 unknown，可在生成对话框改为 free；生成失败不会替换已有 PGM。
+
+### PGM 下载提示端侧版本不支持
+
+当前真实端侧 `epgeneral_map_stream` 尚未实现 PGM 文件服务。地面站请求 `request_pgm_artifact` 后若未收到 ACK，会显示版本不支持或超时。真实设备联调前需按 `docs/EDGE_DEVICE_INTERFACES.md` 实现 manifest、zlib 分片、补传和校验，并确保 UDP 14561/14562 可达。
+
 ### 融合算法无法导入或执行失败
 
 插件必须定义 `PLUGIN_API_VERSION = 1`、唯一 `ALGORITHM_ID` 和 `fuse_maps()`，并生成有效 XYZ PCD。检查插件依赖是否安装在地面站 Python 环境。超时、崩溃和无效输出不会覆盖正式地图，临时任务会保留在 `data/map_server/.fusion` 或地图的 `.mapping` 目录。
+
+Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提供合理的粗对齐；提示重叠率或 fitness 过低时，应先检查主从坐标方向与 XYZ/RPY 外参。
 
 ### 任务无法下发或同步执行
 
@@ -299,6 +310,15 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.13.1 · 2026-08-18**
+<small>扩展已保存地图融合流程，可使用相同外参同步融合源地图携带的 PGM 并原子创建多图层地图。</small>
+
+**v0.13.0 · 2026-08-17**
+<small>新增端侧 ROS PGM 产物下载、断点分片恢复、二维栅格融合及绑定既有 PCD 地图的原子提交流程。</small>
+
+**v0.12.0 · 2026-08-17**
+<small>新增 RANSAC/Open3D 融合插件样例、PCD 转 ROS PGM 和无按钮数字输入框。</small>
 
 **v0.11.1 · 2026-08-17**
 <small>统一提高地图页、任务页和指控大屏的右键拖动平移速度。</small>
