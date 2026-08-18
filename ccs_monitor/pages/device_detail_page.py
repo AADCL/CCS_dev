@@ -32,7 +32,7 @@ from ..models import (
     UdpLinkStatus,
 )
 from ..device_dialogs import StatusCardEditorDialog
-from ..rtsp_video import RtspVideoWidget
+from ..srt_video import SrtVideoWidget, build_srt_url
 from ..widgets import STATUS_TEXT
 from ..styles import ThemeMode, ThemePalette, theme_palette
 
@@ -228,6 +228,7 @@ class DeviceDetailPage(QWidget):
             "飞行模式", "解锁状态", "MAVLink 系统状态", "电池电压", "电池电流",
             "原始任务状态", "最后心跳", "UDP 链路状态", "UDP 最后心跳",
             "UDP 最后数据", "最后连接测试", "数据更新时间",
+            "SRT 端口", "SRT 延迟", "SRT 地址",
         )
         self.fields: dict[str, QLabel] = {}
         self.field_widgets: list[QWidget] = []
@@ -235,7 +236,7 @@ class DeviceDetailPage(QWidget):
             widget, value_label = self._field(field_name)
             self.fields[field_name] = value_label
             self.field_widgets.append(widget)
-        self.video_panel = RtspVideoWidget()
+        self.video_panel = SrtVideoWidget()
         self.detail_grid.addWidget(self.info_panel, 0, 0)
         self.detail_grid.addWidget(self.video_panel, 0, 1)
         layout.addLayout(self.detail_grid)
@@ -346,6 +347,12 @@ class DeviceDetailPage(QWidget):
             "UDP 最后数据": self._format_datetime(self.pending_telemetry.last_data_at) if self.pending_telemetry else "未收到",
             "最后连接测试": device.last_tested_at.astimezone().strftime("%Y-%m-%d %H:%M:%S") if device.last_tested_at else "未测试",
             "数据更新时间": device.updated_at.astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+            "SRT 端口": f"{device.srt_port}/UDP",
+            "SRT 延迟": f"{device.srt_latency_ms} ms",
+            "SRT 地址": (
+                build_srt_url(device.ip_address, device.srt_port, device.srt_latency_ms)
+                if device.ip_address else "--"
+            ),
         }
         for name, value in values.items():
             self.fields[name].setText(value)

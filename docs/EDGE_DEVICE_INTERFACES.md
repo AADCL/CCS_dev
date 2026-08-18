@@ -1,9 +1,9 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.13.2`，更新日期：2026-08-18。
+文档版本：`v0.14.0`，更新日期：2026-08-18。
 
-地面站 v0.13.2 仅调整融合算法和设备图标的本地静态存储及路径迁移，不产生新的端侧消息。v0.13.1 的已保存地图 PCD/PGM 同步融合和 v0.13.0 的 PGM 产物下载协议保持不变；MQTT、RTSP、UDP 14560–14564 均保持不变。
-端侧 `epgeneral_map_stream` v0.1.0 尚未实现 PGM 文件服务；本版本不修改任何真实端侧包代码或版本。旧端侧可继续执行实时建图，但 PGM 下载会超时并显示“不支持”。
+地面站 v0.14.0 使用系统 FFmpeg SRT Caller 接收视频；端侧新增 `epgeneral_video_srt` v0.1.0 SRT Listener。该部署变更不兼容旧 RTSP 包。MQTT 与 UDP 14560–14564 协议不变。
+端侧 `epgeneral_map_stream` v0.1.0 尚未实现 PGM 文件服务；旧端侧可继续执行实时建图，但 PGM 下载会超时并显示“不支持”。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -13,7 +13,7 @@
 | --- | --- | --- | --- | --- |
 | MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | epgeneral_mqtav v0.3.0 |
 | UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.2.1 |
-| RTSP 视频 | 地面站拉取端侧 | TCP 8554 `/usb_cam` | H.264/RTP/RTSP | epgeneral_usb_cam_rtsp v0.2.0 |
+| SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.0 |
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
 | UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
 | UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
@@ -110,9 +110,19 @@ heartbeat 为 1 Hz，`level=None` 且 payload 为空。合法心跳使 UDP 链�
 
 `status` 只允许 `available`、`unavailable`、`unknown`。所有浮点数必须有限。点云内容禁止放入 14560，只发送接收元数据。配置对应关系：地面站 `config/udp_telemetry.json` 定义公共名称/类型/等级；端侧 `epgeneral_udp_telemetry/config/telemetry.yaml` 额外定义 ROS topic、message type、字段路径和超时。公共 descriptor 不一致将导致哈希拒收。
 
-## RTSP 视频
+## SRT 视频
 
-端侧提供 `rtsp://<device.ip>:8554/usb_cam`；IPv6 URL 使用方括号。`epgeneral_usb_cam_rtsp` 直接订阅 YAML 指定的 `sensor_msgs/Image` 或 `sensor_msgs/CompressedImage` 话题，并按配置分辨率缩放、编码为 H.264；功能包不启动摄像头驱动。地面站只在详情页开关打开时拉流，关闭、切换设备/页面或退出时立即释放播放器。视频无音频、录制、认证或 TLS，拉流失败不会改变 MQTT/UDP 状态。
+端侧 `epgeneral_video_srt` 直接订阅 YAML 指定的 `sensor_msgs/Image` 或 `sensor_msgs/CompressedImage`，缩放后编码为 baseline H.264 并封装 MPEG-TS。`mpegtsmux alignment=7` 生成 1316 字节对齐输出，`srtsink` 固定为 Listener，默认监听 `0.0.0.0:9000/UDP`，延迟 120 ms。
+
+地面站从设备 profile 读取 IP、`srt_port` 和 `srt_latency_ms`，作为 Caller 构造：
+
+```text
+srt://<设备IP>:<端口>?mode=caller&transtype=live&latency=<延迟毫秒×1000>
+```
+
+IPv6 地址使用方括号。地面站先执行 `ffmpeg -hide_banner -protocols` 并要求 Input 列表含 `srt`，再通过 `QProcess` 解复用 MPEG-TS、解码 H.264 并输出 640×480 RGBA rawvideo。FFmpeg 意外退出每隔 1 秒重试，最多 3 次；关闭开关、切换设备/页面或退出立即终止进程并取消重试。视频无音频、录像、认证或加密，视频故障不改变 MQTT/UDP 状态。
+
+端侧和地面站的延迟配置均以毫秒保存；SRT URL 的 `latency` 查询参数使用微秒，因此地面站乘以 1000。端侧应开放 UDP 9000，并通过 `gst-inspect-1.0 srtsink` 检查插件。系统 FFmpeg 必须由用户安装且带 libsrt。
 
 ## UDP 14561/14562 实时建图
 
@@ -301,7 +311,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 | `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP |
 | `config/mqtt.json` | `epgeneral_mqtav/config/config.yaml` | Broker IP/端口、topic root、QoS、频率 |
 | `config/udp_telemetry.json` | `epgeneral_udp_telemetry/config/telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
-| 固定 RTSP 推导 | `epgeneral_usb_cam_rtsp/config/video.yaml` | 端侧 8554、`/usb_cam`、H.264 |
+| `config/devices.json`、`config/srt_video.json` | `EPGeneral_video_srt/config/video.yaml` | 设备 IP、UDP 9000、延迟、H.264/MPEG-TS/SRT |
 | `config/map_building.json` | `epgeneral_map_stream/config/mapping.yaml` | protocol ID、14561/14562、包长、压缩、格式、速率、体素和资源上限 |
 | `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP；本地 `device_types.json` 不参与端侧协议 |
 
@@ -322,7 +332,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 
 ### 兼容性与网络
 
-- 地面站版本：v0.13.2；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
+- 地面站版本：v0.14.0；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
 - 可信内网明文 MessagePack，schema 1；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。

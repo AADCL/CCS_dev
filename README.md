@@ -1,8 +1,8 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.13.2**
+当前地面站版本：**v0.14.0**
 
-端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.2.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
+端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
@@ -13,11 +13,11 @@
 - **系统总览**：统计在线/离线设备、地图和任务执行记录。
 - **设备管理**：支持搜索、筛选、新建、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
 - **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
-- **视频监控**：按需拉取 `rtsp://<设备IP>:8554/usb_cam` H.264 视频流。
+- **视频监控**：通过系统 FFmpeg 按需连接端侧 UDP 9000 SRT Listener，显示 H.264/MPEG-TS 视频流。
 - **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原，可从点云生成 ROS PGM，并提供离线点云融合、端侧 PGM 下载与二维栅格融合、Python 算法插件及 UDP 14561/14562 单机/多机实时建图。
 - **任务系统**：支持 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态，支持全屏及面板折叠。
-- **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、RTSP 推流、实时建图和任务协调包。
+- **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、SRT 推流、实时建图和任务协调包。
 
 各通信通道互相独立。单个模块故障不会阻止其他页面或本地编辑功能运行。完整端侧协议见 [EDGE_DEVICE_INTERFACES.md](docs/EDGE_DEVICE_INTERFACES.md)。
 
@@ -34,7 +34,7 @@ CCS_dev/
 ├── edge_side_pkg/
 │   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
 │   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.0
-│   ├── epgeneral_usb_cam_rtsp/              # ROS 图像话题 RTSP 推流包，v0.2.0
+│   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
 │   ├── epgeneral_map_stream/             # ROS 实时建图上行包，v0.1.0
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
@@ -51,16 +51,16 @@ CCS_dev/
 
 ### 地面站
 
-- Windows 10/11，或带桌面环境及 Qt 6 Multimedia 支持的 Linux。
+- Windows 10/11，或带桌面环境的 Linux。
 - Python 3.10+、PySide6 6.6+。
 - `requirements.txt` 中的 amqtt、paho-mqtt、PyYAML、MessagePack、NumPy、VisPy、pypcd4 和 Open3D。
-- 三维地图需要 OpenGL 2.1+ 兼容驱动；RTSP 播放依赖 Qt Multimedia 的 FFmpeg 后端。
+- 三维地图需要 OpenGL 2.1+ 兼容驱动；视频播放需要 `PATH` 中带 libsrt 的系统 FFmpeg，可用 `ffmpeg -protocols` 检查输入协议 `srt`。
 - 最低窗口尺寸 800×600，建议 1440×900 或更高。
 
 ### 端侧
 
-- Ubuntu 18.04、ROS Melodic、Python 3.6.9、MAVROS。
-- GStreamer 1.0、GStreamer RTSP Server、OpenCV、cv_bridge、image_transport 及相关 ROS 消息包。
+- Ubuntu 20.04、ROS Noetic、Python 3、MAVROS。
+- GStreamer 1.16+、SRT 插件、OpenCV、cv_bridge、image_transport 及相关 ROS 消息包。
 - 视频推流需要已有的 `sensor_msgs/Image` 或 `sensor_msgs/CompressedImage` 话题；实时建图需要 PointCloud2 和同步位姿来源。
 
 ### 网络
@@ -68,14 +68,14 @@ CCS_dev/
 | 端口 | 方向 | 用途 |
 | --- | --- | --- |
 | TCP 1883 | 端侧 → 地面站 | MQTT 状态与心跳 |
-| TCP 8554 | 地面站 → 端侧 | RTSP H.264 视频 |
+| UDP 9000 | 地面站 → 端侧 | SRT H.264/MPEG-TS 视频 |
 | UDP 14560 | 端侧 → 地面站 | 高频遥测与心跳 |
 | UDP 14561 | 地面站 → 端侧 | 实时建图控制 |
 | UDP 14562 | 端侧 → 地面站 | 建图点云数据 |
 | UDP 14563 | 地面站 → 端侧 | 任务下发与控制 |
 | UDP 14564 | 端侧 → 地面站 | 任务 ACK、状态和进度 |
 
-系统面向可信局域网，不提供 MQTT、RTSP 或 UDP 加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
+系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
 ## 部署方法
 
@@ -88,6 +88,8 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+winget install --id Gyan.FFmpeg -e
+ffmpeg -hide_banner -protocols
 ```
 
 Linux：
@@ -99,6 +101,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+sudo apt install ffmpeg
+ffmpeg -hide_banner -protocols
 ```
 
 启动前核对：
@@ -110,6 +114,9 @@ python -m pip install -r requirements.txt
 - `config/map_building.json`：实时建图 14561/14562 参数。
 - `config/map_fusion_algorithms.json`：融合算法、默认参数、启用状态和脚本指纹。
 - `config/task_system.json`：任务系统 14563/14564 参数。
+- `config/srt_video.json`：系统 FFmpeg 命令、显示尺寸、探测/连接超时和重试参数。带目录的 FFmpeg 路径必须相对软件根目录。
+
+`ffmpeg -protocols` 的 Input 列表必须包含 `srt`；不同发行版提供的 FFmpeg 构建选项可能不同。
 
 放行地面站 TCP 1883、UDP 14560、14562、14564，然后启动：
 
@@ -121,22 +128,21 @@ python run.py
 
 ### 2. 从零部署端侧
 
-在已安装 ROS Melodic 的 Ubuntu 18.04 上执行：
+在已安装 ROS Noetic 的 Ubuntu 20.04 上执行：
 
 ```bash
 sudo apt update
 sudo apt install python3-paho-mqtt python3-yaml python3-msgpack python3-numpy \
-  python3-catkin-pkg python3-rospkg ros-melodic-mavros ros-melodic-mavros-extras \
-  ros-melodic-usb-cam ros-melodic-cv-bridge ros-melodic-image-transport \
-  ros-melodic-sensor-msgs ros-melodic-nav-msgs ros-melodic-geometry-msgs \
-  libgstreamer1.0-dev libgstrtspserver-1.0-dev gstreamer1.0-tools \
-  gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  python3-catkin-pkg python3-rospkg ros-noetic-mavros ros-noetic-mavros-extras \
+  ros-noetic-cv-bridge ros-noetic-image-transport ros-noetic-sensor-msgs \
+  ros-noetic-nav-msgs ros-noetic-geometry-msgs libgstreamer1.0-dev gstreamer1.0-tools \
+  gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
   gstreamer1.0-plugins-ugly gstreamer1.0-libav
 
 mkdir -p ~/catkin_ws/src
 cp -r /path/to/CCS_dev/edge_side_pkg/* ~/catkin_ws/src/
 cd ~/catkin_ws
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
@@ -146,14 +152,14 @@ source devel/setup.bash
 
 - `epgeneral_mqtav/config/config.yaml` 的地面站 MQTT 地址。
 - `epgeneral_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
-- `epgeneral_usb_cam_rtsp/config/video.yaml` 的输入话题、消息类型、输出分辨率、帧率和码率。
+- `EPGeneral_video_srt/config/video.yaml` 的输入话题、输出尺寸、SRT 端口、延迟、帧率和码率。
 - `epgeneral_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。
 - `epgeneral_task_control/config/task_control.yaml` 的端口、XML 目录和 command/feedback 话题。
 
-端侧放行 TCP 8554、UDP 14561、14563。每个新终端先执行：
+端侧放行 UDP 9000、14561、14563，并执行 `gst-inspect-1.0 srtsink` 确认 SRT 插件可用。每个新终端先执行：
 
 ```bash
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 source ~/catkin_ws/devel/setup.bash
 ```
 
@@ -161,7 +167,7 @@ source ~/catkin_ws/devel/setup.bash
 
 ```bash
 roslaunch epgeneral_mqtav epgeneral_mqtav.launch
-roslaunch epgeneral_usb_cam_rtsp epgeneral_usb_cam_rtsp.launch
+roslaunch epgeneral_video_srt epgeneral_video_srt.launch
 roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>
 roslaunch epgeneral_map_stream epgeneral_map_stream.launch
 roslaunch epgeneral_task_control epgeneral_task_control.launch
@@ -195,11 +201,11 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 
 - 使用搜索与类型/状态条件筛选设备。
 - 点击“类型模板”新增或编辑设备类型，上传 PNG/JPEG/SVG 图标，选择箭头、立方体或球体地图形状，并绑定默认功能卡片。被设备引用的模板不能删除。
-- 点击“新建”从类型模板中选择类型，填写名称、ID 和 IP，测试连接后保存；ID 会检查重复并统一为大写。
+- 点击“新建”从类型模板中选择类型，填写名称、ID、IP、SRT 端口和延迟，测试连接后保存；ID 会检查重复并统一为大写。
 - 点击“编辑”批量选择并删除设备；双击设备卡进入详情。
 - 详情页显示 MQTT、UDP、电量、任务、飞行模式、位姿、IMU、点云和设备状态卡。
 - 详情页的状态卡可跟随类型模板动态更新，也可切换为设备自定义覆盖；空自定义表示明确不显示卡片。
-- 日志支持 info/warning/error 筛选；视频开关按需连接 RTSP，离开页面自动释放播放器。
+- 日志支持 info/warning/error 筛选；视频开关按需启动系统 FFmpeg SRT Caller，离开页面立即终止进程并取消重试。
 
 ### 地图页面
 
@@ -270,16 +276,15 @@ MQTT 与 UDP 是独立链路。检查 `destination_host`、ROS 话题频率和 U
 
 图标仅支持可正常解码的 PNG、JPEG、SVG，单文件不超过 5 MiB。成功上传后会复制到 `data/device_type_assets`；不要只保留外部源文件。三维环境不支持 OpenGL 或某个 mesh 创建失败时，地图会自动回退为圆点，不影响遥测与任务运行。
 
-### RTSP 无画面
+### SRT 无画面
 
-检查设备 IP、TCP 8554，以及配置话题的实际类型和发布频率。可用 GStreamer 验证：
+先执行 `ffmpeg -protocols`，确认 Input 列表包含 `srt`。再检查设备 IP、UDP 9000、防火墙、设备页端口/延迟，以及 ROS 图像话题的实际类型和频率。端侧必须启动 `epgeneral_video_srt v0.1.0`，并可用下列命令验证本机 Listener：
 
 ```bash
-gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/usb_cam latency=100 \
-  ! rtph264depay ! avdec_h264 ! autovideosink
+ffplay "srt://127.0.0.1:9000?mode=caller&transtype=live&latency=120000"
 ```
 
-缺少 `x264enc` 时安装 `gstreamer1.0-plugins-ugly`。
+缺少 `x264enc` 时安装 `gstreamer1.0-plugins-ugly`；缺少 `h264parse` 或 `srtsink` 时安装 `gstreamer1.0-plugins-bad`。地面站区分 FFmpeg 缺失、未启用 SRT、连接超时、端侧拒绝和解码失败。
 
 ### 地图黑屏或 OpenGL 错误
 
@@ -312,6 +317,9 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.14.0 · 2026-08-18**
+<small>使用端侧 SRT Listener 与地面站系统 FFmpeg Caller 完全替换 RTSP 视频链路，并增加每设备端口和延迟配置。</small>
 
 **v0.13.2 · 2026-08-18**
 <small>融合算法和设备类型图标统一复制到本地静态目录，配置仅保存可迁移相对路径并自动迁移旧绝对路径。</small>

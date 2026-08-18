@@ -9,7 +9,7 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 所有端侧包必须：
 
 - 从 `epgeneral_device_config` 读取唯一设备 ID/IP，不在代码中硬编码身份。
-- 保持现有 MQTT、UDP、RTSP v1 wire contract 和端口。
+- 保持现有 MQTT 与 UDP 14560–14564 wire contract；视频使用 SRT UDP 9000。
 - 通过配置校验、资源上限、来源校验、幂等 request ID、超时和安全清理处理异常。
 - 在没有真实传感器或执行器时提供可替换的 ROS 适配边界，便于 localhost/模拟测试。
 - 使用 systemd、roslaunch 或等价方式实现可重复启动、停止、日志和重启清理。
@@ -87,15 +87,15 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：参考设备可完成至少一个两航点任务；地面站收到 1 Hz heartbeat、状态变化和航点进度；用户停止后设备进入安全终态；适配器失联不会继续运动。
 
-## 7. `epgeneral_usb_cam_rtsp` v0.2.0
+## 7. `epgeneral_video_srt` v0.1.0
 
-**当前状态**：ROS USB camera + GStreamer RTSP Server C++ 节点、固定 8554 mount point 和配置文件已存在；真实 Noetic/GStreamer/摄像头未验收。
+**当前状态**：ROS 图像订阅 + GStreamer H.264/MPEG-TS SRT Listener C++ 节点及配置已实现；真实 Noetic/GStreamer/摄像头尚未验收。
 
 **Alpha 任务**：
 
-1. 在 Noetic 构建 `cv_bridge`、`image_transport`、OpenCV 和 GStreamer RTSP Server 依赖。
-2. 验证配置的 ROS 图像话题、消息类型、输出分辨率、帧率、H.264 编码和 `rtsp://<device.ip>:8554/usb_cam`。
-3. 验证无相机、无帧、编码器缺失、RTSP 客户端断开和重复连接的日志和资源释放。
+1. 在 Noetic 构建 `cv_bridge`、`image_transport`、OpenCV 和 GStreamer SRT 插件依赖。
+2. 验证配置的 ROS 图像话题、消息类型、输出分辨率、帧率、H.264/MPEG-TS 和 `srt://<device.ip>:9000?mode=caller`。
+3. 验证无相机、无帧、编码器/SRT 插件缺失、Caller 断开和重复连接的日志和资源释放。
 4. 与地面站详情页开关、手动重试、切页和退出行为联调。
 
 **验收**：参考摄像头可稳定输出视频；地面站播放器能打开、显示失败状态并在关闭后释放网络/媒体资源。
@@ -117,7 +117,7 @@ Alpha 阶段交付：
 - ROS1 launch/YAML 到 ROS2 launch.py/参数的映射表。
 - `TaskExecutionCommand`/`TaskExecutionFeedback` 的 ID、revision、frame、UTC、状态、进度和位置兼容定义。
 - Noetic/Humble/Jazzy 的依赖和 Python 版本风险清单。
-- 不改变地面站 UDP/MQTT/RTSP wire contract 的迁移方案。
+- 不改变地面站 UDP/MQTT wire contract 的迁移方案；视频部署统一迁移到 SRT。
 
 不在 Alpha 阶段声称 ROS2 包已实现或已通过硬件验证。
 
@@ -127,7 +127,7 @@ Alpha 阶段交付：
 2. 提供每包独立 launch 参数和统一的 device/config/log 目录。
 3. 提供 systemd、tmux 或启动脚本示例，确保启动前 source ROS 和工作空间。
 4. 使用 NTP 或 chrony 同步地面站和端侧 UTC；任务执行前检查时钟偏差。
-5. 放行端侧 UDP 14561/14563、上行 14560/14562/14564、RTSP TCP 8554，以及地面站 TCP 1883、UDP 14560/14562/14564。
+5. 放行端侧 UDP 9000/14561/14563、上行 14560/14562/14564，以及地面站 TCP 1883、UDP 14560/14562/14564。
 6. 使用 `ss`、`rostopic`、`tcpdump`、GStreamer 客户端和包内版本检查脚本提供现场诊断。
 7. 进程退出、网络断开、ROS master 重启和配置错误时释放订阅、socket、临时缓存和运动控制资源。
 
@@ -139,7 +139,7 @@ Alpha 阶段交付：
 | catkin | Ubuntu 20.04 + Noetic | 全包构建、依赖、Python 导入、launch |
 | ROS 模拟 | Noetic | Pose/IMU/PointCloud2/Odometry/String、反馈适配器 |
 | UDP localhost | Noetic/Windows 地面站 | 14560、14561/14562、14563/14564、ACK、超时、重启 |
-| GStreamer | Noetic + 真实或虚拟摄像头 | RTSP 编码、拉流、断流和重连 |
+| GStreamer | Noetic + 真实或虚拟摄像头 | SRT 编码、拉流、断流和重连 |
 | 参考设备 | Ubuntu20/Noetic | MQTT、遥测、视频、建图和任务控制全链路 |
 | 故障注入 | 所有可用环境 | 错误 IP、缺片、CRC、话题超时、NTP 偏差、适配器失联 |
 

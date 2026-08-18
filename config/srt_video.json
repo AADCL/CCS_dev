@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "ffmpeg_executable": "ffmpeg",
+  "output_width": 640,
+  "output_height": 480,
+  "output_fps": 30,
+  "probe_size_bytes": 1000000,
+  "analyze_duration_us": 1000000,
+  "connect_timeout_us": 5000000,
+  "retry_delay_ms": 1000,
+  "max_retries": 3
+}

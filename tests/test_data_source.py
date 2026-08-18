@@ -31,6 +31,7 @@ class DeviceDataSourceTests(unittest.TestCase):
         created = self.source.create_device(profile)
         self.assertEqual(created.ip_address, "127.0.0.1")
         self.assertEqual(created.connection_status, ConnectionStatus.ONLINE)
+        self.assertEqual((created.srt_port, created.srt_latency_ms), (9000, 120))
         self.assertTrue(self.source.logs(created.device_id))
         self.source.delete_devices({created.device_id})
         self.assertIsNone(self.source.device(created.device_id))

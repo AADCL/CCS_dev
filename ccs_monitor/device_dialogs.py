@@ -29,6 +29,7 @@ from .models import (
 )
 from .device_types import DeviceTypeConfigError
 from .ping_service import PingResult, PingWorker
+from .widgets import NoButtonSpinBox
 
 
 class NewDeviceDialog(QDialog):
@@ -69,10 +70,19 @@ class NewDeviceDialog(QDialog):
         self.ip_input = QLineEdit()
         self.ip_input.setObjectName("deviceIpInput")
         self.ip_input.setPlaceholderText("例如：192.168.1.10")
+        self.srt_port_input = NoButtonSpinBox()
+        self.srt_port_input.setRange(1, 65535)
+        self.srt_port_input.setValue(9000)
+        self.srt_latency_input = NoButtonSpinBox()
+        self.srt_latency_input.setRange(20, 8000)
+        self.srt_latency_input.setValue(120)
+        self.srt_latency_input.setSuffix(" ms")
         form.addRow("设备名称", self.name_input)
         form.addRow("设备类型", self.type_input)
         form.addRow("设备 ID", self.id_input)
         form.addRow("设备 IP", self.ip_input)
+        form.addRow("SRT 端口", self.srt_port_input)
+        form.addRow("SRT 延迟", self.srt_latency_input)
         root.addLayout(form)
 
         test_row = QHBoxLayout()
@@ -184,6 +194,8 @@ class NewDeviceDialog(QDialog):
                 else DeviceAvailability.UNAVAILABLE
             ),
             last_tested_at=self._last_tested_at,
+            srt_port=self.srt_port_input.value(),
+            srt_latency_ms=self.srt_latency_input.value(),
         )
 
 

@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>epgeneral_usb_cam_rtsp</name>
-  <version>0.2.0</version>
-  <description>Low-latency H.264 RTSP streaming from configurable ROS image topics.</description>
+  <name>epgeneral_video_srt</name>
+  <version>0.1.0</version>
+  <description>Low-latency H.264/MPEG-TS SRT streaming from configurable ROS image topics.</description>
   <maintainer email="maintainer@example.com">CCS Maintainer</maintainer>
   <license>MIT</license>
 
@@ -12,7 +12,6 @@
   <build_depend>image_transport</build_depend>
   <build_depend>libopencv-dev</build_depend>
   <build_depend>libgstreamer1.0-dev</build_depend>
-  <build_depend>libgstrtspserver-1.0-dev</build_depend>
   <build_depend>roscpp</build_depend>
   <build_depend>sensor_msgs</build_depend>
 
@@ -20,6 +19,7 @@
   <exec_depend>epgeneral_device_config</exec_depend>
   <exec_depend>gstreamer1.0-libav</exec_depend>
   <exec_depend>gstreamer1.0-plugins-base</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-bad</exec_depend>
   <exec_depend>gstreamer1.0-plugins-good</exec_depend>
   <exec_depend>gstreamer1.0-plugins-ugly</exec_depend>
   <exec_depend>image_transport</exec_depend>

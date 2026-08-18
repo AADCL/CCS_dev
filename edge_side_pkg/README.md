@@ -4,7 +4,7 @@
 
 命名规则：通用包目录使用 `EPGeneral_<function>`，ROS/catkin 包名使用全小写 `epgeneral_<function>`。设备专属扩展使用 `EPDQUAV_`、`EPUGV_`、`EPQRD_`、`EPDATUGV_` 或 `EPAGUAV_` 目录前缀，对应 ROS 前缀为 `epdquav_`、`epugv_`、`epqrd_`、`epdatugv_`、`epaguav_`。
 
-地面站当前为 v0.13.1；已保存地图的 PCD/PGM 同步融合完全在地面站本地执行，不修改端侧协议或包版本。v0.13.0 在 `ccs-map-stream-v1` 中定义的可选 PGM 文件服务仍尚未由 `epgeneral_map_stream` v0.1.0 实现。
+地面站当前为 v0.14.0；视频链路要求端侧使用 `epgeneral_video_srt` v0.1.0。该 SRT 包不兼容旧 `epgeneral_usb_cam_rtsp`。v0.13.0 定义的可选 PGM 文件服务仍尚未由 `epgeneral_map_stream` v0.1.0 实现。
 
 本次新增独立版本的端侧 `epgeneral_task_control` v0.1.0，不修改既有协议字段或其他端侧包版本。
 
@@ -15,7 +15,7 @@
 
 - `epgeneral_device_config` v0.1.0：保存端侧设备 ID/IP 的共享配置。地面站 `config/devices.json` 必须有同 ID 且 IP 相同的记录。
 - `epgeneral_mqtav` v0.3.0：订阅 ROS 状态和电池信息，并向地面站 MQTT Broker 发布 presence、heartbeat、status。
-- `epgeneral_usb_cam_rtsp` v0.2.0：订阅配置的 ROS 原始或压缩图像话题，并通过 GStreamer 提供 `rtsp://<device.ip>:8554/usb_cam`。
+- `epgeneral_video_srt` v0.1.0：订阅配置的 ROS 原始或压缩图像话题，并通过 GStreamer 以 SRT Listener 输出 baseline H.264/MPEG-TS，默认 UDP 9000。
 - `epgeneral_udp_telemetry` v0.2.1：按配置订阅 MAVROS/ROS 位姿、IMU、点云、地图生成状态和建图模式，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测。
 - `epgeneral_map_stream` v0.1.0：监听 UDP 14561 建图指令，同步预处理 PointCloud2 与位姿，并向地面站 UDP 14562 上传分片点云、同步位姿和静态外参。
 - `epgeneral_task_control` v0.1.0：监听 UDP 14563 任务指令，原子保存 XML，通过 ROS 强类型接口协调执行，并向 UDP 14564 回传状态和进度。
@@ -43,14 +43,14 @@
 mkdir -p ~/catkin_ws/src
 cp -r edge_side_pkg ~/catkin_ws/src/
 cd ~/catkin_ws
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
-修改 `epgeneral_device_config/config/device.yaml` 后，使用 `roslaunch epgeneral_mqtav epgeneral_mqtav.launch`、`roslaunch epgeneral_usb_cam_rtsp epgeneral_usb_cam_rtsp.launch`、`roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>`、`roslaunch epgeneral_map_stream epgeneral_map_stream.launch` 和 `roslaunch epgeneral_task_control epgeneral_task_control.launch` 启动对应功能。任务网络、XML 目录和 ROS 适配话题位于 `epgeneral_task_control/config/task_control.yaml`。
+修改 `epgeneral_device_config/config/device.yaml` 后，使用 `roslaunch epgeneral_mqtav epgeneral_mqtav.launch`、`roslaunch epgeneral_video_srt epgeneral_video_srt.launch`、`roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>`、`roslaunch epgeneral_map_stream epgeneral_map_stream.launch` 和 `roslaunch epgeneral_task_control epgeneral_task_control.launch` 启动对应功能。视频启动前执行 `gst-inspect-1.0 srtsink`，并放行 UDP 9000。
 
 每次新增或更新 Python ROS 包后，执行 `catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3` 并在启动 roslaunch 的同一终端执行 `source devel/setup.bash`。
 
-端侧默认面向 Ubuntu 18.04、ROS Melodic、Python 3.6.9 和可信局域网，不提供 MQTT/RTSP/UDP 认证、TLS、录制、可靠重传或下行控制。
+端侧视频运行基线为 Ubuntu 20.04、ROS Noetic、GStreamer 1.16+；系统运行于可信局域网，不提供 MQTT/SRT/UDP 认证、TLS、录制或通用可靠重传。

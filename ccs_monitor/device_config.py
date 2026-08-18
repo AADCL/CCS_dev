@@ -16,7 +16,7 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class DeviceConfigError(RuntimeError):
@@ -65,7 +65,7 @@ class DeviceConfigRepository:
             self._profiles = []
             return []
         self._profiles = profiles
-        if schema_version in {1, 2}:
+        if schema_version in {1, 2, 3}:
             self._write(profiles)
         return list(profiles)
 
@@ -102,6 +102,8 @@ class DeviceConfigRepository:
                 profile.availability,
                 profile.last_tested_at,
                 normalized_cards,
+                profile.srt_port,
+                profile.srt_latency_ms,
             )
             if profile.device_id.casefold() == folded_id else profile
             for profile in self._profiles
@@ -122,7 +124,7 @@ class DeviceConfigRepository:
         if not isinstance(payload, dict):
             raise ValueError("根节点必须是对象")
         schema_version = payload.get("schema_version")
-        if schema_version not in {1, 2, SCHEMA_VERSION}:
+        if schema_version not in {1, 2, 3, SCHEMA_VERSION}:
             raise ValueError(f"不支持的 schema_version：{payload.get('schema_version')}")
         raw_devices = payload.get("devices")
         if not isinstance(raw_devices, list):
@@ -143,9 +145,11 @@ class DeviceConfigRepository:
                     last_tested_at=datetime.fromisoformat(last_tested) if last_tested else None,
                     status_card_ids=(
                         None
-                        if schema_version == SCHEMA_VERSION and item.get("status_cards") is None
+                        if schema_version >= 3 and item.get("status_cards") is None
                         else self._validate_status_cards(tuple(item.get("status_cards", DEFAULT_DEVICE_STATUS_CARDS)))
                     ),
+                    srt_port=int(item.get("srt_port", 9000)),
+                    srt_latency_ms=int(item.get("srt_latency_ms", 120)),
                 )
             except (KeyError, ValueError, TypeError) as exc:
                 raise ValueError(f"devices[{index}] 字段无效：{exc}") from exc
@@ -171,6 +175,10 @@ class DeviceConfigRepository:
             ipaddress.ip_address(ip_address)
         except ValueError as exc:
             raise ValueError(f"IP 地址无效：{ip_address}") from exc
+        if not 1 <= profile.srt_port <= 65535:
+            raise ValueError("SRT 端口必须在 1–65535 之间")
+        if not 20 <= profile.srt_latency_ms <= 8000:
+            raise ValueError("SRT 延迟必须在 20–8000 ms 之间")
         return DeviceProfile(
             device_id=device_id,
             device_name=device_name,
@@ -179,6 +187,8 @@ class DeviceConfigRepository:
             availability=profile.availability,
             last_tested_at=profile.last_tested_at,
             status_card_ids=(None if profile.status_card_ids is None else DeviceConfigRepository._validate_status_cards(profile.status_card_ids)),
+            srt_port=profile.srt_port,
+            srt_latency_ms=profile.srt_latency_ms,
         )
 
     @staticmethod
@@ -231,4 +241,6 @@ class DeviceConfigRepository:
             "availability": profile.availability.value,
             "last_tested_at": profile.last_tested_at.isoformat() if profile.last_tested_at else None,
             "status_cards": None if profile.status_card_ids is None else list(profile.status_card_ids),
+            "srt_port": profile.srt_port,
+            "srt_latency_ms": profile.srt_latency_ms,
         }

@@ -101,6 +101,8 @@ class MqttDeviceSource(SimulatedDeviceSource):
             device_icon_path=template.icon_path if template else None,
             map_marker_shape=template.map_marker_shape if template else MapMarkerShape.SPHERE,
             status_cards_inherited=profile.status_card_ids is None,
+            srt_port=profile.srt_port,
+            srt_latency_ms=profile.srt_latency_ms,
         )
 
     def create_device(self, profile: DeviceProfile) -> DeviceSnapshot:
