@@ -87,14 +87,14 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：参考设备可完成至少一个两航点任务；地面站收到 1 Hz heartbeat、状态变化和航点进度；用户停止后设备进入安全终态；适配器失联不会继续运动。
 
-## 7. `epgeneral_usb_cam_rtsp` v0.1.0
+## 7. `epgeneral_usb_cam_rtsp` v0.2.0
 
 **当前状态**：ROS USB camera + GStreamer RTSP Server C++ 节点、固定 8554 mount point 和配置文件已存在；真实 Noetic/GStreamer/摄像头未验收。
 
 **Alpha 任务**：
 
-1. 在 Noetic 构建 `usb_cam`、`cv_bridge`、`image_transport`、GStreamer RTSP Server 依赖。
-2. 验证 `/dev/video0` 权限、YUYV、分辨率、帧率、H.264 编码和 `rtsp://<device.ip>:8554/usb_cam`。
+1. 在 Noetic 构建 `cv_bridge`、`image_transport`、OpenCV 和 GStreamer RTSP Server 依赖。
+2. 验证配置的 ROS 图像话题、消息类型、输出分辨率、帧率、H.264 编码和 `rtsp://<device.ip>:8554/usb_cam`。
 3. 验证无相机、无帧、编码器缺失、RTSP 客户端断开和重复连接的日志和资源释放。
 4. 与地面站详情页开关、手动重试、切页和退出行为联调。
 

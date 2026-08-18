@@ -18,6 +18,7 @@ from .models import (
     DeviceTypeTemplate,
     MapMarkerShape,
 )
+from .static_paths import StaticPathError, StaticPathResolver
 
 
 DEVICE_TYPE_SCHEMA_VERSION = 1
@@ -50,6 +51,7 @@ class DeviceTypeTemplateRepository:
     ) -> None:
         self.path = Path(path)
         self.asset_dir = Path(asset_dir)
+        self.path_resolver = StaticPathResolver(self.path, self.asset_dir)
         self.referenced_type_ids = referenced_type_ids or (lambda: set())
         self.read_only = False
         self.error_message: str | None = None
@@ -65,7 +67,15 @@ class DeviceTypeTemplateRepository:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
             self._templates = self._parse(payload)
-        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            stored_paths = [item.get("icon_path") for item in payload["device_types"]]
+            portable_paths = [self.path_resolver.portable(item.icon_path) for item in self._templates]
+            if stored_paths != portable_paths:
+                try:
+                    self._write(self._templates)
+                except (DeviceTypeConfigError, StaticPathError) as exc:
+                    self.read_only = True
+                    self.error_message = f"设备类型资源路径迁移失败，配置已切换为只读：{exc}"
+        except (OSError, ValueError, TypeError, json.JSONDecodeError, StaticPathError) as exc:
             self.read_only = True
             self.error_message = f"设备类型配置读取失败：{exc}"
             self._templates = []
@@ -129,10 +139,13 @@ class DeviceTypeTemplateRepository:
             if not isinstance(item, dict):
                 raise ValueError(f"device_types[{index}] 必须是对象")
             try:
+                icon_path = item.get("icon_path")
+                if icon_path:
+                    icon_path = str(self.path_resolver.resolve(icon_path, allow_missing=True))
                 template = self._validate(DeviceTypeTemplate(
                     type_id=item["type_id"],
                     display_name=item["display_name"],
-                    icon_path=item.get("icon_path"),
+                    icon_path=icon_path,
                     map_marker_shape=MapMarkerShape(item.get("map_marker_shape", "sphere")),
                     default_status_card_ids=tuple(item.get("default_status_cards", DEFAULT_DEVICE_STATUS_CARDS)),
                 ))
@@ -176,7 +189,10 @@ class DeviceTypeTemplateRepository:
             shutil.copy2(source_path, destination)
         except OSError as exc:
             raise DeviceTypeConfigError(f"复制图标失败：{exc}") from exc
-        return DeviceTypeTemplate(template.type_id, template.display_name, str(destination.resolve()), template.map_marker_shape, template.default_status_card_ids)
+        return DeviceTypeTemplate(
+            template.type_id, template.display_name, str(destination.resolve()),
+            template.map_marker_shape, template.default_status_card_ids,
+        )
 
     def _trash_if_unreferenced(self, icon_path: str | None, except_path: str | None = None) -> None:
         if not icon_path or icon_path == except_path or any(item.icon_path == icon_path for item in self._templates):
@@ -198,7 +214,8 @@ class DeviceTypeTemplateRepository:
     def _write(self, templates: list[DeviceTypeTemplate]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"schema_version": DEVICE_TYPE_SCHEMA_VERSION, "device_types": [
-            {"type_id": item.type_id, "display_name": item.display_name, "icon_path": item.icon_path,
+            {"type_id": item.type_id, "display_name": item.display_name,
+             "icon_path": self.path_resolver.portable(item.icon_path),
              "map_marker_shape": item.map_marker_shape.value, "default_status_cards": list(item.default_status_card_ids)}
             for item in templates
         ]}

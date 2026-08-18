@@ -1,5 +1,13 @@
 # 开发笔记
 
+## v0.13.2
+
+### 可迁移静态资源
+
+- `StaticPathResolver` 以配置目录和受管资源目录的公共父目录为存储根，配置中仅写入 POSIX 相对路径；页面和融合工作进程仍获得解析后的绝对路径。
+- 融合算法导入和设备图标上传先校验，再复制到 `data/map_fusion_algorithms` 或 `data/device_type_assets`；已配置的静态文件作为部署资源保留。
+- 加载旧绝对路径时优先按文件名查找当前安装目录副本，成功后自动回写相对路径。路径解析不依赖进程工作目录，并拒绝越出受管目录的资源。
+
 ## v0.13.1
 
 ### 已保存地图同步融合
@@ -300,7 +308,7 @@
 
 ### USB 摄像头 RTSP 推流
 
-- `epgeneral_usb_cam_rtsp` 使用 C++、`image_transport`、`cv_bridge` 和 GStreamer RTSP Server，订阅 `/usb_cam/image_raw`。
+- `epgeneral_usb_cam_rtsp` v0.2.0 使用 C++、`image_transport`、`cv_bridge`、OpenCV 和 GStreamer RTSP Server，直接订阅配置的原始或压缩 ROS 图像话题，不再启动 `usb_cam`。
 - ROS 回调只负责把最新 BGR8 帧复制到受 mutex 保护的单帧缓存；GStreamer `appsrc` 在 RTSP 客户端请求时取最新帧，队列限制为 2 帧并丢弃旧帧，避免慢客户端阻塞相机。
 - 编码管线为 `videoconvert -> x264enc(tune=zerolatency) -> rtph264pay`，默认 `640x480/30 FPS/2000 kbps`，服务 `0.0.0.0:8554/usb_cam`。
 - WallTimer 检查首次收帧和断帧超时，RTSP 客户端连接/断开、编码错误和关闭均写 ROS 日志。

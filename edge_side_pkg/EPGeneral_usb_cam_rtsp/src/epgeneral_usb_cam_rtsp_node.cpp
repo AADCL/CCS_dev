@@ -15,34 +15,54 @@
 #include <gst/gst.h>
 #include <gst/rtsp-server/rtsp-server.h>
 #include <image_transport/image_transport.h>
-#include <opencv2/imgproc/imgproc.hpp>
 #include <ros/ros.h>
 #include <sensor_msgs/Image.h>
+#include <sensor_msgs/CompressedImage.h>
 
 class UsbCamRtspNode {
  public:
   UsbCamRtspNode()
       : nh_(), pnh_("~"), image_transport_(nh_), main_loop_(nullptr), server_(nullptr),
-        server_source_id_(0), frame_sequence_(0), received_frame_(false) {
+        server_source_id_(0), frame_sequence_(0), received_frame_(false), shutting_down_(false) {
     loadConfiguration();
     gst_init(nullptr, nullptr);
     startRtspServer();
-    image_subscriber_ = image_transport_.subscribe(
-        image_topic_, 1, &UsbCamRtspNode::imageCallback, this,
-        image_transport::TransportHints("raw"));
+    if (image_message_type_ == "sensor_msgs/Image") {
+      image_subscriber_ = image_transport_.subscribe(
+          image_topic_, 1, &UsbCamRtspNode::imageCallback, this,
+          image_transport::TransportHints("raw"));
+    } else {
+      compressed_subscriber_ = nh_.subscribe(
+          image_topic_, 1, &UsbCamRtspNode::compressedImageCallback, this);
+    }
     frame_watchdog_ = nh_.createWallTimer(
         ros::WallDuration(1.0), &UsbCamRtspNode::watchdogCallback, this);
     ROS_INFO_STREAM("epgeneral_usb_cam_rtsp ready device_id=" << device_id_ << " device_ip="
                     << device_ip_ << " url=rtsp://" << device_ip_ << ":" << rtsp_port_
-                    << rtsp_mount_point_ << " image_topic=" << image_topic_);
+                    << rtsp_mount_point_ << " image_topic=" << image_topic_
+                    << " image_message_type=" << image_message_type_
+                    << " output=" << output_width_ << "x" << output_height_);
   }
 
   ~UsbCamRtspNode() {
+    shutting_down_ = true;
     if (main_loop_ != nullptr) {
       g_main_loop_quit(main_loop_);
     }
     if (glib_thread_.joinable()) {
       glib_thread_.join();
+    }
+    {
+      std::lock_guard<std::mutex> lock(source_mutex_);
+      for (GstElement* source : app_sources_) {
+        g_signal_handlers_disconnect_by_data(source, this);
+        gst_app_src_end_of_stream(GST_APP_SRC(source));
+        g_object_unref(source);
+      }
+      app_sources_.clear();
+    }
+    {
+      std::lock_guard<std::mutex> lock(callback_mutex_);
     }
     if (server_source_id_ != 0) {
       g_source_remove(server_source_id_);
@@ -68,17 +88,27 @@ class UsbCamRtspNode {
     if (!nh_.getParam("/edge_device/device/ip", device_ip_) || !validIpAddress(device_ip_)) {
       throw std::runtime_error("/edge_device/device/ip must be a valid IPv4 or IPv6 address");
     }
-    pnh_.param<std::string>("image_topic", image_topic_, "/usb_cam/image_raw");
+    pnh_.param<std::string>("image_topic", image_topic_, "/camera/image_raw");
+    pnh_.param<std::string>("image_message_type", image_message_type_, "sensor_msgs/Image");
     pnh_.param<std::string>("rtsp_bind_address", bind_address_, "0.0.0.0");
     pnh_.param<std::string>("rtsp_mount_point", rtsp_mount_point_, "/usb_cam");
     pnh_.param("rtsp_port", rtsp_port_, 8554);
-    pnh_.param("image_width", output_width_, 640);
-    pnh_.param("image_height", output_height_, 480);
+    if (!pnh_.getParam("output_width", output_width_)) {
+      pnh_.param("image_width", output_width_, 640);
+    }
+    if (!pnh_.getParam("output_height", output_height_)) {
+      pnh_.param("image_height", output_height_, 480);
+    }
     pnh_.param("framerate", framerate_, 30);
     pnh_.param("bitrate_kbps", bitrate_kbps_, 2000);
     pnh_.param("frame_timeout_seconds", frame_timeout_seconds_, 5.0);
     if (image_topic_.empty() || image_topic_[0] != '/') {
       throw std::runtime_error("image_topic must be an absolute ROS topic");
+    }
+    if (image_message_type_ != "sensor_msgs/Image" &&
+        image_message_type_ != "sensor_msgs/CompressedImage") {
+      throw std::runtime_error(
+          "image_message_type must be sensor_msgs/Image or sensor_msgs/CompressedImage");
     }
     if (rtsp_port_ < 1 || rtsp_port_ > 65535 || output_width_ < 1 ||
         output_height_ < 1 || framerate_ < 1 || framerate_ > 120 ||
@@ -125,7 +155,7 @@ class UsbCamRtspNode {
 
   std::string buildPipeline() const {
     std::ostringstream pipeline;
-    pipeline << "( appsrc name=source is-live=true block=true format=time "
+    pipeline << "( appsrc name=source is-live=true block=false format=time "
              << "caps=video/x-raw,format=BGR,width=" << output_width_
              << ",height=" << output_height_ << ",framerate=" << framerate_ << "/1 "
              << "! queue max-size-buffers=2 leaky=downstream "
@@ -139,26 +169,61 @@ class UsbCamRtspNode {
   void imageCallback(const sensor_msgs::ImageConstPtr& message) {
     try {
       const cv_bridge::CvImageConstPtr converted = cv_bridge::toCvShare(message, "bgr8");
-      cv::Mat output;
-      if (converted->image.cols != output_width_ || converted->image.rows != output_height_) {
-        cv::resize(converted->image, output, cv::Size(output_width_, output_height_));
-      } else {
-        output = converted->image;
-      }
-      if (!output.isContinuous()) {
-        output = output.clone();
-      }
-      const std::size_t byte_count = output.total() * output.elemSize();
-      {
-        std::lock_guard<std::mutex> lock(frame_mutex_);
-        latest_frame_.assign(output.data, output.data + byte_count);
-        last_frame_time_ = ros::WallTime::now();
-        received_frame_ = true;
-      }
-      ROS_INFO_ONCE("epgeneral_usb_cam_rtsp received first camera frame");
+      storeFrame(converted->image);
     } catch (const cv_bridge::Exception& error) {
       ROS_ERROR_THROTTLE(5.0, "epgeneral_usb_cam_rtsp image conversion failed: %s", error.what());
+    } catch (const std::exception& error) {
+      ROS_ERROR_THROTTLE(5.0, "epgeneral_usb_cam_rtsp raw image processing failed: %s", error.what());
     }
+  }
+
+  void compressedImageCallback(const sensor_msgs::CompressedImageConstPtr& message) {
+    try {
+      if (message->data.empty()) {
+        throw std::runtime_error("compressed image payload is empty");
+      }
+      const cv_bridge::CvImagePtr converted = cv_bridge::toCvCopy(message, "bgr8");
+      storeFrame(converted->image);
+    } catch (const cv_bridge::Exception& error) {
+      ROS_ERROR_THROTTLE(5.0, "epgeneral_usb_cam_rtsp compressed image conversion failed: %s", error.what());
+    } catch (const std::exception& error) {
+      ROS_ERROR_THROTTLE(5.0, "epgeneral_usb_cam_rtsp compressed image processing failed: %s", error.what());
+    }
+  }
+
+  void storeFrame(const cv::Mat& input) {
+    if (input.data == nullptr || input.rows < 1 || input.cols < 1 || input.type() != CV_8UC3) {
+      throw std::runtime_error("converted frame must be non-empty BGR8");
+    }
+    const std::size_t output_bytes = static_cast<std::size_t>(output_width_) *
+                                     static_cast<std::size_t>(output_height_) * 3;
+    std::vector<std::uint8_t> output(output_bytes);
+    if (input.cols == output_width_ && input.rows == output_height_) {
+      const std::size_t row_bytes = static_cast<std::size_t>(output_width_) * 3;
+      for (int y = 0; y < output_height_; ++y) {
+        std::memcpy(output.data() + static_cast<std::size_t>(y) * row_bytes,
+                    input.ptr<std::uint8_t>(y), row_bytes);
+      }
+    } else {
+      for (int y = 0; y < output_height_; ++y) {
+        const int source_y = y * input.rows / output_height_;
+        const std::uint8_t* source_row = input.ptr<std::uint8_t>(source_y);
+        std::uint8_t* output_row = output.data() +
+            static_cast<std::size_t>(y) * static_cast<std::size_t>(output_width_) * 3;
+        for (int x = 0; x < output_width_; ++x) {
+          const int source_x = x * input.cols / output_width_;
+          std::memcpy(output_row + static_cast<std::size_t>(x) * 3,
+                      source_row + static_cast<std::size_t>(source_x) * 3, 3);
+        }
+      }
+    }
+    {
+      std::lock_guard<std::mutex> lock(frame_mutex_);
+      latest_frame_.swap(output);
+      last_frame_time_ = ros::WallTime::now();
+      received_frame_ = true;
+    }
+    ROS_INFO_ONCE("epgeneral_usb_cam_rtsp received first ROS video frame");
   }
 
   void watchdogCallback(const ros::WallTimerEvent&) {
@@ -177,8 +242,13 @@ class UsbCamRtspNode {
     GstElement* element = gst_rtsp_media_get_element(media);
     GstElement* source = gst_bin_get_by_name_recurse_up(GST_BIN(element), "source");
     if (source != nullptr) {
-      g_signal_connect(source, "need-data", G_CALLBACK(&UsbCamRtspNode::needData), node);
-      g_object_unref(source);
+      std::lock_guard<std::mutex> lock(node->source_mutex_);
+      if (!node->shutting_down_) {
+        g_signal_connect(source, "need-data", G_CALLBACK(&UsbCamRtspNode::needData), node);
+        node->app_sources_.push_back(source);
+      } else {
+        g_object_unref(source);
+      }
     } else {
       ROS_ERROR("epgeneral_usb_cam_rtsp could not locate GStreamer appsrc");
     }
@@ -187,13 +257,19 @@ class UsbCamRtspNode {
 
   static void needData(GstElement* appsrc, guint, gpointer user_data) {
     UsbCamRtspNode* node = static_cast<UsbCamRtspNode*>(user_data);
+    std::lock_guard<std::mutex> callback_lock(node->callback_mutex_);
+    if (node->shutting_down_) {
+      return;
+    }
     std::vector<std::uint8_t> frame;
     {
       std::lock_guard<std::mutex> lock(node->frame_mutex_);
       frame = node->latest_frame_;
     }
     if (frame.empty()) {
-      return;
+      frame.assign(static_cast<std::size_t>(node->output_width_) *
+                       static_cast<std::size_t>(node->output_height_) * 3,
+                   0);
     }
     GstBuffer* buffer = gst_buffer_new_allocate(nullptr, frame.size(), nullptr);
     gst_buffer_fill(buffer, 0, frame.data(), frame.size());
@@ -223,10 +299,12 @@ class UsbCamRtspNode {
   ros::NodeHandle pnh_;
   image_transport::ImageTransport image_transport_;
   image_transport::Subscriber image_subscriber_;
+  ros::Subscriber compressed_subscriber_;
   ros::WallTimer frame_watchdog_;
   std::string device_id_;
   std::string device_ip_;
   std::string image_topic_;
+  std::string image_message_type_;
   std::string bind_address_;
   std::string rtsp_mount_point_;
   int rtsp_port_;
@@ -239,11 +317,15 @@ class UsbCamRtspNode {
   GstRTSPServer* server_;
   guint server_source_id_;
   std::thread glib_thread_;
+  std::mutex source_mutex_;
+  std::mutex callback_mutex_;
+  std::vector<GstElement*> app_sources_;
   std::mutex frame_mutex_;
   std::vector<std::uint8_t> latest_frame_;
   ros::WallTime last_frame_time_;
   std::atomic<std::uint64_t> frame_sequence_;
   bool received_frame_;
+  std::atomic<bool> shutting_down_;
 };
 
 int main(int argc, char** argv) {

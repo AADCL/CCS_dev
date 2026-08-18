@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -72,9 +73,38 @@ class DeviceTypeTemplateRepositoryTests(unittest.TestCase):
         copied = Path(created.icon_path)
         self.assertTrue(copied.exists())
         self.assertNotEqual(copied, source)
+        stored = json.loads(self.repository.path.read_text(encoding="utf-8"))
+        stored_icon = next(
+            item["icon_path"] for item in stored["device_types"] if item["type_id"] == "TEST_ICON"
+        )
+        self.assertFalse(Path(stored_icon).is_absolute())
         self.repository.delete(created.type_id)
         self.assertFalse(copied.exists())
         self.assertTrue(any((self.repository.asset_dir / ".trash").iterdir()))
+
+    def test_icon_survives_installation_directory_move(self) -> None:
+        root = Path(self.temporary.name)
+        install = root / "install"
+        repository = DeviceTypeTemplateRepository(
+            install / "config" / "device_types.json",
+            install / "data" / "device_type_assets",
+        )
+        repository.load()
+        source = root / "portable.png"
+        image = QImage(8, 8, QImage.Format.Format_ARGB32)
+        image.fill(QColor("#1478c9"))
+        self.assertTrue(image.save(str(source)))
+        repository.create(DeviceTypeTemplate("PORTABLE", "可迁移图标"), source)
+        relocated = root / "relocated"
+        shutil.move(str(install), str(relocated))
+        loaded = DeviceTypeTemplateRepository(
+            relocated / "config" / "device_types.json",
+            relocated / "data" / "device_type_assets",
+        )
+        templates = loaded.load()
+        portable = next(item for item in templates if item.type_id == "PORTABLE")
+        self.assertTrue(Path(portable.icon_path).is_file())
+        Path(portable.icon_path).resolve().relative_to(relocated.resolve())
 
     def test_damaged_icon_is_rejected(self) -> None:
         self.repository.load()

@@ -20,6 +20,7 @@ import numpy as np
 from .map_building import write_binary_pcd
 from .models import MapFusionAlgorithm, MapTransform
 from .point_cloud import MapPointCloudLoader, PointCloudError
+from .static_paths import StaticPathError, StaticPathResolver
 
 
 PLUGIN_API_VERSION = 1
@@ -88,6 +89,7 @@ class MapFusionRepository:
     ) -> None:
         self.registry_path = Path(registry_path)
         self.asset_root = Path(asset_root)
+        self.path_resolver = StaticPathResolver(self.registry_path, self.asset_root)
         self.asset_root.mkdir(parents=True, exist_ok=True)
         self.trash_root = self.asset_root / ".trash"
         self.trash_root.mkdir(exist_ok=True)
@@ -117,7 +119,7 @@ class MapFusionRepository:
                 script = Path(item.script_path)
                 if not script.is_file() or hashlib.sha256(script.read_bytes()).hexdigest() != item.sha256:
                     raise ValueError(f"算法脚本缺失或指纹不匹配：{item.algorithm_id}")
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, StaticPathError) as exc:
             self.read_only = True
             self.error_message = f"融合算法配置无效，已使用只读内置算法：{exc}"
             self._algorithms = [self._builtin()]
@@ -136,6 +138,17 @@ class MapFusionRepository:
         if not defaults:
             algorithms = [replace(item, is_default=item.algorithm_id == BUILTIN_ALGORITHM_ID) for item in algorithms]
         self._algorithms = algorithms
+        stored_paths = [str(item.get("script_path", "")) for item in payload["algorithms"]]
+        portable_paths = [
+            item.script_path if item.builtin else str(self.path_resolver.portable(item.script_path))
+            for item in algorithms
+        ]
+        if stored_paths != portable_paths:
+            try:
+                self._save()
+            except (OSError, MapFusionError, StaticPathError) as exc:
+                self.read_only = True
+                self.error_message = f"融合算法路径迁移失败，配置已切换为只读：{exc}"
         return self.algorithms()
 
     def algorithms(self, *, enabled_only: bool = False) -> list[MapFusionAlgorithm]:
@@ -162,7 +175,7 @@ class MapFusionRepository:
             digest = hashlib.sha256(target.read_bytes()).hexdigest()
             algorithm = MapFusionAlgorithm(
                 metadata["algorithm_id"], metadata["display_name"], metadata["version"],
-                str(target), digest, True, False, False, metadata["default_options"],
+                str(target.resolve()), digest, True, False, False, metadata["default_options"],
             )
             (runner or MapFusionRunner()).validate_algorithm(algorithm)
             self._algorithms.append(algorithm)
@@ -263,13 +276,15 @@ class MapFusionRepository:
             "default_options": options,
         }
 
-    @staticmethod
-    def _parse(item: dict[str, Any]) -> MapFusionAlgorithm:
+    def _parse(self, item: dict[str, Any]) -> MapFusionAlgorithm:
+        builtin = bool(item.get("builtin", False))
+        stored_path = str(item["script_path"])
+        script_path = stored_path if builtin else str(self.path_resolver.resolve(stored_path))
         algorithm = MapFusionAlgorithm(
             algorithm_id=str(item["algorithm_id"]), display_name=str(item["display_name"]),
-            version=str(item["version"]), script_path=str(item["script_path"]),
+            version=str(item["version"]), script_path=script_path,
             sha256=str(item["sha256"]), enabled=bool(item.get("enabled", True)),
-            is_default=bool(item.get("is_default", False)), builtin=bool(item.get("builtin", False)),
+            is_default=bool(item.get("is_default", False)), builtin=builtin,
             default_options=dict(item.get("default_options", {})),
         )
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{1,63}", algorithm.algorithm_id):
@@ -279,7 +294,13 @@ class MapFusionRepository:
     def _save(self) -> None:
         self._require_writable()
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"schema_version": 1, "algorithms": [asdict(item) for item in self._algorithms]}
+        algorithms = []
+        for item in self._algorithms:
+            serialized = asdict(item)
+            if not item.builtin:
+                serialized["script_path"] = self.path_resolver.portable(item.script_path)
+            algorithms.append(serialized)
+        payload = {"schema_version": 1, "algorithms": algorithms}
         temporary = self.registry_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         os.replace(temporary, self.registry_path)
