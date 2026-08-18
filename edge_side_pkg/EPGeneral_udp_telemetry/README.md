@@ -66,6 +66,8 @@ sudo tcpdump -ni any udp port 14560
 
 高频输入在每个发送窗口求均值；四元数先统一符号再归一化平均。低频输入会重复最近值并附带数据年龄。若地面站只有心跳而没有某项数据，检查 topic、message type 和 mapping；若显示描述哈希不一致，同步两端描述配置。UDP 仅用于可信内网，不提供认证、加密、重传或拥塞控制。
 
+节点在 `~link_status_topic` 发布 latched `std_msgs/Bool`，并在 `~diagnostics_topic` 发布最近一次本机 `sendto` 结果。该状态不证明地面站已经收到数据；端到端状态仍由地面站 heartbeat 超时判断。
+
 ## 测试
 
 ```bash

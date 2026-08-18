@@ -23,6 +23,12 @@
 
 ## MQTT presence、heartbeat、status
 
+### Go2 EDU ROS 状态桥接
+
+`epqrd_go2_bridge` v0.1.0 从 Unitree SDK2 `rt/lowstate` 和 `rt/sportmodestate` 读取只读状态。默认发布 `/qrd/QRD_001/battery`、`imu`、`odometry`、`robot_mode`、`link/sdk`、`heartbeat` 和 `diagnostics`。`epgeneral_mqtav` 将 SDK 链路新鲜度映射为既有 `fcu_connected` 字段，不增加 MQTT schema 字段；`epgeneral_udp_telemetry` 从 prefixed Odometry 和 Imu 继续生成 `ccs-udp-telemetry-v1` 数据。
+
+`/qrd/QRD_001/link/udp_tx` 仅表示本机 UDP socket 最近一次发送成功。端到端 UDP 在线状态仍由地面站的 heartbeat 接收超时判断。任务协调包在 `/qrd/QRD_001/task_status` 发布 latched `std_msgs/String`，供 MQTT mission 状态订阅。
+
 Broker 由地面站监听 `0.0.0.0:1883`，QoS 1，无认证/TLS。设备 ID 为 `UAV_001` 时主题如下：
 
 | 消息 | 主题 | retained | 建议频率 |

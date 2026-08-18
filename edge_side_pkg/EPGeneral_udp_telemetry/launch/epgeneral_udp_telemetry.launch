@@ -3,10 +3,14 @@
   <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
   <arg name="destination_host" default="192.168.151.100" />
   <arg name="destination_port" default="14560" />
+  <arg name="link_status_topic" default="/epgeneral_udp_telemetry/link/udp_tx" />
+  <arg name="diagnostics_topic" default="/epgeneral_udp_telemetry/diagnostics" />
   <node pkg="epgeneral_udp_telemetry" type="epgeneral_udp_telemetry_node.py" name="epgeneral_udp_telemetry" output="screen">
     <param name="telemetry_config_file" value="$(arg telemetry_config_file)" />
     <param name="device_config_file" value="$(arg device_config_file)" />
     <param name="destination_host" value="$(arg destination_host)" />
     <param name="destination_port" value="$(arg destination_port)" />
+    <param name="link_status_topic" value="$(arg link_status_topic)" />
+    <param name="diagnostics_topic" value="$(arg diagnostics_topic)" />
   </node>
 </launch>

@@ -49,11 +49,23 @@ class RosBridge(object):
             self._subscribe(RosTopicConfig(mission.topic or "", mission.message_type or ""), self._on_mission, "mission")
 
     def _on_state(self, message):
+        mapping = self._config.ros.state.mapping
+
+        def mapped(name):
+            field_path = mapping.get(name)
+            if field_path is None:
+                return None
+            try:
+                return read_field(message, field_path)
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                self._logger.warning("state_field_unavailable field=%s error=%s", name, exc)
+                return None
+
         self._health.update_state(
-            getattr(message, "connected", None),
-            getattr(message, "armed", None),
-            getattr(message, "system_status", None),
-            getattr(message, "mode", None),
+            mapped("connected"),
+            mapped("armed"),
+            mapped("system_status"),
+            mapped("mode"),
         )
 
     def _on_battery(self, message):

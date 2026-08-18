@@ -11,6 +11,7 @@ storage:
 ros:
   command_topic: "/epgeneral_task_control/execution_command"
   feedback_topic: "/epgeneral_task_control/execution_feedback"
+  status_topic: "/epgeneral_task_control/task_status"
   map_frame: "map"
 timeouts:
   ack_cache_seconds: 60.0

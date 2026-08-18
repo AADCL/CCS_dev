@@ -20,7 +20,6 @@ set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}" CACHE FILEPATH "epgeneral_mqtav Pyt
 
 find_package(catkin REQUIRED COMPONENTS
   epgeneral_device_config
-  mavros_msgs
   roslib
   rospy
   sensor_msgs
@@ -29,7 +28,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 catkin_python_setup()
 
-catkin_package(CATKIN_DEPENDS epgeneral_device_config mavros_msgs roslib rospy sensor_msgs std_msgs)
+catkin_package(CATKIN_DEPENDS epgeneral_device_config roslib rospy sensor_msgs std_msgs)
 
 catkin_install_python(PROGRAMS
   scripts/epgeneral_mqtav_node.py

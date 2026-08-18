@@ -16,6 +16,8 @@
 
 ROS command 包含 action、request/task/subtask/device/execution ID、revision、XML 路径、frame 和 UTC 启动时间。feedback 必须回传相同 ID/revision/request ID，以及 scheduled/running/终态、航点和位置。
 
+`ros.status_topic` 额外发布 latched `std_msgs/String`，内容为当前接收或执行状态。Go2 profile 将其设置为 `/qrd/QRD_001/task_status`，供 MQTT 健康状态订阅。
+
 ## 安装与启动
 
 ```bash

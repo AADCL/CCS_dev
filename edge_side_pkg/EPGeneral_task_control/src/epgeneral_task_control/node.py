@@ -47,11 +47,12 @@ class Execution(object):
 
 class RosTaskControlNode(object):
     def __init__(self, rospy, config, command_class, feedback_class, socket_factory=socket.socket,
-                 clock=time.monotonic, wall_clock=time.time, store=None):
+                 clock=time.monotonic, wall_clock=time.time, store=None, status_class=None):
         self.rospy = rospy
         self.config = config
         self.command_class = command_class
         self.feedback_class = feedback_class
+        self.status_class = status_class
         self.socket_factory = socket_factory
         self.clock = clock
         self.wall_clock = wall_clock
@@ -63,12 +64,21 @@ class RosTaskControlNode(object):
         self.timer = None
         self.publisher = None
         self.subscriber = None
+        self.status_publisher = None
         self.transfer = None
         self.execution = None
         self.pending_execute = None
         self.ack_cache = {}
         self.sequence = 0
         self.state = "standby"
+
+    def _set_state(self, state):
+        self.state = str(state)
+        if self.status_publisher is not None:
+            message = self.status_class()
+            message.data = self.state
+            self.status_publisher.publish(message)
+        self.rospy.loginfo("task ROS status state=%s", self.state)
 
     def start(self):
         udp_socket = self.socket_factory(socket.AF_INET, socket.SOCK_DGRAM)
@@ -80,6 +90,10 @@ class RosTaskControlNode(object):
             raise
         self.socket = udp_socket
         self.publisher = self.rospy.Publisher(self.config["command_topic"], self.command_class, queue_size=10, latch=False)
+        if self.status_class is not None:
+            self.status_publisher = self.rospy.Publisher(
+                self.config["status_topic"], self.status_class, queue_size=1, latch=True)
+            self._set_state(self.state)
         self.subscriber = self.rospy.Subscriber(self.config["feedback_topic"], self.feedback_class, self.feedback_callback, queue_size=20)
         self._recover_execution()
         self.running.set()
@@ -182,7 +196,7 @@ class RosTaskControlNode(object):
             normalized["payload"] = dict(payload, revision=revision, chunk_count=chunk_count,
                                           compressed_bytes=compressed, raw_bytes=raw_bytes, crc32=crc32)
             self.transfer = Transfer(normalized, self.clock())
-            self.state = "receiving"
+            self._set_state("receiving")
         except RuntimeError as exc:
             self._ack(command, False, str(exc), "BUSY")
             return
@@ -248,7 +262,7 @@ class RosTaskControlNode(object):
             trajectory = decode_trajectory(compressed, crc32, self.config, identity, transfer.raw_bytes)
             metadata = self.store.commit(trajectory, crc32)
         except (StorageError, OSError) as exc:
-            self.state = "error"
+            self._set_state("error")
             error_text = str(exc)
             if "frame_id" in error_text:
                 error_code = "MAP_FRAME_MISMATCH"
@@ -258,10 +272,10 @@ class RosTaskControlNode(object):
                 error_code = "INVALID_WAYPOINT"
             self._ack(command, False, error_text, error_code)
             self.transfer = None
-            self.state = "ready" if existing else "standby"
+            self._set_state("ready" if existing else "standby")
             return
         self.transfer = None
-        self.state = "ready"
+        self._set_state("ready")
         self._ack(command, True)
         self.rospy.loginfo("trajectory XML committed revision=%d waypoints=%d path=%s",
                            revision, len(trajectory["waypoints"]), metadata["xml_path"])
@@ -301,7 +315,7 @@ class RosTaskControlNode(object):
         execution.last_feedback_at = self.clock()
         self.execution = execution
         self.pending_execute = command
-        self.state = "scheduling"
+        self._set_state("scheduling")
         self.store.save_execution(execution.persisted())
         self._cache(command, None)
         self._publish_command("SCHEDULE", execution.persisted(), command["request_id"])
@@ -365,12 +379,12 @@ class RosTaskControlNode(object):
                 return
             if execution.state == "scheduling":
                 execution.state = "scheduled"
-                self.state = "scheduled"
+                self._set_state("scheduled")
                 self.store.save_execution(execution.persisted())
                 self._finish_scheduling(True)
             else:
                 execution.state = state
-                self.state = state
+                self._set_state(state)
                 self.store.save_execution(execution.persisted())
             self._status(execution, state, message.message, message.error_code)
             if state == "running":
@@ -406,7 +420,7 @@ class RosTaskControlNode(object):
             self.rospy.logwarn("trajectory transfer timed out and was discarded")
             existing = self.store.load(transfer.identity["task_id"], transfer.identity["subtask_id"])
             self.transfer = None
-            self.state = "ready" if existing is not None else "standby"
+            self._set_state("ready" if existing is not None else "standby")
         execution = self.execution
         if execution is None:
             return
@@ -525,7 +539,7 @@ class RosTaskControlNode(object):
         self.execution = None
         self.pending_execute = None
         self.store.clear_execution()
-        self.state = "ready"
+        self._set_state("ready")
 
     def close(self):
         if not self.running.is_set():
@@ -556,6 +570,7 @@ class RosTaskControlNode(object):
 def run():
     import rospy
     import rospkg
+    from std_msgs.msg import String
     from epgeneral_task_control.msg import TaskExecutionCommand, TaskExecutionFeedback
 
     rospy.init_node("epgeneral_task_control")
@@ -566,7 +581,8 @@ def run():
     device_config = rospy.get_param("~device_config_file", device_path + "/config/device.yaml")
     try:
         config = load_config(task_config, device_config)
-        node = RosTaskControlNode(rospy, config, TaskExecutionCommand, TaskExecutionFeedback)
+        node = RosTaskControlNode(
+            rospy, config, TaskExecutionCommand, TaskExecutionFeedback, status_class=String)
         node.start()
     except (ConfigError, OSError) as exc:
         rospy.logfatal("epgeneral_task_control startup failed: %s", exc)

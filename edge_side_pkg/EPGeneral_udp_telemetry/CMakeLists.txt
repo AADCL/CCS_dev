@@ -13,10 +13,10 @@ if(PYTHON_VERSION_STRING VERSION_LESS "3.6")
 endif()
 set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}" CACHE FILEPATH "ROS UDP Python interpreter" FORCE)
 
-find_package(catkin REQUIRED COMPONENTS rospy roslib geometry_msgs nav_msgs sensor_msgs std_msgs epgeneral_device_config)
+find_package(catkin REQUIRED COMPONENTS rospy roslib diagnostic_msgs geometry_msgs nav_msgs sensor_msgs std_msgs epgeneral_device_config)
 
 catkin_python_setup()
-catkin_package(CATKIN_DEPENDS rospy roslib geometry_msgs nav_msgs sensor_msgs std_msgs epgeneral_device_config)
+catkin_package(CATKIN_DEPENDS rospy roslib diagnostic_msgs geometry_msgs nav_msgs sensor_msgs std_msgs epgeneral_device_config)
 
 catkin_install_python(PROGRAMS scripts/epgeneral_udp_telemetry_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})

@@ -1,0 +1,8 @@
+<launch>
+  <arg name="config_file" default="$(find epqrd_go2_bridge)/config/go2.yaml" />
+  <arg name="device_config_file" default="$(find epqrd_go2_bridge)/config/device.yaml" />
+  <node pkg="epqrd_go2_bridge" type="epqrd_go2_bridge_node" name="epqrd_go2_bridge" output="screen">
+    <rosparam command="load" file="$(arg config_file)" />
+    <rosparam command="load" file="$(arg device_config_file)" />
+  </node>
+</launch>

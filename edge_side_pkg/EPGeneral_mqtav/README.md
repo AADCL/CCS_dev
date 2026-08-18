@@ -12,6 +12,7 @@ mqtav 是运行在无人机机载计算机上的 ROS1 功能包。它订阅 MAVR
 - 节点以 QoS 1 每秒发布一条 `heartbeat` 和一条 `status`。MQTT 自动以 1 至 60 秒指数退避重连，断线期间不缓存旧遥测。
 - 连接后发布 retained `online` presence；MQTT Last Will 为 retained `offline` presence。正常退出也会主动发布 `offline`。
 - 状态来自 `/mavros/state` 的 `connected`、`armed`、`system_status`、`mode`，以及 `/mavros/battery` 的 `percentage`、`voltage`、`current`。电量百分比统一为 0 到 100 的数值。
+- `ros.state.mapping` 可将上述四个健康字段映射到任意 ROS 消息字段；值为 `null` 时上报不可用。未配置 mapping 时继续使用 MAVROS 同名字段。
 - 默认未启用任务状态。启用后可从任意 ROS 消息的安全点分字段路径提取任务字段；未收到、读取失败或未配置时为 `unknown`。
 
 主题由配置展开，例如设备 `UAV_001` 的默认主题为：
@@ -94,7 +95,7 @@ device:
 
 ```bash
 sudo apt update
-sudo apt install python3-paho-mqtt python3-yaml python3-catkin-pkg python3-rospkg ros-melodic-mavros ros-melodic-mavros-extras
+sudo apt install python3-paho-mqtt python3-yaml python3-catkin-pkg python3-rospkg
 source /opt/ros/melodic/setup.bash
 python3 --version  # 应为 Python 3.6.9
 mkdir -p ~/catkin_ws/src
@@ -103,15 +104,17 @@ cd ~/catkin_ws
 rosdep install --from-paths src --ignore-src -r -y
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
-roslaunch mqtav mqtav.launch \
-  config_file:="$(rospack find mqtav)/config/config.yaml" \
+roslaunch epgeneral_mqtav epgeneral_mqtav.launch \
+  config_file:="$(rospack find epgeneral_mqtav)/config/config.yaml" \
   device_config_file:="$(rospack find epgeneral_device_config)/config/device.yaml"
 ```
+
+仅使用默认 MAVROS 配置的设备需要另外安装对应 ROS 发行版的 `mavros_msgs`；Go2 等通用字段映射不依赖 MAVROS。
 
 可通过启动参数把日志写入指定目录：
 
 ```bash
-roslaunch mqtav mqtav.launch log_dir:=/var/log/mqtav
+roslaunch epgeneral_mqtav epgeneral_mqtav.launch log_dir:=/var/log/mqtav
 ```
 
 默认日志为 `~/.ros/log/mqtav/mqtav.log`，单个文件达到 10 MiB 后轮转，最多保留 5 份历史日志。每条日志均同步刷盘并输出到 `roslaunch` 控制台；启动、配置加载、订阅、连接、断联、重连失败、数据发送、每次心跳、关闭和未捕获异常均有记录。
@@ -128,7 +131,7 @@ rm -rf build devel
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 python3 -c "import mqtav; print(mqtav.get_version())"
-roslaunch mqtav mqtav.launch
+roslaunch epgeneral_mqtav epgeneral_mqtav.launch
 ```
 
 重建后，`devel/lib/python3/dist-packages/mqtav` 应存在，启动脚本的第一行应为 `#!/usr/bin/python3`。同一工作空间中的 Python ROS 节点也应与 Python 3 配套；不能混用 `devel/lib/python2.7` 和本包。

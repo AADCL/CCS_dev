@@ -10,6 +10,9 @@
 
 ## 包含内容
 
+- `EPQRD_go2_bridge` / `epqrd_go2_bridge` v0.1.0：将 Go2 EDU Unitree SDK2 状态转换为带设备前缀的标准 ROS 电池、IMU、里程计、心跳和诊断话题。
+- `deploy/go2_edu`：Go2 EDU 基础监控套件配置、统一 bringup 和部署指南。
+
 - `epgeneral_device_config` v0.1.0：保存端侧设备 ID/IP 的共享配置。地面站 `config/devices.json` 必须有同 ID 且 IP 相同的记录。
 - `mqtav` v0.3.0：订阅 MAVROS 状态和电池信息，并向地面站 MQTT Broker 发布 presence、heartbeat、status。
 - `epgeneral_usb_cam_rtsp` v0.1.0：启动 ROS USB 摄像头图像链路，并通过 GStreamer 提供 `rtsp://<device.ip>:8554/usb_cam`。

@@ -1,0 +1,23 @@
+<launch>
+  <arg name="profile_dir" default="$(dirname)/../config" />
+  <arg name="enable_task_control" default="false" />
+  <include file="$(find epqrd_go2_bridge)/launch/epqrd_go2_bridge.launch">
+    <arg name="config_file" value="$(arg profile_dir)/go2.yaml" />
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
+  </include>
+  <include file="$(find epgeneral_mqtav)/launch/epgeneral_mqtav.launch">
+    <arg name="config_file" value="$(arg profile_dir)/mqtav.yaml" />
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
+  </include>
+  <include file="$(find epgeneral_udp_telemetry)/launch/epgeneral_udp_telemetry.launch">
+    <arg name="telemetry_config_file" value="$(arg profile_dir)/udp_telemetry.yaml" />
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
+    <arg name="destination_host" value="192.168.151.100" />
+    <arg name="link_status_topic" value="/qrd/QRD_001/link/udp_tx" />
+    <arg name="diagnostics_topic" value="/qrd/QRD_001/diagnostics" />
+  </include>
+  <include if="$(arg enable_task_control)" file="$(find epgeneral_task_control)/launch/epgeneral_task_control.launch">
+    <arg name="task_config_file" value="$(arg profile_dir)/task_control.yaml" />
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
+  </include>
+</launch>

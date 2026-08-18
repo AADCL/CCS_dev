@@ -6,6 +6,8 @@
 
 ## 功能介绍
 
+- Go2 EDU：`EPQRD_go2_bridge` 基于 Unitree SDK2 发布 prefixed ROS 电池、IMU、里程计、SDK 心跳和诊断信息；部署 profile 位于 `edge_side_pkg/deploy/go2_edu/`。
+
 本仓库包含基于 PySide6 的多异构智能体指挥与控制地面站，以及部署到 ROS 端侧设备的配套功能包。系统面向可信局域网中的无人机、无人车、移动机器人和无人船。
 
 - **系统总览**：统计在线/离线设备、地图和任务执行记录。

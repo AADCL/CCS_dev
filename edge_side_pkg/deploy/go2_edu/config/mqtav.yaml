@@ -1,0 +1,26 @@
+mqtt:
+  ground_station_ip: "192.168.151.100"
+  port: 1883
+  client_id_prefix: "mqtav-"
+  qos: 1
+  keepalive_seconds: 10
+  heartbeat_hz: 1
+  telemetry_hz: 1
+  topics:
+    presence: "mqtav/{device_id}/presence"
+    heartbeat: "mqtav/{device_id}/heartbeat"
+    status: "mqtav/{device_id}/status"
+ros:
+  node_name: "epgeneral_mqtav"
+  state:
+    topic: "/qrd/QRD_001/link/sdk"
+    message_type: "std_msgs/Bool"
+    mapping: {connected: "data", armed: null, system_status: null, mode: null}
+  battery:
+    topic: "/qrd/QRD_001/battery"
+    message_type: "sensor_msgs/BatteryState"
+  mission:
+    enabled: true
+    topic: "/qrd/QRD_001/task_status"
+    message_type: "std_msgs/String"
+    field_path: "data"
