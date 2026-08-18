@@ -1,4 +1,5 @@
-image_topic: "/camera/image_raw"
+camera_model: "Intel RealSense D435i"
+image_topic: "/camera/color/image_raw"
 image_message_type: "sensor_msgs/Image"
 output_width: 640
 output_height: 480
@@ -6,5 +7,5 @@ framerate: 30
 rtsp_bind_address: "0.0.0.0"
 rtsp_port: 8554
 rtsp_mount_point: "/usb_cam"
-bitrate_kbps: 2000
+bitrate_kbps: 2500
 frame_timeout_seconds: 5.0

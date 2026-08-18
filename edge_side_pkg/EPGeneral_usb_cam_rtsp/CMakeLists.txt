@@ -30,7 +30,11 @@ link_directories(${GSTREAMER_LIBRARY_DIRS})
 add_definitions(${GSTREAMER_CFLAGS_OTHER})
 
 add_executable(epgeneral_usb_cam_rtsp_node src/epgeneral_usb_cam_rtsp_node.cpp)
-target_link_libraries(epgeneral_usb_cam_rtsp_node ${catkin_LIBRARIES} ${GSTREAMER_LIBRARIES})
+target_link_libraries(epgeneral_usb_cam_rtsp_node
+  ${catkin_LIBRARIES}
+  ${cv_bridge_LIBRARIES}
+  ${GSTREAMER_LIBRARIES}
+)
 add_dependencies(epgeneral_usb_cam_rtsp_node ${catkin_EXPORTED_TARGETS})
 
 install(TARGETS epgeneral_usb_cam_rtsp_node

@@ -1,8 +1,8 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.13.1**
+当前地面站版本：**v0.13.2**
 
-端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
+端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_usb_cam_rtsp **v0.2.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
@@ -34,7 +34,7 @@ CCS_dev/
 ├── edge_side_pkg/
 │   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
 │   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.0
-│   ├── epgeneral_usb_cam_rtsp/              # USB 相机 RTSP 推流包，v0.1.0
+│   ├── epgeneral_usb_cam_rtsp/              # ROS 图像话题 RTSP 推流包，v0.2.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
 │   ├── epgeneral_map_stream/             # ROS 实时建图上行包，v0.1.0
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
@@ -60,8 +60,8 @@ CCS_dev/
 ### 端侧
 
 - Ubuntu 18.04、ROS Melodic、Python 3.6.9、MAVROS。
-- GStreamer 1.0、GStreamer RTSP Server、usb_cam、cv_bridge、image_transport 及相关 ROS 消息包。
-- USB 摄像头默认 `/dev/video0`；实时建图需要 PointCloud2 和同步位姿来源。
+- GStreamer 1.0、GStreamer RTSP Server、OpenCV、cv_bridge、image_transport 及相关 ROS 消息包。
+- 视频推流需要已有的 `sensor_msgs/Image` 或 `sensor_msgs/CompressedImage` 话题；实时建图需要 PointCloud2 和同步位姿来源。
 
 ### 网络
 
@@ -146,7 +146,7 @@ source devel/setup.bash
 
 - `epgeneral_mqtav/config/config.yaml` 的地面站 MQTT 地址。
 - `epgeneral_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
-- `epgeneral_usb_cam_rtsp/config/video.yaml` 的摄像头、分辨率、帧率和码率。
+- `epgeneral_usb_cam_rtsp/config/video.yaml` 的输入话题、消息类型、输出分辨率、帧率和码率。
 - `epgeneral_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。
 - `epgeneral_task_control/config/task_control.yaml` 的端口、XML 目录和 command/feedback 话题。
 
@@ -272,7 +272,7 @@ MQTT 与 UDP 是独立链路。检查 `destination_host`、ROS 话题频率和 U
 
 ### RTSP 无画面
 
-检查设备 IP、TCP 8554、`/dev/video0` 权限和 `rostopic hz /usb_cam/image_raw`。可用 GStreamer 验证：
+检查设备 IP、TCP 8554，以及配置话题的实际类型和发布频率。可用 GStreamer 验证：
 
 ```bash
 gst-launch-1.0 rtspsrc location=rtsp://127.0.0.1:8554/usb_cam latency=100 \
@@ -312,6 +312,9 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.13.2 · 2026-08-18**
+<small>融合算法和设备类型图标统一复制到本地静态目录，配置仅保存可迁移相对路径并自动迁移旧绝对路径。</small>
 
 **v0.13.1 · 2026-08-18**
 <small>扩展已保存地图融合流程，可使用相同外参同步融合源地图携带的 PGM 并原子创建多图层地图。</small>

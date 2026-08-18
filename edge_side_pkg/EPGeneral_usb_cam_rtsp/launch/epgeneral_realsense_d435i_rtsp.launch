@@ -1,7 +1,6 @@
 <launch>
   <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
-  <arg name="video_config_file" default="$(find epgeneral_usb_cam_rtsp)/config/video.yaml" />
-
+  <arg name="video_config_file" default="$(find epgeneral_usb_cam_rtsp)/config/realsense_d435i.yaml" />
   <rosparam command="load" file="$(arg device_config_file)" ns="edge_device" />
 
   <node pkg="epgeneral_usb_cam_rtsp" type="epgeneral_usb_cam_rtsp_node" name="epgeneral_usb_cam_rtsp" output="screen">

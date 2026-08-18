@@ -21,8 +21,17 @@ htmlcov/
 Thumbs.db
 .DS_Store
 
-# Runtime-generated application data
-data/
+# Runtime-generated application data. Managed UI/plugin assets are portable static files.
+data/*
+!data/device_type_assets/
+!data/map_fusion_algorithms/
+data/device_type_assets/*
+!data/device_type_assets/*.png
+!data/device_type_assets/*.jpg
+!data/device_type_assets/*.jpeg
+!data/device_type_assets/*.svg
+data/map_fusion_algorithms/*
+!data/map_fusion_algorithms/*.py
 
 # Build and distribution output
 build/

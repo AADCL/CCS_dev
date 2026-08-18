@@ -1,5 +1,6 @@
 import json
 import socket
+import shutil
 import tempfile
 import time
 import unittest
@@ -58,6 +59,50 @@ class MapFusionV011Tests(unittest.TestCase):
             )
             self.assertEqual(imported.algorithm_id, "example_concat")
             self.assertTrue(Path(imported.script_path).is_file())
+            stored = json.loads(registry.read_text(encoding="utf-8"))
+            imported_payload = next(
+                item for item in stored["algorithms"] if item["algorithm_id"] == "example_concat"
+            )
+            self.assertFalse(Path(imported_payload["script_path"]).is_absolute())
+
+    def test_imported_algorithm_survives_installation_directory_move(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            install = root / "install"
+            registry = install / "config" / "map_fusion_algorithms.json"
+            assets = install / "data" / "map_fusion_algorithms"
+            repository = MapFusionRepository(registry, assets)
+            imported = repository.import_algorithm(
+                Path(__file__).resolve().parent.parent / "examples" / "map_fusion_plugin_example.py",
+                MapFusionRunner(timeout_seconds=10),
+            )
+            self.assertTrue(Path(imported.script_path).is_file())
+            relocated = root / "relocated"
+            shutil.move(str(install), str(relocated))
+            relocated_registry = relocated / "config" / "map_fusion_algorithms.json"
+            payload = json.loads(relocated_registry.read_text(encoding="utf-8"))
+            imported_payload = next(
+                item for item in payload["algorithms"] if item["algorithm_id"] == "example_concat"
+            )
+            filename = Path(imported_payload["script_path"]).name
+            imported_payload["script_path"] = str(
+                install / "data" / "map_fusion_algorithms" / filename
+            )
+            relocated_registry.write_text(json.dumps(payload), encoding="utf-8")
+            loaded = MapFusionRepository(
+                relocated_registry,
+                relocated / "data" / "map_fusion_algorithms",
+            )
+            restored = loaded.algorithm("example_concat")
+            self.assertIsNotNone(restored)
+            self.assertTrue(Path(restored.script_path).is_file())
+            Path(restored.script_path).resolve().relative_to(relocated.resolve())
+            migrated = json.loads(relocated_registry.read_text(encoding="utf-8"))
+            migrated_path = next(
+                item["script_path"] for item in migrated["algorithms"]
+                if item["algorithm_id"] == "example_concat"
+            )
+            self.assertFalse(Path(migrated_path).is_absolute())
 
     def test_schema_four_empty_map_and_atomic_fusion_commit(self):
         with tempfile.TemporaryDirectory() as directory:
