@@ -2,6 +2,29 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## v0.14.0 - 2026-08-18
+
+### 新增
+
+- 新增 `SrtFfmpegReceiver`、`SrtVideoWidget`、SRT URL 构建与系统 FFmpeg 协议检查。
+- 设备配置 schema 升至 4，增加每设备 SRT 端口和延迟。
+- 新增端侧 `epgeneral_video_srt` v0.1.0，订阅 ROS 图像并输出 H.264/MPEG-TS SRT Listener。
+
+### 调整
+
+- 视频运行基线调整为 Ubuntu 20.04、ROS Noetic、GStreamer 1.16+，端侧默认监听 UDP 9000。
+- 地面站视频解码改用 `QProcess` 启动带 libsrt 的系统 FFmpeg，异常退出最多重试三次。
+
+### 修复
+
+- 修复 PySide6 内置 FFmpeg 不含 SRT 协议时无法连接端侧视频的问题，启动前提供明确能力错误。
+- 修复设备切换、切页和退出时视频进程及重试计时器未统一清理的风险。
+
+### 删除
+
+- 删除地面站 `QMediaPlayer` RTSP 接收实现。
+- 删除 `epgeneral_usb_cam_rtsp`、TCP 8554、RTSP Server 和 mount point 运行依赖。
+
 ## v0.13.2 - 2026-08-18
 
 ### 新增

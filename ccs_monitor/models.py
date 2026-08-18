@@ -140,6 +140,8 @@ class DeviceSnapshot:
     device_icon_path: str | None = None
     map_marker_shape: MapMarkerShape = MapMarkerShape.SPHERE
     status_cards_inherited: bool = False
+    srt_port: int = 9000
+    srt_latency_ms: int = 120
 
     def __post_init__(self) -> None:
         if not self.device_id:
@@ -170,6 +172,8 @@ class DeviceProfile:
     availability: DeviceAvailability = DeviceAvailability.UNKNOWN
     last_tested_at: datetime | None = None
     status_card_ids: tuple[str, ...] | None = None
+    srt_port: int = 9000
+    srt_latency_ms: int = 120
 
 
 @dataclass(frozen=True)

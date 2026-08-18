@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "devices": [
     {
       "device_id": "UAV_001",
@@ -8,6 +8,8 @@
       "ip_address": "192.168.151.250",
       "availability": "available",
       "last_tested_at": "2026-07-31T13:24:57.466250+00:00",
+      "srt_port": 9000,
+      "srt_latency_ms": 120,
       "status_cards": [
         "livox_driver",
         "fastlio2",
@@ -24,7 +26,9 @@
       "ip_address": "192.168.31.100",
       "availability": "available",
       "last_tested_at": "2026-08-17T15:19:03.094356+00:00",
-      "status_cards": null
+      "status_cards": null,
+      "srt_port": 9000,
+      "srt_latency_ms": 120
     },
     {
       "device_id": "QRD_001",
@@ -33,6 +37,8 @@
       "ip_address": "192.168.50.100",
       "availability": "available",
       "last_tested_at": "2026-08-18T04:27:17.098587+00:00",
+      "srt_port": 9000,
+      "srt_latency_ms": 120,
       "status_cards": [
         "livox_driver",
         "fastlio2"

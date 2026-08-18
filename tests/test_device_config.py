@@ -26,7 +26,9 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         self.assertEqual(len(profiles), 6)
         self.assertTrue(self.path.exists())
         payload = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(payload["schema_version"], 3)
+        self.assertEqual(payload["schema_version"], 4)
+        self.assertEqual(payload["devices"][0]["srt_port"], 9000)
+        self.assertEqual(payload["devices"][0]["srt_latency_ms"], 120)
         self.assertIsNone(payload["devices"][0]["status_cards"])
 
     def test_create_and_delete_are_persisted(self):
@@ -80,12 +82,52 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         profiles = self.repository.load()
         self.assertEqual(profiles[0].status_card_ids, DEFAULT_DEVICE_STATUS_CARDS)
         migrated = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(migrated["schema_version"], 3)
+        self.assertEqual(migrated["schema_version"], 4)
         selected = ("fastlio2", "mapping_mode")
         updated = self.repository.update_status_cards("uav-001", selected)
         self.assertEqual(updated[0].status_card_ids, selected)
         reloaded = DeviceConfigRepository(self.path).load()
         self.assertEqual(reloaded[0].status_card_ids, selected)
+
+    def test_schema_three_migrates_srt_defaults_and_schema_four_persists_values(self):
+        legacy = {
+            "schema_version": 3,
+            "devices": [{
+                "device_id": "UAV-001", "device_name": "Legacy", "device_type": "UAV",
+                "ip_address": "127.0.0.1", "status_cards": None,
+            }],
+        }
+        self.path.write_text(json.dumps(legacy), encoding="utf-8")
+        profiles = self.repository.load()
+        self.assertEqual((profiles[0].srt_port, profiles[0].srt_latency_ms), (9000, 120))
+        migrated = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(migrated["schema_version"], 4)
+        custom = DeviceProfile("UGV-900", "Custom", "UGV", "127.0.0.2",
+                               srt_port=19000, srt_latency_ms=350)
+        self.repository.create(custom)
+        reloaded = DeviceConfigRepository(self.path).load()
+        saved = next(item for item in reloaded if item.device_id == "UGV-900")
+        self.assertEqual((saved.srt_port, saved.srt_latency_ms), (19000, 350))
+
+    def test_schema_two_migrates_srt_defaults(self):
+        legacy = {
+            "schema_version": 2,
+            "devices": [{
+                "device_id": "AMR-002", "device_name": "Legacy 2", "device_type": "AMR",
+                "ip_address": "127.0.0.4", "status_cards": [],
+            }],
+        }
+        self.path.write_text(json.dumps(legacy), encoding="utf-8")
+        profile = self.repository.load()[0]
+        self.assertEqual((profile.srt_port, profile.srt_latency_ms), (9000, 120))
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["schema_version"], 4)
+
+    def test_srt_port_and_latency_are_validated(self):
+        self.repository.load()
+        with self.assertRaises(ValueError):
+            self.repository.create(DeviceProfile("UAV-900", "Bad", "UAV", "127.0.0.2", srt_port=0))
+        with self.assertRaises(ValueError):
+            self.repository.create(DeviceProfile("UAV-901", "Bad", "UAV", "127.0.0.3", srt_latency_ms=19))
 
     def test_unknown_or_duplicate_status_card_is_rejected(self):
         self.repository.load()

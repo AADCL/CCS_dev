@@ -1,5 +1,14 @@
 # 开发笔记
 
+## v0.14.0
+
+### SRT 视频链路
+
+- `srt_video.py` 使用 `QProcess` 直接启动系统 FFmpeg，先读取 `ffmpeg -protocols` 并确认输入协议含 `srt`，不再依赖 PySide6 自带 FFmpeg 或 Qt Multimedia。
+- FFmpeg 将 H.264/MPEG-TS 解码为固定 RGBA rawvideo；接收器缓存不完整 stdout 分片，每次 UI 刷新只提交最新完整帧。设备切换、切页和退出会终止进程及重试。
+- `devices.json` schema 4 增加 `srt_port` 与 `srt_latency_ms`；schema 1–3 原子迁移为 9000/120 ms。配置中的 FFmpeg 静态路径只能相对软件根目录。
+- `epgeneral_video_srt` v0.1.0 在 Noetic/GStreamer 1.16+ 上作为 Listener 输出 baseline H.264/MPEG-TS，地面站作为 Caller；管线检查 `mpegtsmux` 与 `srtsink`。
+
 ## v0.13.2
 
 ### 可迁移静态资源
@@ -308,7 +317,7 @@
 
 ### USB 摄像头 RTSP 推流
 
-- `epgeneral_usb_cam_rtsp` v0.2.0 使用 C++、`image_transport`、`cv_bridge`、OpenCV 和 GStreamer RTSP Server，直接订阅配置的原始或压缩 ROS 图像话题，不再启动 `usb_cam`。
+- `epgeneral_usb_cam_rtsp` v0.2.1 使用 C++、`image_transport`、`cv_bridge`、OpenCV 和 GStreamer RTSP Server，直接订阅配置的原始或压缩 ROS 图像话题，不再启动 `usb_cam`。
 - ROS 回调只负责把最新 BGR8 帧复制到受 mutex 保护的单帧缓存；GStreamer `appsrc` 在 RTSP 客户端请求时取最新帧，队列限制为 2 帧并丢弃旧帧，避免慢客户端阻塞相机。
 - 编码管线为 `videoconvert -> x264enc(tune=zerolatency) -> rtph264pay`，默认 `640x480/30 FPS/2000 kbps`，服务 `0.0.0.0:8554/usb_cam`。
 - WallTimer 检查首次收帧和断帧超时，RTSP 客户端连接/断开、编码错误和关闭均写 ROS 日志。

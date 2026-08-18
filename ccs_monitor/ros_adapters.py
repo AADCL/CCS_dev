@@ -55,6 +55,8 @@ def snapshot_from_message(message: Any) -> DeviceSnapshot:
         availability=_enum(DeviceAvailability, _value(message, "availability"), DeviceAvailability.UNKNOWN),
         last_tested_at=_value(message, "last_tested_at"),
         health_status=_enum(HealthStatus, _value(message, "health_status"), HealthStatus.NORMAL),
+        srt_port=int(_value(message, "srt_port", 9000)),
+        srt_latency_ms=int(_value(message, "srt_latency_ms", 120)),
     )
 
 
