@@ -12,7 +12,7 @@ mqtt:
     status: "mqtav/{device_id}/status"
 
 ros:
-  node_name: "mqtav"
+  node_name: "epgeneral_mqtav"
   state:
     topic: "/mavros/state"
     message_type: "mavros_msgs/State"

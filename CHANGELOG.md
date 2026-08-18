@@ -425,9 +425,9 @@
 ### 调整
 
 - 地面站版本从 `v0.2.0` 升级为 `v0.3.0`。
-- mqtav 从根目录迁移到 `edge_side_pkg/mqtav`，版本从 `v0.2.2` 升级为 `v0.3.0`。
-- mqtav 不再在自身配置中重复保存设备 ID/IP，改从 `epgeneral_device_config/config/device.yaml` 读取。
-- 根目录 mqtav 发布归档迁移并重新生成到 `edge_side_pkg/mqtav.zip`。
+- `epgeneral_mqtav` 从根目录迁移到 `edge_side_pkg/epgeneral_mqtav`，版本从 `v0.2.2` 升级为 `v0.3.0`。
+- `epgeneral_mqtav` 不再在自身配置中重复保存设备 ID/IP，改从 `epgeneral_device_config/config/device.yaml` 读取。
+- 根目录发布归档迁移并重新生成到 `edge_side_pkg/epgeneral_mqtav.zip`。
 - README、开发笔记和端侧包文档同步更新 Ubuntu 18.04、ROS Melodic、RTSP 8554 和共享配置说明。
 
 ### 修复
@@ -438,8 +438,8 @@
 
 ### 删除
 
-- 删除根目录旧 mqtav 源码路径和旧 `mqtav.zip` 副本。
-- 删除 mqtav 自身配置中的重复 `device` 配置块。
+- 删除根目录旧 `epgeneral_mqtav` 源码路径和旧归档副本。
+- 删除 `epgeneral_mqtav` 自身配置中的重复 `device` 配置块。
 
 ## v0.2.0 - 2026-07-31
 
@@ -455,7 +455,7 @@
 
 ### 调整
 
-- 地面站版本从 `v0.1.0` 升级为 `v0.2.0`；mqtav 机载包保持 `v0.1.0`。
+- 地面站版本从 `v0.1.0` 升级为 `v0.2.0`；`epgeneral_mqtav` 端侧包保持 `v0.1.0`。
 - 默认运行时数据源由模拟遥测切换为 MQTT，启动设备状态统一为离线和未知。
 - 首页、设备页和地图页统一依赖 `DeviceDataSource` 协议，不直接依赖模拟源或 MQTT 库。
 - 设备页连接标签改为展示 Broker/订阅模块状态，设备卡片增加飞行模式。

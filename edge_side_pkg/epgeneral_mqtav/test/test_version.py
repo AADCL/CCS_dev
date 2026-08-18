@@ -3,7 +3,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from mqtav.version import get_version
+from epgeneral_mqtav.version import get_version
 
 
 ROOT = Path(__file__).resolve().parents[1]

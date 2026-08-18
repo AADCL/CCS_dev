@@ -2,11 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mqtav.config import ConfigError, load_config
+from epgeneral_mqtav.config import ConfigError, load_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEVICE_CONFIG = ROOT.parent / "epgeneral_device_config" / "config" / "device.yaml"
+DEVICE_CONFIG = ROOT.parent / "EPGeneral_device_config" / "config" / "device.yaml"
 
 
 class ConfigTests(unittest.TestCase):

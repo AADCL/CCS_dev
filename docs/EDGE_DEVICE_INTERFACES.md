@@ -11,7 +11,7 @@
 
 | 通道 | 方向 | 地址/端口 | 协议版本 | 当前端侧实现 |
 | --- | --- | --- | --- | --- |
-| MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | mqtav v0.3.0 |
+| MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | epgeneral_mqtav v0.3.0 |
 | UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.2.1 |
 | RTSP 视频 | 地面站拉取端侧 | TCP 8554 `/usb_cam` | H.264/RTP/RTSP | epgeneral_usb_cam_rtsp v0.1.0 |
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
@@ -299,7 +299,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 | 地面站 | 端侧 | 必须一致/可达内容 |
 | --- | --- | --- |
 | `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP |
-| `config/mqtt.json` | `mqtav/config/config.yaml` | Broker IP/端口、topic root、QoS、频率 |
+| `config/mqtt.json` | `epgeneral_mqtav/config/config.yaml` | Broker IP/端口、topic root、QoS、频率 |
 | `config/udp_telemetry.json` | `epgeneral_udp_telemetry/config/telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
 | 固定 RTSP 推导 | `epgeneral_usb_cam_rtsp/config/video.yaml` | 端侧 8554、`/usb_cam`、H.264 |
 | `config/map_building.json` | `epgeneral_map_stream/config/mapping.yaml` | protocol ID、14561/14562、包长、压缩、格式、速率、体素和资源上限 |

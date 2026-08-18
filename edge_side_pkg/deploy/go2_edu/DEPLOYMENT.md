@@ -21,7 +21,7 @@ make -j2 && sudo make install
 
 ## 2. 配置设备和网络
 
-修改本目录 `config/` 下的 `device.yaml`、`go2.yaml`、`mqtav.yaml` 和 `udp_telemetry.yaml`。`device.id` 与话题中的 `QRD_001` 必须保持一致；如修改 ID，应同步修改所有 prefixed 话题。将 `network_interface` 设为连接 Go2 内网的真实接口，例如 `eth0`。
+修改本目录 `config/` 下的 `device.yaml`、`go2.yaml`、`epgeneral_mqtav.yaml` 和 `udp_telemetry.yaml`。`device.id` 与话题中的 `QRD_001` 必须保持一致；如修改 ID，应同步修改所有 prefixed 话题。将 `network_interface` 设为连接 Go2 内网的真实接口，例如 `eth0`。
 
 ```bash
 ip -br address
@@ -64,5 +64,5 @@ sudo tcpdump -ni any udp port 14560
 
 - 没有 ROS 话题：检查 `ldd devel/lib/epqrd_go2_bridge/epqrd_go2_bridge_node` 和 SDK2 安装路径。
 - `/link/sdk=false`：检查 DDS 网卡、`rt/lowstate`、`rt/sportmodestate` 和状态年龄 diagnostics。
-- MQTT 在线但无健康数据：检查 mqtav profile 中的 prefixed ROS 话题。
+- MQTT 在线但无健康数据：检查 `epgeneral_mqtav` profile 中的 prefixed ROS 话题。
 - UDP 只有 heartbeat：检查 descriptor 话题和地面站 descriptor hash 是否一致。

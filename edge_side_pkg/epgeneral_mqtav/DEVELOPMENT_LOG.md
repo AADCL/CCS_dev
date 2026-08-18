@@ -1,16 +1,16 @@
-# mqtav 开发日志
+# epgeneral_mqtav 开发日志
 
-<!-- mqtav_VERSION: 0.3.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.3.0 -->
 
 当前版本：`v0.3.0`
 
 ## v0.3.0 - 2026-07-31
 
-- mqtav moved under `edge_side_pkg` and now depends on the `epgeneral_device_config` ROS package.
+- `epgeneral_mqtav` moved under `edge_side_pkg` and now depends on the `epgeneral_device_config` ROS package.
 - `config.py` separates shared device identity loading from MQTT/ROS runtime configuration while preserving Python 3.6.9 compatibility.
 - `node.py` adds `--device-config-file`; the launch default resolves the installed shared package through `rospkg`.
 - The shared identity is validated independently against the ground station `config/devices.json` in the root test suite.
-- The mqtav deployment archive is regenerated together with the shared configuration package.
+- The `epgeneral_mqtav` deployment archive is regenerated together with the shared configuration package.
 
 ## v0.2.2 - 2026-07-31
 
@@ -36,7 +36,7 @@
 
 ## v0.1.0 - 2026-07-31
 
-- 创建独立的 ROS1 catkin Python 包，包名为 `mqtav`，目录名保留为 `mqtav`。
+- 创建独立的 ROS1 catkin Python 包，ROS 包、源码目录和 Python 模块统一命名为 `epgeneral_mqtav`。
 - 将 ROS 回调、健康快照、MQTT 传输、配置校验和日志持久化拆分为独立模块，使 ROS 消息回调不执行网络发送。
 - 默认映射 `mavros_msgs/State` 和 `sensor_msgs/BatteryState`；任务状态采用可选、可配置的 ROS 消息类型和字段路径。
 - MQTT 使用 QoS 1、retained presence 和 Last Will；Paho 的重连延迟设为 1 至 60 秒，并在重连后立即发送最新心跳与状态。

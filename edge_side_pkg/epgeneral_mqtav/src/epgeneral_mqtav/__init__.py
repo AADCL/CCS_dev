@@ -1,4 +1,4 @@
-"""mqtav ROS1-to-MQTT telemetry package."""
+"""epgeneral_mqtav ROS1-to-MQTT telemetry package."""
 
 from .version import get_version
 

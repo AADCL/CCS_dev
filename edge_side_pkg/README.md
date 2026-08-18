@@ -14,12 +14,12 @@
 - `deploy/go2_edu`：Go2 EDU 基础监控套件配置、统一 bringup 和部署指南。
 
 - `epgeneral_device_config` v0.1.0：保存端侧设备 ID/IP 的共享配置。地面站 `config/devices.json` 必须有同 ID 且 IP 相同的记录。
-- `mqtav` v0.3.0：订阅 MAVROS 状态和电池信息，并向地面站 MQTT Broker 发布 presence、heartbeat、status。
+- `epgeneral_mqtav` v0.3.0：订阅 ROS 状态和电池信息，并向地面站 MQTT Broker 发布 presence、heartbeat、status。
 - `epgeneral_usb_cam_rtsp` v0.1.0：启动 ROS USB 摄像头图像链路，并通过 GStreamer 提供 `rtsp://<device.ip>:8554/usb_cam`。
 - `epgeneral_udp_telemetry` v0.2.1：按配置订阅 MAVROS/ROS 位姿、IMU、点云、地图生成状态和建图模式，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测。
 - `epgeneral_map_stream` v0.1.0：监听 UDP 14561 建图指令，同步预处理 PointCloud2 与位姿，并向地面站 UDP 14562 上传分片点云、同步位姿和静态外参。
 - `epgeneral_task_control` v0.1.0：监听 UDP 14563 任务指令，原子保存 XML，通过 ROS 强类型接口协调执行，并向 UDP 14564 回传状态和进度。
-- `EPGeneral_mqtav.zip`：包含 mqtav 与共享配置包的部署归档。
+- `epgeneral_mqtav.zip`：包含 `epgeneral_mqtav` 与共享配置包的部署归档。
 
 ## v0.8.0 实时建图接口
 

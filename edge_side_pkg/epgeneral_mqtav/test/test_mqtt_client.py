@@ -2,13 +2,13 @@ import json
 import unittest
 from pathlib import Path
 
-from mqtav.config import load_config
-from mqtav.mqtt_client import MqttPublisher
-from mqtav.state import HealthState
+from epgeneral_mqtav.config import load_config
+from epgeneral_mqtav.mqtt_client import MqttPublisher
+from epgeneral_mqtav.state import HealthState
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEVICE_CONFIG = ROOT.parent / "epgeneral_device_config" / "config" / "device.yaml"
+DEVICE_CONFIG = ROOT.parent / "EPGeneral_device_config" / "config" / "device.yaml"
 
 
 class Result(object):

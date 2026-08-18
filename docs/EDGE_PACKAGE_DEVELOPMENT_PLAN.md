@@ -27,7 +27,7 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：缺失、重复、非法 IP、未知能力和 frame 配置在启动时明确失败；合法旧配置可迁移且不会丢失身份。
 
-## 3. `mqtav` v0.3.0
+## 3. `epgeneral_mqtav` v0.3.0
 
 **当前状态**：ROS1 MAVROS 状态/电池采集、MQTT presence/heartbeat/status、QoS 1、Last Will、日志和纯 Python 测试已实现；文档同时存在 Melodic/Noetic 基线冲突。
 

@@ -294,9 +294,9 @@
 
 ### 端侧目录与共享配置
 
-- `edge_side_pkg` 是端侧部署容器，当前包含 `epgeneral_device_config`、`mqtav`、`epgeneral_usb_cam_rtsp`、`epgeneral_udp_telemetry` 和 `epgeneral_map_stream` 五个 ROS 包。
+- `edge_side_pkg` 是端侧部署容器，当前包含 `epgeneral_device_config`、`epgeneral_mqtav`、`epgeneral_usb_cam_rtsp`、`epgeneral_udp_telemetry` 和 `epgeneral_map_stream` 五个 ROS 包。
 - `epgeneral_device_config/config/device.yaml` 是设备 ID/IP 的唯一端侧来源，根测试与 `config/devices.json` 做一致性校验。
-- mqtav `v0.3.0` 将设备身份加载与 MQTT/ROS 运行配置拆开，新增 `--device-config-file`；保留 Python 3.6.9 与 ROS Melodic 兼容实现。
+- `epgeneral_mqtav` v0.3.0 将设备身份加载与 MQTT/ROS 运行配置拆开，新增 `--device-config-file`；保留 Python 3.6.9 与 ROS Melodic 兼容实现。
 
 ### USB 摄像头 RTSP 推流
 

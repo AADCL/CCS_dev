@@ -1,4 +1,4 @@
-"""Python 3.6 compatible executable orchestration for mqtav."""
+"""Python 3.6 compatible orchestration for epgeneral_mqtav."""
 
 import argparse
 import sys
@@ -16,6 +16,12 @@ def default_config_path():
     source_path = Path(__file__).resolve().parents[2] / "config" / "config.yaml"
     if source_path.is_file():
         return source_path
+    try:
+        import rospkg
+
+        return Path(rospkg.RosPack().get_path("epgeneral_mqtav")) / "config" / "config.yaml"
+    except (ImportError, OSError, RuntimeError):
+        return source_path
 
 
 def default_device_config_path():
@@ -28,14 +34,6 @@ def default_device_config_path():
         return Path(rospkg.RosPack().get_path("epgeneral_device_config")) / "config" / "device.yaml"
     except (ImportError, OSError, RuntimeError):
         return source_path
-    try:
-        import rospkg
-
-        return Path(rospkg.RosPack().get_path("epgeneral_mqtav")) / "config" / "config.yaml"
-    except (ImportError, OSError, RuntimeError):
-        return source_path
-
-
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Publish MAVROS health telemetry to MQTT")
     parser.add_argument("--config-file", default=str(default_config_path()), help="path to config.yaml")
@@ -46,7 +44,7 @@ def parse_args(argv=None):
     )
     parser.add_argument("--log-dir", default="", help="directory for durable rotating logs")
     raw_args = list(sys.argv[1:] if argv is None else argv)
-    # roslaunch appends private remappings such as __name:=mqtav and
+    # roslaunch appends private remappings such as __name:=epgeneral_mqtav and
     # __log:=/home/user/.ros/log/...; they are consumed by ROS, not argparse.
     ros_args = [arg for arg in raw_args if arg.startswith("__") and ":=" in arg]
     filtered_args = [arg for arg in raw_args if arg not in ros_args]
@@ -65,7 +63,7 @@ def run(argv=None, rospy_module=None):
             args.device_config_file,
             exc,
         )
-        print("mqtav configuration error: {0}".format(exc), file=sys.stderr)
+        print("epgeneral_mqtav configuration error: {0}".format(exc), file=sys.stderr)
         return 2
     logger.info("configuration_loaded path=%s device_config=%s", args.config_file, args.device_config_file)
 
@@ -77,7 +75,7 @@ def run(argv=None, rospy_module=None):
         publisher = MqttPublisher(config, health, logger)
         bridge = RosBridge(config, health, logger, rospy_module)
         logger.info(
-            "mqtav_starting version=%s config=%s device_id=%s",
+            "epgeneral_mqtav_starting version=%s config=%s device_id=%s",
             get_version(),
             args.config_file,
             config.device.device_id,
@@ -90,5 +88,5 @@ def run(argv=None, rospy_module=None):
         rospy_module.spin()
         return 0
     except Exception:
-        logger.exception("mqtav_fatal_error")
+        logger.exception("epgeneral_mqtav_fatal_error")
         return 1

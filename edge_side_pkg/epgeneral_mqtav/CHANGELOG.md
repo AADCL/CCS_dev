@@ -1,6 +1,6 @@
 # 修改日志
 
-<!-- mqtav_VERSION: 0.3.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.3.0 -->
 
 当前版本：`v0.3.0`
 
@@ -19,7 +19,7 @@
 
 ### Removed
 
-- Removed the duplicated device identity block from mqtav's runtime configuration.
+- Removed the duplicated device identity block from `epgeneral_mqtav` runtime configuration.
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 的记录方式，并使用语义化版本。
 

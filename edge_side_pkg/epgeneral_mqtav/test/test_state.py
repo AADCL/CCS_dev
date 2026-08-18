@@ -1,7 +1,7 @@
 import unittest
 
-from mqtav.config import DeviceConfig
-from mqtav.state import HealthState, normalize_percentage
+from epgeneral_mqtav.config import DeviceConfig
+from epgeneral_mqtav.state import HealthState, normalize_percentage
 
 
 class StateTests(unittest.TestCase):
