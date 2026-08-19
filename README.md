@@ -1,6 +1,6 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.15.0**
+当前地面站版本：**v0.15.1**
 
 端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
@@ -333,6 +333,8 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 插件必须定义 `PLUGIN_API_VERSION = 1`、唯一 `ALGORITHM_ID` 和 `fuse_maps()`，并生成有效 XYZ PCD。检查插件依赖是否安装在地面站 Python 环境。超时、崩溃和无效输出不会覆盖正式地图，临时任务会保留在 `data/map_server/.fusion` 或地图的 `.mapping` 目录。
 
+导入后的脚本保存在 `data/map_fusion_algorithms`，注册表只记录该目录内的相对文件名。换机部署时必须同时携带 `config/map_fusion_algorithms.json` 和该算法目录；旧版 Windows/POSIX 绝对路径会在启动时按文件名迁移到当前安装目录，找不到对应脚本或 SHA-256 不一致时会禁用外部算法并保留原配置供排查。
+
 Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提供合理的粗对齐；提示重叠率或 fitness 过低时，应先检查主从坐标方向与 XYZ/RPY 外参。
 
 ### 任务无法下发或同步执行
@@ -346,6 +348,9 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.15.1 · 2026-08-19**
+<small>彻底移除融合算法注册和建图启动过程对旧设备绝对路径的依赖，支持跨目录、跨设备和跨系统部署。</small>
 
 **v0.15.0 · 2026-08-19**
 <small>新增首页子系统状态、设备资料编辑与引用迁移，修复高频遥测、日志、单机建图和大屏折叠行为。</small>

@@ -18,7 +18,7 @@
       "algorithm_id": "open3d_point_to_point_icp",
       "display_name": "Open3D ICP 配准融合",
       "version": "0.1.0",
-      "script_path": "data/map_fusion_algorithms/open3d_point_to_point_icp_d52a550e.py",
+      "script_path": "open3d_point_to_point_icp_d52a550e.py",
       "sha256": "329de01e844f7babaa7cc45bd62e31e50cfcc9b4bc58c2fd856791e3abbffd34",
       "enabled": true,
       "is_default": false,

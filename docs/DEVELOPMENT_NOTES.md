@@ -1,5 +1,13 @@
 # 开发笔记
 
+## v0.15.1
+
+### 融合算法路径生命周期
+
+- v0.13.2 只保证注册表写入相对安装根目录的路径，但运行时 `MapFusionAlgorithm` 仍包含解析后的绝对路径；建图服务此前直接接受该对象，使旧安装创建的对象可以把绝对路径传入融合工作进程。
+- 注册表现在只保存相对于 `data/map_fusion_algorithms` 的路径。`StaticPathResolver` 同时识别 Windows 与 POSIX 绝对路径语法，并按文件名从当前受管目录恢复旧配置。
+- `MapBuildingService` 在启动任务前始终按 `algorithm_id` 从自身 `MapFusionRepository` 重新读取算法，运行时绝对路径仅存在于当前进程和临时 worker 请求中，不再作为可迁移状态保存或跨安装复用。
+
 ## v0.15.0
 
 ### 运行状态与设备生命周期
