@@ -205,6 +205,8 @@ class CommandDashboardUiTests(unittest.TestCase):
 
         page.status_panel.toggle_expanded()
         self.assertTrue(page.status_panel.user_collapsed)
+        page._update_devices(page.devices)
+        self.assertFalse(page.status_panel.expanded)
         self.window.resize(1024, 768)
         self.app.processEvents()
         self.window.resize(1440, 900)

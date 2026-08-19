@@ -120,6 +120,10 @@ class MapBuildingService(QObject):
     def pgm_download_active(self) -> bool:
         return self.pgm_download.active
 
+    def device_active(self, device_id: str) -> bool:
+        with self._lock:
+            return self._job is not None and device_id.casefold() in self._job.sessions
+
     @property
     def current_job_snapshot(self) -> MapBuildingJobSnapshot | None:
         with self._lock:

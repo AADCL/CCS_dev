@@ -9,10 +9,11 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
+    QHeaderView,
     QPushButton,
     QScrollArea,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -125,6 +126,8 @@ class DataStatusCard(QFrame):
 class DeviceDetailPage(QWidget):
     back_requested = Signal()
     status_cards_changed = Signal(str, object)
+    clear_logs_requested = Signal(str)
+    log_event_requested = Signal(str, object, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -136,6 +139,7 @@ class DeviceDetailPage(QWidget):
         self.telemetry_column_count = 0
         self.status_card_column_count = 0
         self.pending_telemetry: DeviceTelemetrySnapshot | None = None
+        self._telemetry_dirty = False
         self.telemetry_timer = QTimer(self)
         self.telemetry_timer.setInterval(50)
         self.telemetry_timer.timeout.connect(self._render_telemetry)
@@ -161,6 +165,18 @@ class DeviceDetailPage(QWidget):
         back.clicked.connect(self.back_requested)
         header.addWidget(back)
         header.addStretch()
+        self.mqtt_card = QFrame()
+        self.mqtt_card.setObjectName("mqttStatusCard")
+        mqtt_layout = QVBoxLayout(self.mqtt_card)
+        mqtt_layout.setContentsMargins(12, 8, 12, 8)
+        mqtt_layout.setSpacing(2)
+        self.mqtt_status = QLabel("MQTT · 未知")
+        self.mqtt_status.setObjectName("mqttStatusTitle")
+        self.mqtt_heartbeat = QLabel("最后心跳 --")
+        self.mqtt_heartbeat.setObjectName("muted")
+        mqtt_layout.addWidget(self.mqtt_status)
+        mqtt_layout.addWidget(self.mqtt_heartbeat)
+        header.addWidget(self.mqtt_card, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
         self.title = QLabel("设备详情")
         self.title.setObjectName("pageTitle")
@@ -224,8 +240,8 @@ class DeviceDetailPage(QWidget):
         self.info_grid.setVerticalSpacing(14)
         field_names = (
             "设备名称", "设备类型", "设备 ID", "设备 IP", "最近可用状态",
-            "实时连接状态", "任务状态", "电量", "定位状态", "健康状态",
-            "飞行模式", "解锁状态", "MAVLink 系统状态", "电池电压", "电池电流",
+            "任务状态", "电量", "定位状态", "健康状态",
+            "运行模式", "电池电压", "电池电流",
             "原始任务状态", "最后心跳", "UDP 链路状态", "UDP 最后心跳",
             "UDP 最后数据", "最后连接测试", "数据更新时间",
             "SRT 端口", "SRT 延迟", "SRT 地址",
@@ -237,6 +253,7 @@ class DeviceDetailPage(QWidget):
             self.fields[field_name] = value_label
             self.field_widgets.append(widget)
         self.video_panel = SrtVideoWidget()
+        self.video_panel.stream_event.connect(self._record_video_event)
         self.detail_grid.addWidget(self.info_panel, 0, 0)
         self.detail_grid.addWidget(self.video_panel, 0, 1)
         layout.addLayout(self.detail_grid)
@@ -254,11 +271,21 @@ class DeviceDetailPage(QWidget):
         self.log_filter.addItem("error", DeviceLogLevel.ERROR)
         self.log_filter.currentIndexChanged.connect(self._render_logs)
         logs_header.addWidget(self.log_filter)
+        self.clear_logs_button = QPushButton("清除日志")
+        self.clear_logs_button.setObjectName("dangerButton")
+        self.clear_logs_button.clicked.connect(self._clear_logs)
+        logs_header.addWidget(self.clear_logs_button)
         layout.addLayout(logs_header)
-        self.log_list = QListWidget()
+        self.log_list = QTreeWidget()
         self.log_list.setObjectName("logList")
-        self.log_list.setMinimumHeight(210)
-        self.log_list.setWordWrap(True)
+        self.log_list.setColumnCount(3)
+        self.log_list.setHeaderLabels(("时间", "等级", "消息"))
+        self.log_list.setRootIsDecorated(False)
+        self.log_list.setAlternatingRowColors(True)
+        self.log_list.setMinimumHeight(155)
+        self.log_list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.log_list.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.log_list.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.log_list)
         self._apply_responsive_layout(1100)
 
@@ -318,6 +345,7 @@ class DeviceDetailPage(QWidget):
     def set_device(self, device: DeviceSnapshot, entries: list[DeviceLogEntry]) -> None:
         if self.device is None or self.device.device_id != device.device_id:
             self.pending_telemetry = None
+            self._telemetry_dirty = False
         self.device = device
         self.entries = entries
         self.title.setText(device.device_name)
@@ -330,14 +358,11 @@ class DeviceDetailPage(QWidget):
             "设备 ID": device.device_id,
             "设备 IP": device.ip_address or "--",
             "最近可用状态": AVAILABILITY_TEXT[device.availability],
-            "实时连接状态": STATUS_TEXT[device.connection_status],
             "任务状态": STATUS_TEXT[device.task_status],
             "电量": "--" if device.battery_percent is None else f"{device.battery_percent:g}%",
             "定位状态": STATUS_TEXT[device.localization_status],
             "健康状态": HEALTH_TEXT[device.health_status],
-            "飞行模式": device.flight_mode,
-            "解锁状态": "未知" if device.armed is None else "已解锁" if device.armed else "未解锁",
-            "MAVLink 系统状态": "--" if device.system_status is None else str(device.system_status),
+            "运行模式": device.flight_mode,
             "电池电压": "--" if device.battery_voltage is None else f"{device.battery_voltage:g} V",
             "电池电流": "--" if device.battery_current is None else f"{device.battery_current:g} A",
             "原始任务状态": device.mission_status_raw,
@@ -356,17 +381,31 @@ class DeviceDetailPage(QWidget):
         }
         for name, value in values.items():
             self.fields[name].setText(value)
+        mqtt_online = device.connection_status.value == "online"
+        self.mqtt_card.setProperty("state", "healthy" if mqtt_online else "error")
+        self.mqtt_status.setText(f"MQTT · {STATUS_TEXT[device.connection_status]}")
+        self.mqtt_heartbeat.setText(
+            "最后心跳 " + (
+                device.last_heartbeat_at.astimezone().strftime("%H:%M:%S")
+                if device.last_heartbeat_at else "未收到"
+            )
+        )
+        self.mqtt_card.style().unpolish(self.mqtt_card)
+        self.mqtt_card.style().polish(self.mqtt_card)
         self.log_filter.setCurrentIndex(0)
         self._render_logs()
         self._render_status_cards()
 
     def set_telemetry(self, telemetry: DeviceTelemetrySnapshot) -> None:
-        if self.device is not None and telemetry.device_id != self.device.device_id:
+        if (
+            self.device is not None
+            and telemetry.device_id.casefold() != self.device.device_id.casefold()
+        ):
             return
         self.pending_telemetry = telemetry
+        self._telemetry_dirty = True
         if self.isVisible() and not self.telemetry_timer.isActive():
             self.telemetry_timer.start()
-        self._render_telemetry()
 
     def set_logs(self, entries: list[DeviceLogEntry]) -> None:
         self.entries = entries
@@ -374,8 +413,9 @@ class DeviceDetailPage(QWidget):
 
     def _render_telemetry(self) -> None:
         telemetry = self.pending_telemetry
-        if telemetry is None:
+        if telemetry is None or not self._telemetry_dirty:
             return
+        self._telemetry_dirty = False
         self.fields["UDP 链路状态"].setText(UDP_LINK_TEXT[telemetry.udp_link_status])
         self.fields["UDP 最后心跳"].setText(self._format_datetime(telemetry.last_heartbeat_at))
         self.fields["UDP 最后数据"].setText(self._format_datetime(telemetry.last_data_at))
@@ -466,14 +506,33 @@ class DeviceDetailPage(QWidget):
             DeviceLogLevel.ERROR: QColor(self.theme_palette.error),
         }
         for entry in filtered:
-            text = f"{entry.timestamp.astimezone().strftime('%H:%M:%S')}   {entry.level.value.upper():7}   {entry.message}"
-            item = QListWidgetItem(text)
-            item.setForeground(colors[entry.level])
-            self.log_list.addItem(item)
+            item = QTreeWidgetItem((
+                entry.timestamp.astimezone().strftime("%H:%M:%S"),
+                entry.level.value.upper(),
+                entry.message,
+            ))
+            for column in range(3):
+                item.setForeground(column, colors[entry.level])
+            self.log_list.addTopLevelItem(item)
         if not filtered:
-            item = QListWidgetItem("当前筛选条件下暂无日志")
-            item.setForeground(QColor(self.theme_palette.muted))
-            self.log_list.addItem(item)
+            item = QTreeWidgetItem(("--", "--", "当前筛选条件下暂无日志"))
+            for column in range(3):
+                item.setForeground(column, QColor(self.theme_palette.muted))
+            self.log_list.addTopLevelItem(item)
+
+    def _clear_logs(self) -> None:
+        if self.device is not None:
+            self.clear_logs_requested.emit(self.device.device_id)
+
+    def _record_video_event(self, state: str, message: str) -> None:
+        if self.device is None:
+            return
+        level = (
+            DeviceLogLevel.ERROR if state == "error"
+            else DeviceLogLevel.WARNING if state == "retrying"
+            else DeviceLogLevel.INFO
+        )
+        self.log_event_requested.emit(self.device.device_id, level, message)
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
@@ -518,6 +577,7 @@ class DeviceDetailPage(QWidget):
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         if self.device is not None:
+            self._telemetry_dirty = self.pending_telemetry is not None
             self.telemetry_timer.start()
 
     def resizeEvent(self, event) -> None:  # noqa: N802

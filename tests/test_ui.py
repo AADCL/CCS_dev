@@ -18,7 +18,7 @@ if PYSIDE_AVAILABLE:
     from ccs_monitor.data_source import SimulatedDeviceSource, simulated_overview
     from ccs_monitor.app import configure_application_font
     from ccs_monitor.device_config import DeviceConfigRepository
-    from ccs_monitor.device_dialogs import NewDeviceDialog
+    from ccs_monitor.device_dialogs import EditDeviceDialog, NewDeviceDialog
     from ccs_monitor.device_dialogs import StatusCardEditorDialog
     from ccs_monitor.main_window import MainWindow
     from ccs_monitor.map_repository import MapRepository
@@ -200,6 +200,21 @@ class UiTests(unittest.TestCase):
         dialog.ip_input.setText("127.0.0.1")
         self.assertIn("已存在", dialog._validate_fields())
 
+    def test_edit_device_reuses_current_ping_but_ip_change_requires_retest(self):
+        profile = self.source.profile("UGV-042")
+        dialog = EditDeviceDialog(
+            profile,
+            lambda candidate: candidate.casefold() != profile.device_id.casefold()
+            and self.source.has_device_id(candidate),
+            self.window,
+            templates=self.source.device_type_templates(),
+        )
+        self.assertTrue(dialog.create_button.isEnabled())
+        dialog.ip_input.setText("127.0.0.50")
+        self.app.processEvents()
+        self.assertFalse(dialog.create_button.isEnabled())
+        dialog.close()
+
     def test_detail_page_and_log_filter(self):
         page = self.window.devices_page
         page.show_detail("USV-003")
@@ -208,8 +223,11 @@ class UiTests(unittest.TestCase):
         error_index = page.detail_page.log_filter.findData(DeviceLogLevel.ERROR)
         page.detail_page.log_filter.setCurrentIndex(error_index)
         self.app.processEvents()
-        self.assertEqual(page.detail_page.log_list.count(), 1)
-        self.assertIn("ERROR", page.detail_page.log_list.item(0).text())
+        self.assertEqual(page.detail_page.log_list.topLevelItemCount(), 1)
+        self.assertEqual(page.detail_page.log_list.topLevelItem(0).text(1), "ERROR")
+        page.detail_page.clear_logs_button.click()
+        self.app.processEvents()
+        self.assertEqual(self.source.logs("USV-003"), [])
         page.show_list()
         self.assertEqual(page.page_stack.currentWidget(), page.list_page)
 
@@ -234,6 +252,7 @@ class UiTests(unittest.TestCase):
             ),
         )
         detail.set_telemetry(telemetry)
+        detail._render_telemetry()
         self.app.processEvents()
         self.assertNotIn("地图位置", detail.fields)
         self.assertEqual(detail.fields["UDP 链路状态"].text(), "在线")
@@ -243,6 +262,9 @@ class UiTests(unittest.TestCase):
         self.assertEqual(detail.status_cards["fastlio2"].value.text(), "运行正常")
         self.assertEqual(detail.status_cards["pgm_mapping"].value.text(), "不可用")
         self.assertEqual(detail.status_cards["mapping_mode"].value.text(), "增量建图")
+        replacement = DeviceTelemetrySnapshot(device_id="ugv-042", udp_link_status=UdpLinkStatus.WARNING)
+        page._on_telemetry_updated("ugv-042", replacement)
+        self.assertIs(detail.pending_telemetry, replacement)
 
     def test_status_card_editor_selection_and_device_binding(self):
         dialog = StatusCardEditorDialog(("fastlio2",), self.window)
@@ -336,14 +358,15 @@ class UiTests(unittest.TestCase):
         window.devices_page.show_detail("UAV-017")
         self.app.processEvents()
         detail = window.devices_page.detail_page
-        self.assertIn("订阅已连接", window.devices_page.connection_label.text())
-        self.assertEqual(detail.fields["飞行模式"].text(), "GUIDED")
-        self.assertEqual(detail.fields["解锁状态"].text(), "已解锁")
+        self.assertIn("订阅已连接", window.devices_page.connection_message.text())
+        self.assertEqual(detail.fields["运行模式"].text(), "GUIDED")
+        self.assertNotIn("解锁状态", detail.fields)
+        self.assertNotIn("MAVLink 系统状态", detail.fields)
         self.assertEqual(detail.fields["电池电压"].text(), "15.4 V")
         self.assertEqual(detail.fields["健康状态"].text(), "正常")
         source.set_module_status("MQTT Broker 启动失败：端口被占用", False)
         self.app.processEvents()
-        self.assertEqual(window.devices_page.connection_label.objectName(), "moduleErrorLabel")
+        self.assertEqual(window.devices_page.mqtt_module_card.property("state"), "error")
         window.close()
         window.deleteLater()
 

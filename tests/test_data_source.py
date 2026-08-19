@@ -60,6 +60,23 @@ class DeviceDataSourceTests(unittest.TestCase):
         profile = next(item for item in reloaded if item.device_id == "UGV-042")
         self.assertEqual(profile.status_card_ids, ("livox_driver", "mapping_mode"))
 
+    def test_update_preserves_runtime_and_clear_logs_emits(self):
+        before = self.source.device("UGV-042")
+        profile = self.source.profile("UGV-042")
+        changed = DeviceProfile(
+            profile.device_id, "Renamed", profile.device_type, "127.0.0.2",
+            profile.availability, profile.last_tested_at, profile.status_card_ids,
+            9010, 250,
+        )
+        updated = self.source.update_device("UGV-042", changed)
+        self.assertEqual(updated.device_name, "Renamed")
+        self.assertEqual(updated.battery_percent, before.battery_percent)
+        events = []
+        self.source.logs_changed.connect(events.append)
+        self.source.clear_device_logs("UGV-042")
+        self.assertEqual(self.source.logs("UGV-042"), [])
+        self.assertEqual(events, ["UGV-042"])
+
 
 if __name__ == "__main__":
     unittest.main()

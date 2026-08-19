@@ -84,7 +84,7 @@ class NtpServerService(QObject):
             sock.settimeout(0.2)
             sock.bind((self.config.bind_host, self.config.port))
             self.status_changed.emit(
-                f"NTP Server 运行中 · UDP {self.config.port}", True
+                f"NTP Server 运行中 · UDP {self.config.port} · stratum {self.config.stratum}", True
             )
             while not self._stop_event.is_set():
                 try:

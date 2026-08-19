@@ -376,6 +376,7 @@ class SrtFrameCanvas(QWidget):
 
 class SrtVideoWidget(QFrame):
     stream_state_changed = Signal(str)
+    stream_event = Signal(str, str)
 
     def __init__(self, receiver: SrtFfmpegReceiver | None = None,
                  parent: QWidget | None = None) -> None:
@@ -393,10 +394,12 @@ class SrtVideoWidget(QFrame):
         self.receiver = receiver
         self._endpoint: SrtEndpoint | None = None
         self._device_key: tuple | None = None
+        self._last_event_state: str | None = None
+        self._stream_started = False
         self._build()
         self.receiver.frame_ready.connect(self._show_frame)
         self.receiver.state_changed.connect(self._on_state)
-        self.receiver.error_occurred.connect(lambda message: self._show_status(f"播放失败：{message}"))
+        self.receiver.error_occurred.connect(self._on_error)
         if self._configuration_error:
             self._show_status(self._configuration_error)
 
@@ -466,6 +469,7 @@ class SrtVideoWidget(QFrame):
         if self._endpoint is None:
             return
         self._set_switch(True)
+        self._stream_started = True
         self._show_status("正在检查 FFmpeg 与连接 SRT 视频流...")
         self.receiver.start(self._endpoint)
 
@@ -486,12 +490,26 @@ class SrtVideoWidget(QFrame):
             "checking": "正在检查 FFmpeg SRT 支持...",
             "connecting": "正在连接 SRT 视频流...",
             "retrying": "视频连接中断，正在重试...",
+            "playing": "SRT 视频流已开始播放",
+            "stopped": "SRT 视频流已停止",
         }
         if state in labels:
             self._show_status(labels[state])
         elif state == "error":
             self._set_switch(False)
+        should_emit = state != "stopped" or self._stream_started
+        if state in labels and state != self._last_event_state and should_emit:
+            self._last_event_state = state
+            self.stream_event.emit(state, labels[state])
+        if state == "stopped":
+            self._stream_started = False
         self.stream_state_changed.emit(state)
+
+    def _on_error(self, message: str) -> None:
+        text = f"播放失败：{message}"
+        self._show_status(text)
+        self._last_event_state = "error"
+        self.stream_event.emit("error", text)
 
     def _show_status(self, text: str) -> None:
         self.status_label.setText(text)

@@ -29,6 +29,7 @@ from .models import (
     PgmFusionSource,
     PgmMapMetadata,
     PgmTransform2D,
+    DeviceProfile,
 )
 from .pgm_map import PcdToPgmGenerator, PcdToPgmOptions, PgmMapError, PgmMapLoader
 from .pgm_fusion import pcd_sha256
@@ -97,6 +98,42 @@ class MapRepository(QObject):
 
     def map_by_id(self, map_id: str) -> MapDefinition | None:
         return next((item for item in self._maps if item.map_id == map_id), None)
+
+    def update_device_reference(
+        self, original_device_id: str, profile: DeviceProfile
+    ) -> tuple[MapDefinition, ...]:
+        folded = original_device_id.casefold()
+        originals: list[MapDefinition] = []
+        updated_items: list[MapDefinition] = []
+        for definition in self._maps:
+            if definition.error_message or not any(
+                item.device_id.casefold() == folded for item in definition.creator_devices
+            ):
+                continue
+            originals.append(definition)
+            creators = tuple(
+                MapCreatorDevice(profile.device_id, profile.device_name, profile.device_type)
+                if item.device_id.casefold() == folded else item
+                for item in definition.creator_devices
+            )
+            updated_items.append(replace(definition, creator_devices=creators))
+        try:
+            for definition in updated_items:
+                self._write_metadata(definition)
+        except Exception:
+            for definition in originals:
+                self._write_metadata(definition)
+            raise
+        if updated_items:
+            self._refresh_and_emit()
+        return tuple(originals)
+
+    def restore_definitions(self, definitions: Iterable[MapDefinition]) -> None:
+        restored = tuple(definitions)
+        for definition in restored:
+            self._write_metadata(definition)
+        if restored:
+            self._refresh_and_emit()
 
     def create(
         self,

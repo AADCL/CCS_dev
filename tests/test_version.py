@@ -6,7 +6,7 @@ from ccs_monitor import __version__
 
 class VersionTests(unittest.TestCase):
     def test_version_is_semantic_triplet(self):
-        self.assertEqual(__version__, "0.14.1")
+        self.assertEqual(__version__, "0.15.0")
         self.assertRegex(__version__, re.compile(r"^\d+\.\d+\.\d+$"))
 
 

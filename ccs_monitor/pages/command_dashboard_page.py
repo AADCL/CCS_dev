@@ -526,7 +526,7 @@ class TelemetryStatusPanel(QFrame):
         fields.setVerticalSpacing(5)
         self.fields: dict[str, QLabel] = {}
         for index, label in enumerate((
-            "MQTT", "UDP", "健康", "电量", "任务", "飞行模式", "解锁", "FCU",
+            "MQTT", "UDP", "健康", "电量", "任务", "运行模式", "解锁", "FCU",
             "位置 X/Y/Z", "姿态 R/P/Y", "最后数据",
         )):
             caption = QLabel(label)
@@ -573,7 +573,7 @@ class TelemetryStatusPanel(QFrame):
         }[device.health_status])
         self.fields["电量"].setText("--" if device.battery_percent is None else f"{device.battery_percent:.1f}%")
         self.fields["任务"].setText(device.task_status.value)
-        self.fields["飞行模式"].setText(device.flight_mode)
+        self.fields["运行模式"].setText(device.flight_mode)
         self.fields["解锁"].setText("--" if device.armed is None else "已解锁" if device.armed else "未解锁")
         self.fields["FCU"].setText("--" if device.system_status is None else str(device.system_status))
 
@@ -1032,7 +1032,10 @@ class CommandDashboardPage(QWidget):
         self.selected_device_id = device_id or None
         device = next((item for item in self.devices if item.device_id == device_id), None)
         self.status_panel.set_device(device)
-        if device is not None and not self.status_panel.expanded and self.width() >= 1000:
+        if (
+            device is not None and not self.status_panel.expanded
+            and not self.status_panel.user_collapsed and self.width() >= 1000
+        ):
             self.status_panel.set_expanded(True)
         telemetry = self.telemetry_store.telemetry(device_id) if self.telemetry_store and device_id else None
         self.status_panel.set_telemetry(telemetry)

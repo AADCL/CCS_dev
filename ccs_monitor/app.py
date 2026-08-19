@@ -25,6 +25,9 @@ from .udp_store import UdpTelemetryStore
 from .task_config import TaskSystemConfigError, load_task_system_config
 from .task_repository import TaskRepository
 from .task_services import TaskExecutionService
+from .system_status import (
+    SrtCapabilityProbe, SubsystemId, SubsystemState, SystemRuntimeStatusStore,
+)
 from .version import __version__
 
 
@@ -55,20 +58,26 @@ def main() -> int:
     app.setApplicationName("CCS Device Monitor")
     app.setApplicationVersion(__version__)
     app.setWindowIcon(QIcon(str(Path(__file__).resolve().parent / "assets" / "ccs_logo.svg")))
+    system_status = SystemRuntimeStatusStore(app)
     mqtt_error = None
     try:
         mqtt_config = load_mqtt_config()
     except MqttConfigError as exc:
         mqtt_config = default_mqtt_config()
         mqtt_error = str(exc)
+        system_status.update(SubsystemId.MQTT_BROKER, SubsystemState.ERROR, mqtt_error)
+        system_status.update(SubsystemId.MQTT_SUBSCRIBER, SubsystemState.ERROR, mqtt_error)
     source = MqttDeviceSource(mqtt_config, DeviceConfigRepository(DEFAULT_CONFIG_PATH))
     ntp_runtime = None
     try:
         ntp_config = load_ntp_config()
         if ntp_config.enabled:
             ntp_runtime = NtpServerService(ntp_config)
+        else:
+            system_status.update(SubsystemId.NTP, SubsystemState.DISABLED, "NTP Server 已在配置中禁用")
     except NtpConfigError as exc:
         LOGGER.error("NTP Server 配置无效：%s", exc)
+        system_status.update(SubsystemId.NTP, SubsystemState.ERROR, str(exc))
     udp_runtime = None
     udp_store = None
     try:
@@ -81,10 +90,34 @@ def main() -> int:
         udp_runtime = UdpMonitoringRuntime(udp_config, udp_store)
     except UdpConfigError as exc:
         udp_error = str(exc)
+        system_status.update(SubsystemId.UDP_TELEMETRY, SubsystemState.ERROR, udp_error)
     else:
         udp_error = None
     map_repository = MapRepository()
     task_repository = TaskRepository()
+
+    def update_map_repository_status(_items=None) -> None:
+        maps = map_repository.maps()
+        damaged = sum(bool(item.error_message) for item in maps)
+        state = SubsystemState.DEGRADED if damaged else SubsystemState.HEALTHY
+        message = f"地图仓储可用 · {len(maps)} 张地图"
+        if damaged:
+            message += f" · {damaged} 张损坏"
+        system_status.update(SubsystemId.MAP_REPOSITORY, state, message)
+
+    def update_task_repository_status(_items=None) -> None:
+        tasks = task_repository.tasks()
+        damaged = sum(bool(item.error_message) for item in tasks)
+        state = SubsystemState.DEGRADED if damaged else SubsystemState.HEALTHY
+        message = f"任务仓储可用 · {len(tasks)} 个任务"
+        if damaged:
+            message += f" · {damaged} 个损坏"
+        system_status.update(SubsystemId.TASK_REPOSITORY, state, message)
+
+    map_repository.maps_updated.connect(update_map_repository_status)
+    task_repository.tasks_updated.connect(update_task_repository_status)
+    update_map_repository_status()
+    update_task_repository_status()
     task_service = None
     task_error = None
     try:
@@ -92,6 +125,7 @@ def main() -> int:
         task_service = TaskExecutionService(task_config, task_repository, source.device)
     except TaskSystemConfigError as exc:
         task_error = str(exc)
+        system_status.update(SubsystemId.TASK_CONTROL, SubsystemState.ERROR, task_error)
     mapping_service = None
     mapping_error = None
     try:
@@ -99,6 +133,7 @@ def main() -> int:
         mapping_service = MapBuildingService(mapping_config, map_repository)
     except MapBuildingConfigError as exc:
         mapping_error = str(exc)
+        system_status.update(SubsystemId.MAP_BUILDING, SubsystemState.ERROR, mapping_error)
     window = MainWindow(
         source,
         telemetry_store=udp_store,
@@ -106,9 +141,12 @@ def main() -> int:
         mapping_service=mapping_service,
         task_repository=task_repository,
         task_execution_service=task_service,
+        system_status_store=system_status,
     )
     runtime = MqttMonitoringRuntime(mqtt_config, source) if mqtt_error is None else None
+    source.module_status_changed.connect(system_status.update_mqtt_subscriber)
     if ntp_runtime is not None:
+        ntp_runtime.status_changed.connect(system_status.update_ntp)
         ntp_runtime.status_changed.connect(
             lambda message, healthy: LOGGER.log(
                 logging.INFO if healthy else logging.ERROR, message
@@ -119,22 +157,28 @@ def main() -> int:
     if mqtt_error:
         source.set_module_status(mqtt_error, False)
     else:
+        runtime.broker.status_changed.connect(system_status.update_mqtt_broker)
         app.aboutToQuit.connect(runtime.stop)
         QTimer.singleShot(0, runtime.start)
     if udp_runtime is not None:
+        udp_store.module_status_changed.connect(system_status.update_udp)
         app.aboutToQuit.connect(udp_runtime.stop)
         QTimer.singleShot(0, udp_runtime.start)
     elif udp_store is not None and udp_error:
         udp_store.set_module_status(udp_error, False)
     if mapping_service is not None:
+        mapping_service.availability_changed.connect(system_status.update_mapping)
         app.aboutToQuit.connect(mapping_service.stop)
         QTimer.singleShot(0, mapping_service.start)
     elif mapping_error:
         window.map_page.detail_page.set_mapping_available(False, mapping_error)
     if task_service is not None:
+        task_service.availability_changed.connect(system_status.update_task_control)
         app.aboutToQuit.connect(task_service.stop)
         QTimer.singleShot(0, task_service.start)
     elif task_error:
         window.task_page.set_execution_available(False, task_error)
+    srt_probe = SrtCapabilityProbe(system_status)
+    QTimer.singleShot(0, srt_probe.start)
     window.show()
     return app.exec()

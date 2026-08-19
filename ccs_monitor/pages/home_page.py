@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 
 from ..data_source import DeviceDataSource
 from ..models import ConnectionStatus, DeviceSnapshot, SystemOverview
+from ..system_status import SubsystemState, SubsystemStatus, SystemRuntimeStatusStore
 from ..version import __version__
 
 
@@ -32,16 +33,66 @@ class MetricCard(QFrame):
         layout.addWidget(caption)
 
 
+class RuntimeStatusCard(QFrame):
+    def __init__(self, status: SubsystemStatus) -> None:
+        super().__init__()
+        self.setObjectName("runtimeStatusCard")
+        self.setMinimumSize(190, 92)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 11, 14, 11)
+        layout.setSpacing(5)
+        header = QGridLayout()
+        self.indicator = QLabel("●")
+        self.indicator.setObjectName("runtimeStatusIndicator")
+        self.title = QLabel(status.display_name)
+        self.title.setObjectName("metricLabel")
+        self.state_label = QLabel()
+        self.state_label.setObjectName("runtimeStatusState")
+        header.addWidget(self.indicator, 0, 0)
+        header.addWidget(self.title, 0, 1)
+        header.addWidget(self.state_label, 0, 2, Qt.AlignmentFlag.AlignRight)
+        header.setColumnStretch(1, 1)
+        layout.addLayout(header)
+        self.message = QLabel()
+        self.message.setObjectName("muted")
+        self.message.setWordWrap(True)
+        layout.addWidget(self.message)
+        self.update_status(status)
+
+    def update_status(self, status: SubsystemStatus) -> None:
+        labels = {
+            SubsystemState.STARTING: "启动中",
+            SubsystemState.HEALTHY: "正常",
+            SubsystemState.DEGRADED: "降级",
+            SubsystemState.DISABLED: "未启用",
+            SubsystemState.ERROR: "故障",
+        }
+        self.setProperty("state", status.state.value)
+        self.indicator.setProperty("state", status.state.value)
+        self.state_label.setProperty("state", status.state.value)
+        self.state_label.setText(labels[status.state])
+        self.message.setText(status.message)
+        self.setToolTip(
+            f"{status.display_name}\n{status.message}\n更新时间 "
+            f"{status.updated_at.astimezone().strftime('%H:%M:%S')}"
+        )
+        for widget in (self, self.indicator, self.state_label):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+
 class HomePage(QWidget):
     def __init__(
         self, source: DeviceDataSource, overview: SystemOverview, map_repository=None,
-        task_repository=None,
+        task_repository=None, status_store: SystemRuntimeStatusStore | None = None,
     ) -> None:
         super().__init__()
         self.source = source
         self.overview = overview
         self.map_repository = map_repository
         self.task_repository = task_repository
+        self.status_store = status_store
         self.task_value_labels: dict[str, QLabel] = {}
         self._build()
         self.update_devices(source.snapshots())
@@ -52,6 +103,8 @@ class HomePage(QWidget):
             task_repository.tasks_updated.connect(self.update_tasks)
             task_repository.execution_updated.connect(self.update_tasks)
             self.update_tasks()
+        if status_store is not None:
+            status_store.status_changed.connect(self.update_subsystem_status)
 
     def _build(self) -> None:
         root = QVBoxLayout(self)
@@ -93,6 +146,18 @@ class HomePage(QWidget):
         self.tasks_card = MetricCard("任务执行次数", str(task_count))
         self.metric_cards = [self.online_card, self.offline_card, self.maps_card, self.tasks_card]
         self.content_layout.addLayout(self.metrics_grid)
+
+        runtime_title = QLabel("指控平台子系统状态")
+        runtime_title.setObjectName("sectionTitle")
+        self.content_layout.addWidget(runtime_title)
+        self.runtime_grid = QGridLayout()
+        self.runtime_grid.setHorizontalSpacing(12)
+        self.runtime_grid.setVerticalSpacing(12)
+        self.runtime_cards: dict[object, RuntimeStatusCard] = {}
+        if self.status_store is not None:
+            for status in self.status_store.statuses():
+                self.runtime_cards[status.subsystem_id] = RuntimeStatusCard(status)
+        self.content_layout.addLayout(self.runtime_grid)
 
         task_title = QLabel("任务执行总结")
         task_title.setObjectName("sectionTitle")
@@ -160,10 +225,18 @@ class HomePage(QWidget):
         for key, value in values.items():
             self.task_value_labels[key].setText(value)
 
+    def update_subsystem_status(self, status: SubsystemStatus) -> None:
+        card = self.runtime_cards.get(status.subsystem_id)
+        if card is not None:
+            card.update_status(status)
+
     def _apply_responsive_layout(self, width: int) -> None:
         metric_columns = 4 if width >= 1120 else 2 if width >= 620 else 1
         for index, card in enumerate(self.metric_cards):
             self.metrics_grid.addWidget(card, index // metric_columns, index % metric_columns)
+        runtime_columns = 3 if width >= 1080 else 2 if width >= 620 else 1
+        for index, card in enumerate(self.runtime_cards.values()):
+            self.runtime_grid.addWidget(card, index // runtime_columns, index % runtime_columns)
         task_columns = 2 if width >= 700 else 1
         for index, field in enumerate(self.task_fields):
             self.task_grid.addWidget(field, index // task_columns, index % task_columns)

@@ -132,6 +132,18 @@ class MqttDeviceSource(SimulatedDeviceSource):
     def append_external_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None:
         self._append_log(device_id, level, message)
 
+    def _device_id_changed(self, old_device_id: str, new_device_id: str) -> None:
+        old_folded = old_device_id.casefold()
+        self._trackers = {
+            key: value for key, value in self._trackers.items()
+            if key.casefold() != old_folded
+        }
+        self._trackers[new_device_id] = HeartbeatTracker()
+        self._sequences = {
+            key: value for key, value in self._sequences.items()
+            if key[0].casefold() != old_folded
+        }
+
     @Slot(str, bytes)
     def process_message(self, topic: str, payload: bytes) -> None:
         try:
@@ -166,17 +178,20 @@ class MqttDeviceSource(SimulatedDeviceSource):
     def _handle_presence(self, device: DeviceSnapshot, event: MqttPresenceEvent) -> None:
         tracker = self._trackers[device.device_id]
         if event.status == "online":
-            self._append_log(device.device_id, DeviceLogLevel.INFO, "MQTT presence：设备已连接 Broker")
+            if device.connection_status != ConnectionStatus.ONLINE:
+                self._append_log(device.device_id, DeviceLogLevel.INFO, "MQTT presence：设备已连接 Broker")
         else:
             tracker.disconnect_started_monotonic = self._clock()
             tracker.warned = True
             tracker.errored = False
             self._replace_device(replace(device, connection_status=ConnectionStatus.WARNING, updated_at=self._wall_clock()))
-            self._append_log(device.device_id, DeviceLogLevel.WARNING, "MQTT presence：设备连接中断")
+            if device.connection_status != ConnectionStatus.WARNING:
+                self._append_log(device.device_id, DeviceLogLevel.WARNING, "MQTT presence：设备连接中断")
         self.devices_updated.emit(self.snapshots())
 
     def _handle_heartbeat(self, device: DeviceSnapshot, event: MqttHeartbeatEvent) -> None:
         tracker = self._trackers[device.device_id]
+        first_heartbeat = tracker.last_heartbeat_monotonic is None
         was_degraded = tracker.warned or tracker.errored or (
             tracker.last_heartbeat_monotonic is not None and device.connection_status != ConnectionStatus.ONLINE
         )
@@ -192,8 +207,9 @@ class MqttDeviceSource(SimulatedDeviceSource):
                 updated_at=self._wall_clock(),
             )
         )
-        self._append_log(device.device_id, DeviceLogLevel.INFO, f"心跳包接收 sequence={event.sequence}")
-        if was_degraded:
+        if first_heartbeat:
+            self._append_log(device.device_id, DeviceLogLevel.INFO, "MQTT 心跳已建立")
+        elif was_degraded:
             self._append_log(device.device_id, DeviceLogLevel.INFO, "设备心跳恢复，连接已恢复")
         self.devices_updated.emit(self.snapshots())
 
@@ -219,7 +235,6 @@ class MqttDeviceSource(SimulatedDeviceSource):
                 updated_at=self._wall_clock(),
             )
         )
-        self._append_log(device.device_id, DeviceLogLevel.INFO, f"数据帧接收 sequence={event.sequence}")
         self.devices_updated.emit(self.snapshots())
 
     @Slot()
@@ -252,9 +267,14 @@ class MqttDeviceSource(SimulatedDeviceSource):
 
     @Slot(str, bool)
     def set_module_status(self, message: str, healthy: bool) -> None:
+        changed = message != self.module_status_message or healthy != self.module_healthy
         self.module_status_message = message
         self.module_healthy = healthy
         self.module_status_changed.emit(message, healthy)
+        if changed:
+            level = DeviceLogLevel.INFO if healthy else DeviceLogLevel.WARNING
+            for device in self._devices:
+                self._append_log(device.device_id, level, message)
 
     def _replace_device(self, updated: DeviceSnapshot) -> None:
         self._devices = [updated if item.device_id == updated.device_id else item for item in self._devices]
@@ -265,6 +285,7 @@ class MqttDeviceSource(SimulatedDeviceSource):
             entries = deque(entries, maxlen=self.monitor_config.log_capacity)
             self._logs[device_id] = entries
         entries.append(DeviceLogEntry(self._wall_clock(), level, message))
+        self.logs_changed.emit(device_id)
 
     def _warn(self, message: str) -> None:
         LOGGER.warning(message)

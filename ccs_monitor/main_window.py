@@ -30,6 +30,7 @@ from .styles import (
     save_theme_mode,
     theme_palette,
 )
+from .system_status import SystemRuntimeStatusStore
 from .version import __version__
 
 
@@ -46,6 +47,7 @@ class MainWindow(QMainWindow):
         mapping_service=None,
         task_repository: TaskRepository | None = None,
         task_execution_service=None,
+        system_status_store: SystemRuntimeStatusStore | None = None,
     ) -> None:
         super().__init__()
         self.source = source
@@ -55,6 +57,7 @@ class MainWindow(QMainWindow):
         self.mapping_service = mapping_service
         self.task_repository = task_repository or TaskRepository()
         self.task_execution_service = task_execution_service
+        self.system_status_store = system_status_store
         self.dashboard_fullscreen = False
         self._dashboard_was_maximized = False
         self._theme_settings = QSettings("CCS", "CCS Device Monitor")
@@ -116,9 +119,13 @@ class MainWindow(QMainWindow):
 
         self.pages = QStackedWidget()
         self.home_page = HomePage(
-            self.source, self.overview, self.map_repository, self.task_repository
+            self.source, self.overview, self.map_repository, self.task_repository,
+            self.system_status_store,
         )
-        self.devices_page = DevicesPage(self.source, self.telemetry_store)
+        self.devices_page = DevicesPage(
+            self.source, self.telemetry_store, self.map_repository, self.task_repository,
+            self.mapping_service, self.task_execution_service,
+        )
         self.map_page = MapPage(
             self.source,
             self.overview,

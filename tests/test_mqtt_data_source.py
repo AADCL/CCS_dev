@@ -107,7 +107,9 @@ class MqttDeviceSourceTests(unittest.TestCase):
         self.message("heartbeat", 1, device_id="UAV-999")
         self.assertTrue(warnings)
         for sequence in range(501):
-            self.message("heartbeat", sequence)
+            self.source.append_external_log(
+                self.device_id, DeviceLogLevel.INFO, f"external event {sequence}"
+            )
         self.assertEqual(len(self.source.logs(self.device_id)), 500)
 
     def test_presence_offline_enters_warning_then_error(self):

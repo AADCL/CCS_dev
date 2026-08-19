@@ -129,7 +129,7 @@ class DeviceCard(QFrame):
         details.setVerticalSpacing(4)
         self._add_detail(details, 0, 0, "定位状态", STATUS_TEXT[self.device.localization_status])
         self._add_detail(details, 0, 1, "任务状态", STATUS_TEXT[self.device.task_status])
-        self._add_detail(details, 1, 0, "飞行模式", self.device.flight_mode)
+        self._add_detail(details, 1, 0, "运行模式", self.device.flight_mode)
         self._add_detail(details, 1, 1, "数据更新时间", self.device.updated_at.astimezone().strftime("%H:%M:%S"))
         root.addLayout(details)
 
@@ -199,6 +199,5 @@ class DeviceCard(QFrame):
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
-        if not self.edit_mode:
-            self.double_clicked.emit(self.device.device_id)
+        self.double_clicked.emit(self.device.device_id)
         super().mouseDoubleClickEvent(event)
