@@ -1,0 +1,16 @@
+{
+  "voxel_sizes_m": [0.4, 0.2, 0.1],
+  "max_correspondence_distances_m": [0.6, 0.3, 0.15],
+  "max_iterations": [60, 40, 30],
+  "relative_fitness": 1e-6,
+  "relative_rmse": 1e-6,
+  "normal_radius_multiplier": 2.5,
+  "normal_max_nn": 40,
+  "min_registration_points": 30,
+  "min_fitness": 0.35,
+  "max_inlier_rmse_m": 0.15,
+  "max_residual_translation_m": 0.5,
+  "max_residual_rotation_deg": 10.0,
+  "output_voxel_size_m": 0.1,
+  "max_output_points": 5000000
+}
