@@ -772,10 +772,13 @@ class MapBuildingService(QObject):
     def _resolve_algorithm(self, algorithm: MapFusionAlgorithm | str | None) -> MapFusionAlgorithm:
         if algorithm is None:
             return self.fusion_repository.default_algorithm()
-        selected = algorithm if isinstance(algorithm, MapFusionAlgorithm) \
-            else self.fusion_repository.algorithm(algorithm)
+        algorithm_id = algorithm.algorithm_id if isinstance(algorithm, MapFusionAlgorithm) else algorithm
+        # Algorithm objects contain a runtime path. Always reload from this
+        # installation's repository so an object created before relocation cannot
+        # leak another machine's absolute path into the fusion worker.
+        selected = self.fusion_repository.algorithm(algorithm_id)
         if selected is None:
-            raise ValueError(f"融合算法不存在：{algorithm}")
+            raise ValueError(f"融合算法不存在：{algorithm_id}")
         if not selected.enabled:
             raise ValueError("融合算法已禁用")
         return selected

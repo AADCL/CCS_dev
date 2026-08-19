@@ -53,6 +53,33 @@ class StaticPathResolverTests(unittest.TestCase):
             )
             self.assertEqual(resolver.resolve(old_asset), current_asset.resolve())
 
+    def test_foreign_windows_path_resolves_on_any_host(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = root / "current" / "data" / "assets"
+            current_asset = assets / "plugin.py"
+            current_asset.parent.mkdir(parents=True)
+            current_asset.write_text("VALUE = 'current'\n", encoding="utf-8")
+            resolver = StaticPathResolver(
+                root / "current" / "config" / "assets.json", assets,
+            )
+            resolved = resolver.resolve(
+                r"D:\Previous Machine\CCS_dev\data\assets\plugin.py"
+            )
+            self.assertEqual(resolved, current_asset.resolve())
+
+    def test_portable_asset_is_relative_to_managed_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = root / "install" / "data" / "assets"
+            asset = assets / "nested" / "plugin.py"
+            asset.parent.mkdir(parents=True)
+            asset.write_text("VALUE = 1\n", encoding="utf-8")
+            resolver = StaticPathResolver(
+                root / "install" / "config" / "assets.json", assets,
+            )
+            self.assertEqual(resolver.portable_asset(asset), "nested/plugin.py")
+
 
 if __name__ == "__main__":
     unittest.main()

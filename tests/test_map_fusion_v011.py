@@ -17,7 +17,7 @@ from ccs_monitor.map_fusion import MapFusionRepository, MapFusionRunner, transfo
 from ccs_monitor.map_repository import MapRepository
 from ccs_monitor.models import (
     DeviceSnapshot, MapBuildMode, MapBuildProvenance, MapCreatorDevice,
-    MapTransform,
+    MapFusionAlgorithm, MapTransform,
 )
 
 
@@ -64,6 +64,24 @@ class MapFusionV011Tests(unittest.TestCase):
                 item for item in stored["algorithms"] if item["algorithm_id"] == "example_concat"
             )
             self.assertFalse(Path(imported_payload["script_path"]).is_absolute())
+            self.assertEqual(imported_payload["script_path"], Path(imported.script_path).name)
+
+    def test_mapping_service_reloads_algorithm_object_from_current_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            algorithms = MapFusionRepository(root / "config" / "algorithms.json", root / "assets")
+            imported = algorithms.import_algorithm(
+                Path(__file__).resolve().parent.parent / "examples" / "map_fusion_plugin_example.py",
+                MapFusionRunner(timeout_seconds=10),
+            )
+            stale = replace(imported, script_path=r"D:\Old Install\example_concat.py")
+            service = MapBuildingService(
+                load_map_building_config(), MapRepository(root / "maps"),
+                fusion_repository=algorithms,
+            )
+            selected = service._resolve_algorithm(stale)
+            self.assertEqual(selected, imported)
+            self.assertNotEqual(selected.script_path, stale.script_path)
 
     def test_imported_algorithm_survives_installation_directory_move(self):
         with tempfile.TemporaryDirectory() as directory:

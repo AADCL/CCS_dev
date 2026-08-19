@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
 class StaticPathError(ValueError):
@@ -27,19 +27,27 @@ class StaticPathResolver:
         if not value:
             raise StaticPathError("静态资源路径不能为空")
         path = Path(value)
-        if not path.is_absolute() and ".." in path.parts:
+        normalized = value.replace("\\", "/")
+        portable_path = PurePosixPath(normalized)
+        if ".." in portable_path.parts:
             raise StaticPathError("静态资源相对路径不能越出软件目录")
+        filename = portable_path.name
+        if not filename:
+            raise StaticPathError("静态资源路径必须指向文件")
+        foreign_absolute = PureWindowsPath(value).is_absolute() or PurePosixPath(value).is_absolute()
         candidates: list[Path] = []
-        if path.is_absolute():
-            candidates.append(path)
-            # Recover configuration copied from another installation directory.
-            candidates.append(self.asset_root / path.name)
+        if path.is_absolute() or foreign_absolute:
+            # Never keep using another installation's file, even when that path is
+            # still mounted. The managed copy in this installation is authoritative.
+            candidates.append(self.asset_root / filename)
+            if path.is_absolute():
+                candidates.append(path)
         else:
             candidates.extend((
                 self.storage_root / path,
                 self.config_path.parent / path,
                 self.asset_root / path,
-                self.asset_root / path.name,
+                self.asset_root / filename,
             ))
         unique: list[Path] = []
         for candidate in candidates:
@@ -67,6 +75,17 @@ class StaticPathResolver:
             relative = path.relative_to(self.storage_root)
         except ValueError as exc:
             raise StaticPathError("静态资源无法转换为本地相对路径") from exc
+        return relative.as_posix()
+
+    def portable_asset(self, runtime_path: str | Path | None) -> str | None:
+        """Return a path relative to the managed asset directory itself."""
+        if runtime_path is None or not str(runtime_path).strip():
+            return None
+        path = Path(runtime_path).resolve()
+        try:
+            relative = path.relative_to(self.asset_root)
+        except ValueError as exc:
+            raise StaticPathError("静态资源必须位于软件数据目录中") from exc
         return relative.as_posix()
 
     def _is_managed(self, path: Path) -> bool:

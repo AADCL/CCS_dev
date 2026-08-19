@@ -140,7 +140,7 @@ class MapFusionRepository:
         self._algorithms = algorithms
         stored_paths = [str(item.get("script_path", "")) for item in payload["algorithms"]]
         portable_paths = [
-            item.script_path if item.builtin else str(self.path_resolver.portable(item.script_path))
+            item.script_path if item.builtin else str(self.path_resolver.portable_asset(item.script_path))
             for item in algorithms
         ]
         if stored_paths != portable_paths:
@@ -298,7 +298,7 @@ class MapFusionRepository:
         for item in self._algorithms:
             serialized = asdict(item)
             if not item.builtin:
-                serialized["script_path"] = self.path_resolver.portable(item.script_path)
+                serialized["script_path"] = self.path_resolver.portable_asset(item.script_path)
             algorithms.append(serialized)
         payload = {"schema_version": 1, "algorithms": algorithms}
         temporary = self.registry_path.with_suffix(".tmp")
