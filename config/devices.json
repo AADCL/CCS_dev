@@ -8,8 +8,6 @@
       "ip_address": "192.168.151.250",
       "availability": "available",
       "last_tested_at": "2026-07-31T13:24:57.466250+00:00",
-      "srt_port": 9000,
-      "srt_latency_ms": 120,
       "status_cards": [
         "livox_driver",
         "fastlio2",
@@ -17,7 +15,9 @@
         "octomap_mapping",
         "occupancy_grid_mapping",
         "mapping_mode"
-      ]
+      ],
+      "srt_port": 9000,
+      "srt_latency_ms": 120
     },
     {
       "device_id": "UGV_001",
@@ -32,17 +32,28 @@
     },
     {
       "device_id": "QRD_001",
-      "device_name": "宇树Go2_demo",
+      "device_name": "宇树G2_test",
       "device_type": "QRD",
       "ip_address": "192.168.50.100",
       "availability": "available",
-      "last_tested_at": "2026-08-18T04:27:17.098587+00:00",
-      "srt_port": 9000,
-      "srt_latency_ms": 120,
+      "last_tested_at": "2026-08-18T15:33:04.470063+00:00",
       "status_cards": [
         "livox_driver",
         "fastlio2"
-      ]
+      ],
+      "srt_port": 9000,
+      "srt_latency_ms": 120
+    },
+    {
+      "device_id": "AGV_001",
+      "device_name": "测试空地车01",
+      "device_type": "AGV",
+      "ip_address": "192.168.50.110",
+      "availability": "unavailable",
+      "last_tested_at": "2026-08-19T01:58:30.608369+00:00",
+      "status_cards": null,
+      "srt_port": 9000,
+      "srt_latency_ms": 120
     }
   ]
 }

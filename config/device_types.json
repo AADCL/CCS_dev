@@ -42,6 +42,19 @@
         "occupancy_grid_mapping",
         "mapping_mode"
       ]
+    },
+    {
+      "type_id": "AGV",
+      "display_name": "空地两用无人车",
+      "icon_path": "data/device_type_assets/agv_d74fcb9ae5.svg",
+      "map_marker_shape": "cube",
+      "default_status_cards": [
+        "livox_driver",
+        "fastlio2",
+        "pgm_mapping",
+        "occupancy_grid_mapping",
+        "mapping_mode"
+      ]
     }
   ]
 }
