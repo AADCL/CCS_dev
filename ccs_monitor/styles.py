@@ -505,6 +505,49 @@ QFrame#metric, QFrame#summaryPanel, QFrame#sidePanel {
     border: 1px solid #1e2b39;
     border-radius: 7px;
 }
+QFrame#runtimeStatusCard, QFrame#mqttStatusCard {
+    background: #111a24;
+    border: 1px solid #263747;
+    border-radius: 7px;
+}
+QFrame#runtimeStatusCard[state="healthy"], QFrame#mqttStatusCard[state="healthy"] {
+    border-color: #20564b;
+}
+QFrame#runtimeStatusCard[state="degraded"] {
+    border-color: #6a5125;
+}
+QFrame#runtimeStatusCard[state="error"], QFrame#mqttStatusCard[state="error"] {
+    border-color: #512a2f;
+}
+QLabel#runtimeStatusState, QLabel#mqttStatusTitle {
+    color: #dce6ef;
+    font-size: 12px;
+    font-weight: 650;
+}
+QLabel#runtimeStatusIndicator[state="healthy"], QLabel#runtimeStatusState[state="healthy"] {
+    color: #7be0bd;
+}
+QLabel#runtimeStatusIndicator[state="degraded"], QLabel#runtimeStatusState[state="degraded"] {
+    color: #f0bd70;
+}
+QLabel#runtimeStatusIndicator[state="error"], QLabel#runtimeStatusState[state="error"] {
+    color: #ef9a9a;
+}
+QLabel#runtimeStatusIndicator[state="disabled"], QLabel#runtimeStatusState[state="disabled"],
+QLabel#runtimeStatusIndicator[state="starting"], QLabel#runtimeStatusState[state="starting"] {
+    color: #8290a2;
+}
+QTreeWidget#logList {
+    background: #101923;
+    alternate-background-color: #15222d;
+    border: 1px solid #223140;
+    border-radius: 5px;
+    outline: none;
+}
+QTreeWidget#logList::item {
+    min-height: 24px;
+    padding: 1px 5px;
+}
 QFrame#dataStatusCard {
     background: #101923;
     border: 1px solid #223140;

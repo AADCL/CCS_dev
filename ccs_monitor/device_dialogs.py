@@ -199,6 +199,49 @@ class NewDeviceDialog(QDialog):
         )
 
 
+class EditDeviceDialog(NewDeviceDialog):
+    def __init__(
+        self, profile: DeviceProfile, id_exists: Callable[[str], bool],
+        parent: QWidget | None = None,
+        templates: list[DeviceTypeTemplate] | None = None,
+    ) -> None:
+        self.original_profile = profile
+        super().__init__(id_exists, parent, templates)
+        self.setWindowTitle("编辑设备")
+        title = self.findChild(QLabel, "dialogTitle")
+        if title is not None:
+            title.setText("编辑设备")
+        self.create_button.setText("保存")
+        self.name_input.setText(profile.device_name)
+        type_index = self.type_input.findData(profile.device_type)
+        if type_index >= 0:
+            self.type_input.setCurrentIndex(type_index)
+        self.id_input.setText(profile.device_id)
+        self.ip_input.setText(profile.ip_address)
+        self.srt_port_input.setValue(profile.srt_port)
+        self.srt_latency_input.setValue(profile.srt_latency_ms)
+        if profile.last_tested_at is not None:
+            self._tested_ip = profile.ip_address
+            self._ping_result = PingResult(
+                profile.ip_address,
+                profile.availability == DeviceAvailability.AVAILABLE,
+                "沿用最近一次连接测试",
+            )
+            self._last_tested_at = profile.last_tested_at
+            self.test_result.setText("沿用最近一次连接测试")
+            self.test_result.setProperty("state", "success")
+            self.create_button.setEnabled(self._validate_fields() is None)
+
+    def profile(self) -> DeviceProfile:
+        profile = super().profile()
+        return DeviceProfile(
+            profile.device_id, profile.device_name, profile.device_type,
+            profile.ip_address, profile.availability, profile.last_tested_at,
+            self.original_profile.status_card_ids, profile.srt_port,
+            profile.srt_latency_ms,
+        )
+
+
 class StatusCardEditorDialog(QDialog):
     def __init__(self, selected_ids: tuple[str, ...], parent: QWidget | None = None,
                  inherited: bool = False) -> None:

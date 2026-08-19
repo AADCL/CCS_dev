@@ -112,6 +112,7 @@ class UdpTelemetryStore(QObject):
             self._handle_telemetry(event)
 
     def _handle_heartbeat(self, event: UdpEnvelope, tracker: UdpHeartbeatTracker) -> None:
+        first_heartbeat = tracker.last_heartbeat_monotonic is None
         was_degraded = tracker.warned or tracker.errored
         tracker.last_heartbeat_monotonic = self._clock()
         tracker.warned = False
@@ -126,7 +127,9 @@ class UdpTelemetryStore(QObject):
         self._snapshots[event.device_id] = snapshot
         self.udp_link_updated.emit(event.device_id, snapshot.udp_link_status)
         self.telemetry_updated.emit(event.device_id, snapshot)
-        if was_degraded:
+        if first_heartbeat:
+            self._log(event.device_id, DeviceLogLevel.INFO, "UDP 心跳已建立，链路在线")
+        elif was_degraded:
             self._log(event.device_id, DeviceLogLevel.INFO, "UDP 心跳恢复，链路已重新连接")
 
     def _handle_telemetry(self, event: UdpEnvelope) -> None:
@@ -170,6 +173,50 @@ class UdpTelemetryStore(QObject):
         updated = replace(snapshot, **changes)
         self._snapshots[event.device_id] = updated
         self.telemetry_updated.emit(event.device_id, updated)
+        self._log_telemetry_transitions(event.device_id, snapshot, updated)
+
+    def _log_telemetry_transitions(
+        self, device_id: str, previous: DeviceTelemetrySnapshot,
+        current: DeviceTelemetrySnapshot,
+    ) -> None:
+        labels = {
+            TelemetryAvailability.AVAILABLE: "可用",
+            TelemetryAvailability.UNAVAILABLE: "不可用",
+            TelemetryAvailability.UNKNOWN: "未知",
+        }
+        pairs = (
+            ("全局位姿", previous.global_pose is not None, current.global_pose is not None),
+            ("视觉位姿", previous.vision_pose is not None, current.vision_pose is not None),
+            ("IMU", previous.imu is not None, current.imu is not None),
+        )
+        for name, old_value, new_value in pairs:
+            if old_value != new_value:
+                level = DeviceLogLevel.INFO if new_value else DeviceLogLevel.WARNING
+                self._log(device_id, level, f"{name}接收状态变为{'可用' if new_value else '不可用'}")
+        old_pointcloud = (
+            previous.pointcloud.availability
+            if previous.pointcloud is not None else TelemetryAvailability.UNKNOWN
+        )
+        new_pointcloud = (
+            current.pointcloud.availability
+            if current.pointcloud is not None else TelemetryAvailability.UNKNOWN
+        )
+        if old_pointcloud != new_pointcloud:
+            level = DeviceLogLevel.INFO if new_pointcloud == TelemetryAvailability.AVAILABLE else DeviceLogLevel.WARNING
+            self._log(device_id, level, f"点云接收状态变为{labels[new_pointcloud]}")
+        old_statuses = {item.name: item for item in previous.sensor_statuses}
+        for item in current.sensor_statuses:
+            old = old_statuses.get(item.name)
+            old_value = None if old is None else (old.availability, old.value)
+            new_value = (item.availability, item.value)
+            if old_value == new_value:
+                continue
+            level = DeviceLogLevel.INFO if item.availability == TelemetryAvailability.AVAILABLE else DeviceLogLevel.WARNING
+            suffix = f" · {item.value}" if item.value else ""
+            self._log(
+                device_id, level,
+                f"{item.display_name}状态变为{labels[item.availability]}{suffix}",
+            )
 
     @Slot()
     def check_heartbeats(self) -> None:
@@ -210,6 +257,18 @@ class UdpTelemetryStore(QObject):
 
     def _clear_device_sequences(self, device_id: str) -> None:
         self._sequences = {key: value for key, value in self._sequences.items() if key[0] != device_id}
+
+    def remove_device(self, device_id: str) -> None:
+        folded = device_id.casefold()
+        self._snapshots = {
+            key: value for key, value in self._snapshots.items() if key.casefold() != folded
+        }
+        self._trackers = {
+            key: value for key, value in self._trackers.items() if key.casefold() != folded
+        }
+        self._sequences = {
+            key: value for key, value in self._sequences.items() if key[0].casefold() != folded
+        }
 
     def _log(self, device_id: str, level: DeviceLogLevel, message: str) -> None:
         if self._log_sink is not None:

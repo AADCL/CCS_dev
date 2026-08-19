@@ -1,6 +1,6 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.14.0**
+当前地面站版本：**v0.15.0**
 
 端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
 
@@ -10,14 +10,15 @@
 
 本仓库包含基于 PySide6 的多异构智能体指挥与控制地面站，以及部署到 ROS 端侧设备的配套功能包。系统面向可信局域网中的无人机、无人车、移动机器人和无人船。
 
-- **系统总览**：统计在线/离线设备、地图和任务执行记录。
-- **设备管理**：支持搜索、筛选、新建、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
+- **系统总览**：统计在线/离线设备、地图和任务执行记录，并集中展示 NTP、MQTT、UDP、建图、任务、FFmpeg/SRT 及本地仓储状态。
+- **设备管理**：支持搜索、筛选、新建、编辑、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
 - **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
 - **视频监控**：通过系统 FFmpeg 按需连接端侧 UDP 9000 SRT Listener，显示 H.264/MPEG-TS 视频流。
 - **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原，可从点云生成 ROS PGM，并提供离线点云融合、端侧 PGM 下载与二维栅格融合、Python 算法插件及 UDP 14561/14562 单机/多机实时建图。
 - **任务系统**：支持 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态，支持全屏及面板折叠。
 - **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、SRT 推流、实时建图和任务协调包。
+- **离线授时**：指控平台内置 NTPv4 Server；端侧一键启动脚本先从地面站校时，成功后再启动 ROS 功能包。
 
 各通信通道互相独立。单个模块故障不会阻止其他页面或本地编辑功能运行。完整端侧协议见 [EDGE_DEVICE_INTERFACES.md](docs/EDGE_DEVICE_INTERFACES.md)。
 
@@ -68,6 +69,7 @@ CCS_dev/
 | 端口 | 方向 | 用途 |
 | --- | --- | --- |
 | TCP 1883 | 端侧 → 地面站 | MQTT 状态与心跳 |
+| UDP 123 | 端侧 → 地面站 | 离线 NTP 时间同步 |
 | UDP 9000 | 地面站 → 端侧 | SRT H.264/MPEG-TS 视频 |
 | UDP 14560 | 端侧 → 地面站 | 高频遥测与心跳 |
 | UDP 14561 | 地面站 → 端侧 | 实时建图控制 |
@@ -115,12 +117,20 @@ ffmpeg -hide_banner -protocols
 - `config/map_fusion_algorithms.json`：融合算法、默认参数、启用状态和脚本指纹。
 - `config/task_system.json`：任务系统 14563/14564 参数。
 - `config/srt_video.json`：系统 FFmpeg 命令、显示尺寸、探测/连接超时和重试参数。带目录的 FFmpeg 路径必须相对软件根目录。
+- `config/ntp.json`：内置 NTP Server 的监听地址、端口、层级和参考时钟标识。
 
 `ffmpeg -protocols` 的 Input 列表必须包含 `srt`；不同发行版提供的 FFmpeg 构建选项可能不同。
 
-放行地面站 TCP 1883、UDP 14560、14562、14564，然后启动：
+放行地面站 TCP 1883、UDP 123、14560、14562、14564，然后启动。Windows 自带
+`W32Time` 若正在占用 UDP 123，需要在管理员 PowerShell 中停止并禁用该服务，再为
+Private/LocalSubnet 放行 UDP 123，由 CCS 内置 NTP Server 独占端口：
 
 ```powershell
+Stop-Service W32Time -Force
+Set-Service W32Time -StartupType Disabled
+New-NetFirewallRule -DisplayName "CCS NTP Server (Private LAN)" `
+  -Direction Inbound -Action Allow -Protocol UDP -LocalPort 123 `
+  -Profile Private -RemoteAddress LocalSubnet
 python run.py
 ```
 
@@ -133,6 +143,7 @@ python run.py
 ```bash
 sudo apt update
 sudo apt install python3-paho-mqtt python3-yaml python3-msgpack python3-numpy \
+  ntpdate \
   python3-catkin-pkg python3-rospkg ros-noetic-mavros ros-noetic-mavros-extras \
   ros-noetic-cv-bridge ros-noetic-image-transport ros-noetic-sensor-msgs \
   ros-noetic-nav-msgs ros-noetic-geometry-msgs libgstreamer1.0-dev gstreamer1.0-tools \
@@ -162,6 +173,22 @@ source devel/setup.bash
 source /opt/ros/noetic/setup.bash
 source ~/catkin_ws/devel/setup.bash
 ```
+
+部署 profile 中的 `timesyncd-ccs.conf` 和 `start_ccs_edge_dev.sh`。`systemd-timesyncd`
+持续从地面站校时，一键脚本确认授时服务器和同步状态后才启动 ROS；校时失败时不会启动任何新的功能包：
+
+```bash
+sudo install -D -m 0644 edge_side_pkg/deploy/go2_edu/config/timesyncd-ccs.conf \
+  /etc/systemd/timesyncd.conf.d/ccs.conf
+sudo systemctl restart systemd-timesyncd
+sudo install -m 0750 edge_side_pkg/deploy/go2_edu/start_ccs_edge_dev.sh \
+  /home/nvidia/ccs_edge_ws/start_ccs_edge_dev.sh
+/home/nvidia/ccs_edge_ws/start_ccs_edge_dev.sh
+```
+
+脚本在控制终端逐项输出时间同步、ROS Master 和功能包启动结果。全部节点就绪后脚本保持
+前台运行；按 `Ctrl+C` 会停止四个功能节点、对应 roslaunch 进程，以及由脚本自身创建的
+ROS Master。各组件完整日志保存在 `~/.ros/ccs_edge_dev/log/`。
 
 按需启动：
 
@@ -194,7 +221,8 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 
 ### 首页
 
-- 启动后默认进入首页，查看在线/离线设备、地图数、任务执行次数和最近任务。
+- 启动后默认进入首页，查看在线/离线设备、地图数、任务执行次数、最近任务和各子系统运行状态。
+- 子系统卡片区分启动中、正常、降级、未启用和故障；FFmpeg/SRT 表示地面站解码能力，不表示端侧当前正在推流。
 - 在线状态来自 MQTT；地图和任务摘要来自本地持久化仓储。
 
 ### 设备页面
@@ -202,14 +230,15 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 - 使用搜索与类型/状态条件筛选设备。
 - 点击“类型模板”新增或编辑设备类型，上传 PNG/JPEG/SVG 图标，选择箭头、立方体或球体地图形状，并绑定默认功能卡片。被设备引用的模板不能删除。
 - 点击“新建”从类型模板中选择类型，填写名称、ID、IP、SRT 端口和延迟，测试连接后保存；ID 会检查重复并统一为大写。
-- 点击“编辑”批量选择并删除设备；双击设备卡进入详情。
-- 详情页显示 MQTT、UDP、电量、任务、飞行模式、位姿、IMU、点云和设备状态卡。
+- 点击“编辑”后可批量选择删除设备；编辑状态下双击设备卡可修改名称、类型、ID、IP、SRT 端口和延迟。修改 IP 必须重新测试，修改 ID 后必须同步端侧配置。
+- 设备 ID 修改会级联当前地图创建引用和未归档任务，任务修订与下发状态失效；历史执行快照保持不变。
+- 详情页右上角显示 MQTT 卡片，正文显示 UDP、电量、任务、运行模式、位姿、IMU、点云和设备状态卡。
 - 详情页的状态卡可跟随类型模板动态更新，也可切换为设备自定义覆盖；空自定义表示明确不显示卡片。
-- 日志支持 info/warning/error 筛选；视频开关按需启动系统 FFmpeg SRT Caller，离开页面立即终止进程并取消重试。
+- 紧凑日志表支持 info/warning/error 筛选和清除当前设备日志，并记录 MQTT、UDP、传感器及 SRT 状态变化；视频开关按需启动系统 FFmpeg SRT Caller，离开页面立即终止进程并取消重试。
 
 ### 地图页面
 
-- 点击“新建地图”后选择单机建图、多机建图或空地图。单机选择一台设备后立即协商；多机至少选择两台设备，并指定主设备及“主坐标系 <- 从坐标系”的 XYZ/RPY 外参。
+- 点击“新建地图”后选择单机建图、多机建图或空地图。单机只需选择一台设备并自动使用默认内置算法；多机至少选择两台设备，并指定主设备、融合算法及“主坐标系 <- 从坐标系”的 XYZ/RPY 外参。
 - 点击“地图融合”选择至少两张有效 PCD 地图、主地图、各从地图外参和算法，成功后创建独立融合地图；默认只融合 PCD。
 - “地图融合”弹窗可勾选“同步融合 PGM 图”。勾选后所有源地图都必须携带有效 PGM，系统使用同一 X/Y/Yaw 外参同步融合栅格，并将 PCD、PGM、YAML 一并绑定到新地图。
 - 点击“PGM 融合”选择一张有效 PCD 目标地图，添加端侧来源并填写各自 `source_map_id` 和“目标 PCD frame <- 来源 PGM frame”的 X/Y/Yaw 外参。至少需要两个图层，可将目标地图已有 PGM 作为单位变换来源。
@@ -317,6 +346,12 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.15.0 · 2026-08-19**
+<small>新增首页子系统状态、设备资料编辑与引用迁移，修复高频遥测、日志、单机建图和大屏折叠行为。</small>
+
+**v0.14.1 · 2026-08-18**
+<small>新增内置 NTPv4 Server 和 Go2 EDU 启动前强制校时。</small>
 
 **v0.14.0 · 2026-08-18**
 <small>使用端侧 SRT Listener 与地面站系统 FFmpeg Caller 完全替换 RTSP 视频链路，并增加每设备端口和延迟配置。</small>

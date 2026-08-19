@@ -33,6 +33,7 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "devic
 
 class DeviceDataSource(Protocol):
     devices_updated: Signal
+    logs_changed: Signal
 
     @property
     def config_error(self) -> str | None: ...
@@ -43,10 +44,13 @@ class DeviceDataSource(Protocol):
     def refresh(self) -> None: ...
     def create_device(self, profile: DeviceProfile) -> DeviceSnapshot: ...
     def delete_devices(self, device_ids: set[str]) -> None: ...
+    def update_device(self, original_device_id: str, profile: DeviceProfile) -> DeviceSnapshot: ...
     def device(self, device_id: str) -> DeviceSnapshot | None: ...
+    def profile(self, device_id: str) -> DeviceProfile | None: ...
     def logs(self, device_id: str) -> list[DeviceLogEntry]: ...
     def has_device_id(self, device_id: str) -> bool: ...
     def append_external_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None: ...
+    def clear_device_logs(self, device_id: str) -> None: ...
     def update_device_status_cards(self, device_id: str, status_card_ids: tuple[str, ...] | None) -> None: ...
     def device_type_templates(self) -> list[DeviceTypeTemplate]: ...
     def device_type_template(self, type_id: str) -> DeviceTypeTemplate | None: ...
@@ -59,6 +63,7 @@ class SimulatedDeviceSource(QObject):
     """Config-backed static profiles merged with simulated runtime telemetry."""
 
     devices_updated = Signal(object)
+    logs_changed = Signal(str)
 
     def __init__(
         self,
@@ -113,9 +118,52 @@ class SimulatedDeviceSource(QObject):
         }
         self.devices_updated.emit(self.snapshots())
 
+    def update_device(self, original_device_id: str, profile: DeviceProfile) -> DeviceSnapshot:
+        original_folded = original_device_id.casefold()
+        previous = self.device(original_device_id)
+        self._profiles = self.repository.update(original_device_id, profile)
+        updated_profile = next(
+            item for item in self._profiles
+            if item.device_id.casefold() == profile.device_id.strip().casefold()
+        )
+        if previous is not None and original_folded == updated_profile.device_id.casefold():
+            updated = self._apply_profile_presentation(
+                replace(
+                    previous,
+                    device_name=updated_profile.device_name,
+                    device_type=updated_profile.device_type,
+                    ip_address=updated_profile.ip_address,
+                    availability=updated_profile.availability,
+                    last_tested_at=updated_profile.last_tested_at,
+                ),
+                updated_profile,
+            )
+            self._devices = [
+                updated if item.device_id.casefold() == original_folded else item
+                for item in self._devices
+            ]
+        else:
+            self._devices = [
+                item for item in self._devices if item.device_id.casefold() != original_folded
+            ]
+            updated = self._snapshot_from_profile(updated_profile)
+            self._devices.append(updated)
+            entries = self._logs.pop(original_device_id, [])
+            self._logs[updated.device_id] = entries
+            self._device_id_changed(original_device_id, updated.device_id)
+        self.devices_updated.emit(self.snapshots())
+        return updated
+
     def device(self, device_id: str) -> DeviceSnapshot | None:
         folded_id = device_id.casefold()
         return next((device for device in self._devices if device.device_id.casefold() == folded_id), None)
+
+    def profile(self, device_id: str) -> DeviceProfile | None:
+        folded_id = device_id.casefold()
+        return next(
+            (profile for profile in self._profiles if profile.device_id.casefold() == folded_id),
+            None,
+        )
 
     def logs(self, device_id: str) -> list[DeviceLogEntry]:
         return list(self._logs.get(device_id, []))
@@ -126,6 +174,16 @@ class SimulatedDeviceSource(QObject):
     def append_external_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None:
         entries = self._logs.setdefault(device_id, [])
         entries.append(DeviceLogEntry(utc_now(), level, message))
+        self.logs_changed.emit(device_id)
+
+    def clear_device_logs(self, device_id: str) -> None:
+        entries = self._logs.get(device_id)
+        if entries is not None:
+            entries.clear()
+        self.logs_changed.emit(device_id)
+
+    def _device_id_changed(self, _old_device_id: str, _new_device_id: str) -> None:
+        pass
 
     def update_device_status_cards(self, device_id: str, status_card_ids: tuple[str, ...] | None) -> None:
         self._profiles = self.repository.update_status_cards(device_id, status_card_ids)

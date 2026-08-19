@@ -87,6 +87,26 @@ class DeviceConfigRepository:
         self._profiles = updated
         return list(updated)
 
+    def update(self, original_device_id: str, profile: DeviceProfile) -> list[DeviceProfile]:
+        self._ensure_writable()
+        original = original_device_id.strip().casefold()
+        if not any(item.device_id.casefold() == original for item in self._profiles):
+            raise DeviceConfigError(f"设备 ID {original_device_id} 不存在")
+        normalized = self._validate_profile(profile)
+        if any(
+            item.device_id.casefold() == normalized.device_id.casefold()
+            and item.device_id.casefold() != original
+            for item in self._profiles
+        ):
+            raise DuplicateDeviceIdError(f"设备 ID {normalized.device_id} 已存在")
+        updated = [
+            normalized if item.device_id.casefold() == original else item
+            for item in self._profiles
+        ]
+        self._write(updated)
+        self._profiles = updated
+        return list(updated)
+
     def update_status_cards(self, device_id: str, status_card_ids: tuple[str, ...] | None) -> list[DeviceProfile]:
         self._ensure_writable()
         folded_id = device_id.strip().casefold()

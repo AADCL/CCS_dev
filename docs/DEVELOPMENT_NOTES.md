@@ -1,5 +1,16 @@
 # 开发笔记
 
+## v0.15.0
+
+### 运行状态与设备生命周期
+
+- `SystemRuntimeStatusStore` 将 NTP、MQTT、UDP、建图、任务、FFmpeg/SRT 和本地仓储状态汇总为统一枚举；首页只订阅状态仓储，不直接持有网络服务。
+- FFmpeg/SRT 能力在应用启动后通过独立 `QProcess` 执行一次协议探测，缺少程序或 SRT 输入协议仅标记对应卡片故障。
+- 设备详情按设备 ID 大小写不敏感缓存最新 UDP 快照，50 ms 定时器只绘制脏快照。日志通过 `logs_changed` 汇总 MQTT、UDP 和 SRT 状态变化。
+- `DeviceReferenceMigrationCoordinator` 在修改设备 ID 时暂存地图和任务定义，更新当前 `creator_devices` 与未归档子任务；失败时恢复原定义。执行历史和旧审计不可变。
+- UI 使用“运行模式”描述 MQTT `flight_mode`，协议中的 `flight_mode`、`armed` 与 `system_status` 均未删除。
+- 单机建图固定使用默认算法；大屏右栏的 `user_collapsed` 优先于 MQTT 快照刷新和响应式展开。
+
 ## v0.14.0
 
 ### SRT 视频链路

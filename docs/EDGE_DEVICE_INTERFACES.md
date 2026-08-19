@@ -1,8 +1,8 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.14.0`，更新日期：2026-08-18。
+文档版本：`v0.15.0`，更新日期：2026-08-19。
 
-地面站 v0.14.0 使用系统 FFmpeg SRT Caller 接收视频；端侧新增 `epgeneral_video_srt` v0.1.0 SRT Listener。该部署变更不兼容旧 RTSP 包。MQTT 与 UDP 14560–14564 协议不变。
+地面站 v0.15.0 使用系统 FFmpeg SRT Caller 接收视频；端侧使用 `epgeneral_video_srt` v0.1.0 SRT Listener。该部署变更不兼容旧 RTSP 包。MQTT 与 UDP 14560–14564 协议不变。
 端侧 `epgeneral_map_stream` v0.1.0 尚未实现 PGM 文件服务；旧端侧可继续执行实时建图，但 PGM 下载会超时并显示“不支持”。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
@@ -20,6 +20,8 @@
 | UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 
 端侧身份由 `edge_side_pkg/EPGeneral_device_config/config/device.yaml` 提供，`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。MQTT、遥测、建图和任务协议中的 `device_id` 均使用该 ID。
+
+地面站允许编辑设备 ID，并级联本地当前地图和未归档任务引用，但不会修改端侧配置或历史执行记录。修改后必须同步更新端侧 `device.yaml` 并重启相关节点，否则旧 ID 的 MQTT/UDP 数据会被视为未登记设备。设备页面显示的“运行模式”仍来自 MQTT `health.flight_mode`；`armed` 和 `system_status` 字段继续接收并保持 wire contract，仅不再显示在设备完整信息区。
 
 ## MQTT presence、heartbeat、status
 
@@ -332,7 +334,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 
 ### 兼容性与网络
 
-- 地面站版本：v0.14.0；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
+- 地面站版本：v0.15.0；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
 - 可信内网明文 MessagePack，schema 1；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。

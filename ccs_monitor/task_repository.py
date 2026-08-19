@@ -17,7 +17,7 @@ from typing import Any, Iterable
 
 from PySide6.QtCore import QObject, Signal
 
-from .models import DeviceSnapshot, MapDefinition, utc_now
+from .models import DeviceProfile, DeviceSnapshot, MapDefinition, utc_now
 from .task_models import (
     DeviceSubtask,
     TaskDefinition,
@@ -100,6 +100,62 @@ class TaskRepository(QObject):
 
     def task_by_id(self, task_id: str) -> TaskDefinition | None:
         return next((item for item in self._tasks if item.task_id == task_id), None)
+
+    def update_device_reference(
+        self, original_device_id: str, profile: DeviceProfile
+    ) -> tuple[TaskDefinition, ...]:
+        folded = original_device_id.casefold()
+        originals: list[TaskDefinition] = []
+        updated_items: list[TaskDefinition] = []
+        for task in self._tasks:
+            if task.error_message or not any(
+                item.device_id.casefold() == folded for item in task.subtasks
+            ):
+                continue
+            originals.append(task)
+            subtasks = tuple(
+                replace(
+                    item,
+                    device_id=profile.device_id,
+                    device_name=profile.device_name,
+                    device_type=profile.device_type,
+                    ip_address=profile.ip_address,
+                    revision=item.revision + 1,
+                    delivered_revision=None,
+                )
+                if item.device_id.casefold() == folded else item
+                for item in task.subtasks
+            )
+            updated_items.append(replace(task, subtasks=subtasks, updated_at=utc_now()))
+        try:
+            for task in updated_items:
+                self._write_task(task)
+        except Exception:
+            for task in originals:
+                self._write_task(task)
+            raise
+        if updated_items:
+            self._refresh()
+        return tuple(originals)
+
+    def restore_definitions(self, definitions: Iterable[TaskDefinition]) -> None:
+        restored = tuple(definitions)
+        for task in restored:
+            self._write_task(task)
+        if restored:
+            self._refresh()
+
+    def audit_device_reference_update(
+        self, task_ids: Iterable[str], old_device_id: str, new_device_id: str
+    ) -> None:
+        for task_id in task_ids:
+            self.append_audit(
+                task_id,
+                "device_identity_migrated",
+                f"设备档案由 {old_device_id} 更新为 {new_device_id}，子任务修订已失效",
+                device_id=new_device_id,
+                payload={"old_device_id": old_device_id, "new_device_id": new_device_id},
+            )
 
     def create(
         self,

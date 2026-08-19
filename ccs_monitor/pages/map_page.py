@@ -370,14 +370,22 @@ class MappingSetupDialog(QDialog):
         self.name_input.setEnabled(name_editable)
         self.name_input.setPlaceholderText("请输入地图名称")
         form.addRow("地图名称", self.name_input)
-        self.algorithm_combo = QComboBox()
+        default_algorithm = next((item for item in algorithms if item.is_default), None)
+        if default_algorithm is None and algorithms:
+            default_algorithm = algorithms[0]
+        self._default_algorithm_id = default_algorithm.algorithm_id if default_algorithm else ""
+        self.algorithm_combo: QComboBox | None = None
+        if mode == "multi":
+            self.algorithm_combo = QComboBox()
         for algorithm in algorithms:
-            self.algorithm_combo.addItem(
-                f"{algorithm.display_name} · v{algorithm.version}", algorithm.algorithm_id
-            )
-            if algorithm.is_default:
-                self.algorithm_combo.setCurrentIndex(self.algorithm_combo.count() - 1)
-        form.addRow("融合算法", self.algorithm_combo)
+            if self.algorithm_combo is not None:
+                self.algorithm_combo.addItem(
+                    f"{algorithm.display_name} · v{algorithm.version}", algorithm.algorithm_id
+                )
+                if algorithm.is_default:
+                    self.algorithm_combo.setCurrentIndex(self.algorithm_combo.count() - 1)
+        if self.algorithm_combo is not None:
+            form.addRow("融合算法", self.algorithm_combo)
         root.addLayout(form)
         self.single_device_combo = QComboBox()
         self.device_list = QListWidget()
@@ -455,7 +463,10 @@ class MappingSetupDialog(QDialog):
         else:
             valid_devices = len(self.selected_device_ids()) >= 2 and self.primary_combo.currentData() is not None
             message = "请填写名称、选择至少两台设备并指定主设备"
-        valid = valid_name and valid_devices and self.algorithm_combo.currentData() is not None
+        valid_algorithm = bool(self._default_algorithm_id) if self.mode == "single" else (
+            self.algorithm_combo is not None and self.algorithm_combo.currentData() is not None
+        )
+        valid = valid_name and valid_devices and valid_algorithm
         self.start_button.setEnabled(valid)
         self.validation.setText("" if valid else message)
 
@@ -481,7 +492,9 @@ class MappingSetupDialog(QDialog):
         return self.transform_table.transforms()
 
     def algorithm_id(self) -> str:
-        return str(self.algorithm_combo.currentData())
+        if self.mode == "single":
+            return self._default_algorithm_id
+        return str(self.algorithm_combo.currentData()) if self.algorithm_combo is not None else ""
 
 
 class MapFusionDialog(QDialog):
@@ -2421,6 +2434,17 @@ class MapPage(QWidget):
         jobs = self.repository.interrupted_mapping_jobs(map_id)
         if jobs:
             job = jobs[0]
+            device_count = len(job.get("devices", job.get("device_sessions", ())))
+            if device_count <= 1:
+                try:
+                    self.mapping_service.save_interrupted_job(
+                        map_id, str(job["job_id"]),
+                        self.fusion_repository.default_algorithm().algorithm_id,
+                    )
+                    self.show_detail(map_id)
+                except (MapRepositoryError, MapFusionError, RuntimeError, ValueError) as exc:
+                    QMessageBox.critical(self, "临时单机建图处理失败", str(exc))
+                return
             box = QMessageBox(self)
             box.setWindowTitle("发现临时联合建图结果")
             box.setText("检测到多设备建图临时点云。可选择算法融合保存，或丢弃整个临时任务。")

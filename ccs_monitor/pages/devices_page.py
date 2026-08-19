@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
 
 from ..data_source import DeviceDataSource
 from ..device_config import DeviceConfigError
-from ..device_dialogs import DeviceTypeTemplateDialog, NewDeviceDialog
+from ..device_dialogs import DeviceTypeTemplateDialog, EditDeviceDialog, NewDeviceDialog
+from ..device_migration import DeviceMigrationError, DeviceReferenceMigrationCoordinator
 from ..models import ConnectionStatus, DeviceSnapshot
 from ..widgets import DeviceCard
 from ..styles import ThemeMode, ThemePalette, theme_palette
@@ -31,10 +32,21 @@ if False:  # pragma: no cover - typing-only import without a runtime cycle
 
 
 class DevicesPage(QWidget):
-    def __init__(self, source: DeviceDataSource, telemetry_store=None) -> None:
+    def __init__(
+        self, source: DeviceDataSource, telemetry_store=None, map_repository=None,
+        task_repository=None, mapping_service=None, task_execution_service=None,
+    ) -> None:
         super().__init__()
         self.source = source
         self.telemetry_store = telemetry_store
+        self.telemetry_cache: dict[str, object] = {}
+        self.migration_coordinator = (
+            DeviceReferenceMigrationCoordinator(
+                source, map_repository, task_repository, mapping_service,
+                task_execution_service, telemetry_store,
+            )
+            if map_repository is not None and task_repository is not None else None
+        )
         self.devices: list[DeviceSnapshot] = source.snapshots()
         self.selected_id: str | None = None
         self.detail_device_id: str | None = None
@@ -47,9 +59,12 @@ class DevicesPage(QWidget):
         self._populate_filters()
         self._render_cards()
         source.devices_updated.connect(self._on_devices_updated)
+        if hasattr(source, "logs_changed"):
+            source.logs_changed.connect(self._on_logs_changed)
         if telemetry_store is not None:
             telemetry_store.telemetry_updated.connect(self._on_telemetry_updated)
-            telemetry_store.log_recorded.connect(self._on_udp_log_recorded)
+            if not hasattr(source, "logs_changed"):
+                telemetry_store.log_recorded.connect(self._on_udp_log_recorded)
 
         if hasattr(source, "module_status_changed"):
             source.module_status_changed.connect(self._set_module_status)
@@ -73,6 +88,8 @@ class DevicesPage(QWidget):
         self.detail_page = DeviceDetailPage()
         self.detail_page.back_requested.connect(self.show_list)
         self.detail_page.status_cards_changed.connect(self._update_status_cards)
+        self.detail_page.clear_logs_requested.connect(self.source.clear_device_logs)
+        self.detail_page.log_event_requested.connect(self.source.append_external_log)
         self.detail_page.set_status_card_edit_enabled(not self.source.read_only)
         self.detail_page.set_theme(self.theme_palette)
         self.page_stack.addWidget(self.detail_page)
@@ -88,9 +105,20 @@ class DevicesPage(QWidget):
         title_box.addWidget(subtitle)
         header.addLayout(title_box)
         header.addStretch()
-        self.connection_label = QLabel("●  数据源已加载")
-        self.connection_label.setObjectName("connectedLabel")
-        header.addWidget(self.connection_label, Qt.AlignmentFlag.AlignTop)
+        self.mqtt_module_card = QFrame()
+        self.mqtt_module_card.setObjectName("mqttStatusCard")
+        mqtt_layout = QVBoxLayout(self.mqtt_module_card)
+        mqtt_layout.setContentsMargins(12, 8, 12, 8)
+        mqtt_layout.setSpacing(2)
+        self.connection_label = QLabel("MQTT · 正在启动")
+        self.connection_label.setObjectName("mqttStatusTitle")
+        self.connection_message = QLabel("数据源已加载")
+        self.connection_message.setObjectName("muted")
+        self.connection_message.setMaximumWidth(300)
+        self.connection_message.setWordWrap(True)
+        mqtt_layout.addWidget(self.connection_label)
+        mqtt_layout.addWidget(self.connection_message)
+        header.addWidget(self.mqtt_module_card, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
 
         self.config_banner = QLabel(self.source.config_error or "")
@@ -245,7 +273,7 @@ class DevicesPage(QWidget):
             card = DeviceCard(device)
             card.set_theme(self.theme_palette)
             card.clicked.connect(self._select_device)
-            card.double_clicked.connect(self.show_detail)
+            card.double_clicked.connect(self._handle_card_double_click)
             card.selection_changed.connect(self._set_delete_selection)
             card.set_selected(device.device_id == self.selected_id)
             card.set_edit_mode(self.edit_mode, device.device_id in self.delete_selection)
@@ -295,6 +323,42 @@ class DevicesPage(QWidget):
         self._populate_filters()
         self._render_cards()
 
+    def _handle_card_double_click(self, device_id: str) -> None:
+        if self.edit_mode:
+            self._open_edit_device_dialog(device_id)
+        else:
+            self.show_detail(device_id)
+
+    def _open_edit_device_dialog(self, device_id: str) -> None:
+        original = self.source.profile(device_id)
+        if original is None:
+            return
+        dialog = EditDeviceDialog(
+            original,
+            lambda candidate: (
+                candidate.casefold() != device_id.casefold()
+                and self.source.has_device_id(candidate)
+            ),
+            self,
+            templates=self.source.device_type_templates(),
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            if self.migration_coordinator is not None:
+                updated = self.migration_coordinator.update_device(device_id, dialog.profile())
+            else:
+                updated = self.source.update_device(device_id, dialog.profile())
+            self.selected_id = updated.device_id
+            if updated.device_id.casefold() != device_id.casefold():
+                QMessageBox.information(
+                    self, "设备 ID 已更新",
+                    "本地地图和任务引用已迁移。请同步修改端侧设备 ID 后再恢复通信。",
+                )
+            self._toggle_edit_mode()
+        except (DeviceConfigError, DeviceMigrationError, ValueError, RuntimeError) as exc:
+            QMessageBox.critical(self, "设备更新失败", str(exc))
+
     def _set_delete_selection(self, device_id: str, checked: bool) -> None:
         if checked:
             self.delete_selection.add(device_id)
@@ -331,16 +395,24 @@ class DevicesPage(QWidget):
             return
         self.detail_device_id = device.device_id
         self.detail_page.set_device(device, self.source.logs(device.device_id))
-        if self.telemetry_store is not None:
-            self.detail_page.set_telemetry(self.telemetry_store.telemetry(device.device_id))
+        telemetry = self.telemetry_cache.get(device.device_id.casefold())
+        if telemetry is None and self.telemetry_store is not None:
+            telemetry = self.telemetry_store.telemetry(device.device_id)
+        if telemetry is not None:
+            self.detail_page.set_telemetry(telemetry)
         self.page_stack.setCurrentWidget(self.detail_page)
 
     def _on_telemetry_updated(self, device_id: str, snapshot: object) -> None:
-        if device_id == self.detail_device_id:
+        self.telemetry_cache[device_id.casefold()] = snapshot
+        if self.detail_device_id and device_id.casefold() == self.detail_device_id.casefold():
             self.detail_page.set_telemetry(snapshot)
 
     def _on_udp_log_recorded(self, device_id: str) -> None:
-        if device_id == self.detail_device_id:
+        if self.detail_device_id and device_id.casefold() == self.detail_device_id.casefold():
+            self.detail_page.set_logs(self.source.logs(device_id))
+
+    def _on_logs_changed(self, device_id: str) -> None:
+        if self.detail_device_id and device_id.casefold() == self.detail_device_id.casefold():
             self.detail_page.set_logs(self.source.logs(device_id))
 
     def _update_status_cards(self, device_id: str, status_card_ids: object) -> None:
@@ -403,7 +475,8 @@ class DevicesPage(QWidget):
         self._render_cards()
 
     def _set_module_status(self, message: str, healthy: bool) -> None:
-        self.connection_label.setText(f"●  {message}")
-        self.connection_label.setObjectName("connectedLabel" if healthy else "moduleErrorLabel")
-        self.connection_label.style().unpolish(self.connection_label)
-        self.connection_label.style().polish(self.connection_label)
+        self.connection_label.setText(f"MQTT · {'正常' if healthy else '故障'}")
+        self.connection_message.setText(message)
+        self.mqtt_module_card.setProperty("state", "healthy" if healthy else "error")
+        self.mqtt_module_card.style().unpolish(self.mqtt_module_card)
+        self.mqtt_module_card.style().polish(self.mqtt_module_card)

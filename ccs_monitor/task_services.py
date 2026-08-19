@@ -111,6 +111,10 @@ class TaskExecutionService(QObject):
         self._thread = None
         self.available = False
 
+    def device_active(self, device_id: str) -> bool:
+        folded = device_id.casefold()
+        return any(key.casefold() == folded for key in self._device_execution)
+
     def deliver_subtask(self, task: TaskDefinition, subtask: DeviceSubtask, execution_id: str | None = None) -> None:
         self._require_available_device(subtask.device_id)
         if not subtask.is_valid or subtask.revision <= 0:
