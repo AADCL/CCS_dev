@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 
 #include <atomic>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -98,12 +99,28 @@ class VideoSrtNode {
            inet_pton(AF_INET6, address.c_str(), &ipv6) == 1;
   }
 
+  std::string listenerUri() const {
+    std::string host = bind_address_;
+    if (host == "0.0.0.0" || host == "::") host.clear();
+    if (host.find(':') != std::string::npos && !host.empty()) host = "[" + host + "]";
+    return "srt://" + host + ":" + std::to_string(srt_port_) +
+           "?mode=listener&transtype=live&latency=" +
+           std::to_string(static_cast<long long>(srt_latency_ms_) * 1000LL);
+  }
+
   static void validateGstreamerPlugins() {
     const char* elements[] = {"appsrc", "videoconvert", "x264enc", "h264parse", "mpegtsmux", "srtsink"};
     for (const char* name : elements) {
       GstElementFactory* factory = gst_element_factory_find(name);
-      if (factory == nullptr)
-        throw std::runtime_error(std::string("required GStreamer element is unavailable: ") + name);
+      if (factory == nullptr) {
+        gchar* version = gst_version_string();
+        const std::string message =
+            std::string("required GStreamer element is unavailable: ") + name +
+            ". Install gstreamer1.0-plugins-bad (srtsink), check GST_PLUGIN_PATH; runtime=" +
+            (version != nullptr ? version : "unknown");
+        g_free(version);
+        throw std::runtime_error(message);
+      }
       gst_object_unref(factory);
     }
   }
@@ -119,9 +136,7 @@ class VideoSrtNode {
              << " key-int-max=" << framerate_ << " bframes=0 byte-stream=true aud=true "
              << "! video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au "
              << "! h264parse config-interval=-1 ! mpegtsmux alignment=7 "
-             << "! srtsink name=srt_output uri=\"srt://" << bind_address_ << ":" << srt_port_
-             << "?mode=listener\" latency=" << srt_latency_ms_
-             << " sync=false";
+             << "! srtsink name=srt_output uri=\"" << listenerUri() << "\" sync=false";
     return pipeline.str();
   }
 
@@ -149,9 +164,12 @@ class VideoSrtNode {
     bus_watch_id_ = gst_bus_add_watch(bus, &VideoSrtNode::busMessage, this);
     gst_object_unref(bus);
     main_loop_ = g_main_loop_new(nullptr, FALSE);
-    if (gst_element_set_state(pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
+    const GstStateChangeReturn state_result = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+    if (state_result == GST_STATE_CHANGE_FAILURE)
       throw std::runtime_error("failed to start SRT Listener pipeline");
     glib_thread_ = std::thread([this]() { g_main_loop_run(main_loop_); });
+    ROS_INFO_STREAM("epgeneral_video_srt SRT listener bound to " << bind_address_ << ":" << srt_port_
+                    << "; waiting for a ground-station caller");
   }
 
   void imageCallback(const sensor_msgs::ImageConstPtr& message) {
@@ -276,6 +294,8 @@ int main(int argc, char** argv) {
     ros::spin();
     return 0;
   } catch (const std::exception& error) {
+    std::fprintf(stderr, "epgeneral_video_srt startup failed: %s\n", error.what());
+    std::fflush(stderr);
     ROS_FATAL("epgeneral_video_srt startup failed: %s", error.what());
     return 1;
   }
