@@ -17,24 +17,20 @@ class ProtocolTests(unittest.TestCase):
     def setUp(self):
         self.config = load_config(MAPPING, DEVICE)
         self.identity = {"map_id": "map-1", "session_id": "a" * 32}
-        self.start_payload = {
-            "request_id": "request-1",
-            "return_host": self.config["ground_station_ip"],
+        self.prepare_payload = {
+            "request_id": "request-1", "return_host": self.config["ground_station_ip"],
             "return_port": self.config["data_port"],
-            "cloud_rate_hz": 5.0,
-            "voxel_size_m": 0.1,
-            "compression": "zlib",
-            "point_format": "xyz_f32_le",
-            "coordinate_contract": "sensor+map_body+body_sensor",
+            "required_inputs": ["pointcloud", "pose", "artifact_storage", "map_generation"],
         }
 
-    def test_start_command_round_trip(self):
-        encoded = encode_envelope(self.config, self.identity, "start_mapping", 0, self.start_payload)
+    def test_prepare_command_round_trip(self):
+        encoded = encode_envelope(self.config, self.identity, "prepare_mapping", 0, self.prepare_payload)
         decoded = decode_command(encoded, self.config)
-        self.assertEqual(decoded["payload"], self.start_payload)
+        self.assertEqual(decoded["payload"], self.prepare_payload)
+        self.assertEqual(decoded["schema_version"], 2)
 
     def test_wrong_protocol_is_rejected(self):
-        encoded = encode_envelope(self.config, self.identity, "start_mapping", 0, self.start_payload)
+        encoded = encode_envelope(self.config, self.identity, "prepare_mapping", 0, self.prepare_payload)
         raw = msgpack.unpackb(encoded, raw=False)
         raw["protocol_id"] = "wrong"
         with self.assertRaisesRegex(ProtocolError, "protocol_id"):

@@ -4,8 +4,9 @@ import zlib
 
 import numpy as np
 
-from ccs_monitor.map_building import CloudFrameAssembler, MapBuildingProtocol
+from ccs_monitor.map_building import CloudFrameAssembler
 from ccs_monitor.map_building_config import load_map_building_config
+from ccs_monitor.map_building_v2 import MapBuildingV2Protocol
 from epgeneral_map_stream.config import load_config
 from epgeneral_map_stream.protocol import encode_cloud_chunks
 
@@ -19,7 +20,7 @@ class GroundContractTests(unittest.TestCase):
     def test_ground_station_reassembles_edge_cloud(self):
         edge_config = load_config(MAPPING, DEVICE)
         ground_config = load_map_building_config()
-        protocol = MapBuildingProtocol(ground_config)
+        protocol = MapBuildingV2Protocol(ground_config)
         assembler = CloudFrameAssembler(ground_config)
         identity = {"map_id": "map-contract", "session_id": "c" * 32}
         transform = {"x": 0.0, "y": 0.0, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}

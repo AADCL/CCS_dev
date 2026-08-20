@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>epgeneral_map_stream</name>
-  <version>0.1.0</version>
-  <description>ROS point cloud mapping stream uplink for the CCS ground station.</description>
+  <version>0.2.0</version>
+  <description>ROS remote mapping stream and artifact service for the CCS command platform.</description>
   <maintainer email="maintainer@example.com">CCS Maintainer</maintainer>
   <license>MIT</license>
 

@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "protocol_id": "ccs-map-stream-v1",
+  "protocol_v2_id": "ccs-map-stream-v2",
   "network": {
     "bind_host": "0.0.0.0",
     "data_port": 14562,
@@ -18,12 +19,17 @@
     "command_max_attempts": 5,
     "frame_timeout_seconds": 1.0,
     "warning_timeout_seconds": 2.0,
-    "error_timeout_seconds": 5.0
+    "error_timeout_seconds": 5.0,
+    "artifact_generation_timeout_seconds": 600.0,
+    "http_connect_timeout_seconds": 5.0,
+    "http_read_timeout_seconds": 30.0
   },
   "limits": {
     "max_frame_points": 200000,
     "max_decompressed_bytes": 2400000,
     "max_accumulated_voxels": 5000000,
-    "max_preview_points": 300000
+    "max_preview_points": 300000,
+    "http_download_attempts": 3,
+    "max_artifact_bytes": 4294967296
   }
 }

@@ -1,0 +1,400 @@
+import hashlib
+import hmac
+import io
+import json
+import os
+import shutil
+import socketserver
+import subprocess
+import threading
+import time
+import uuid
+import zipfile
+from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlsplit
+
+import yaml
+
+
+class ArtifactError(RuntimeError):
+    pass
+
+
+def _inside(path, root):
+    path = os.path.abspath(path)
+    root = os.path.abspath(root)
+    try:
+        return os.path.commonpath([path, root]) == root
+    except (AttributeError, ValueError):
+        return path == root or path.startswith(root + os.sep)
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with io.open(path, "rb") as stream:
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+class SessionPaths(object):
+    def __init__(self, config, identity):
+        self.root = os.path.abspath(config["workspace_root"])
+        safe_session = identity["session_id"]
+        if (not safe_session or len(safe_session) > 128
+                or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for char in safe_session)):
+            raise ArtifactError("session_id cannot be used as a directory name")
+        self.session_dir = os.path.join(self.root, safe_session)
+        values = {
+            "map_id": identity["map_id"], "device_id": config["device_id"],
+            "session_id": identity["session_id"], "session_dir": self.session_dir,
+        }
+        values.update({"pcd_path": "", "pgm_path": "", "yaml_path": ""})
+        self.pcd_path = os.path.abspath(config["pcd_template"].format(**values))
+        self.pgm_path = os.path.abspath(config["pgm_template"].format(**values))
+        self.yaml_path = os.path.abspath(config["yaml_template"].format(**values))
+        for path in (self.session_dir, self.pcd_path, self.pgm_path, self.yaml_path):
+            if not _inside(path, self.root):
+                raise ArtifactError("artifact path escapes workspace root")
+        for path in (self.pcd_path, self.pgm_path, self.yaml_path):
+            if not _inside(path, self.session_dir):
+                raise ArtifactError("artifact path escapes session directory")
+        self.archive_path = os.path.join(self.session_dir, "result.zip")
+        values.update({
+            "pcd_path": self.pcd_path, "pgm_path": self.pgm_path,
+            "yaml_path": self.yaml_path,
+        })
+        self.values = values
+
+    def prepare(self, minimum_free_bytes):
+        os.makedirs(self.session_dir, mode=0o750, exist_ok=True)
+        probe = os.path.join(self.session_dir, ".write-probe")
+        try:
+            with io.open(probe, "wb") as stream:
+                stream.write(b"ok")
+                stream.flush()
+                os.fsync(stream.fileno())
+            if shutil.disk_usage(self.session_dir).free < minimum_free_bytes:
+                raise ArtifactError("artifact storage has insufficient free space")
+        finally:
+            try:
+                os.unlink(probe)
+            except OSError:
+                pass
+
+
+class CommandRunner(object):
+    def __init__(self, config):
+        self.config = config
+
+    def check(self):
+        missing = []
+        for name, command in (("start", self.config["start_command"]),
+                              ("stop", self.config["stop_command"])):
+            executable = command[0]
+            if os.path.isabs(executable):
+                available = os.path.isfile(executable) and os.access(executable, os.X_OK)
+            else:
+                available = shutil.which(executable) is not None
+            if not available:
+                missing.append("%s executable is unavailable: %s" % (name, executable))
+        if missing:
+            raise ArtifactError("; ".join(missing))
+
+    def run(self, command, values):
+        arguments = [item.format(**values) for item in command]
+        try:
+            completed = subprocess.run(
+                arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                universal_newlines=True, timeout=self.config["command_timeout_seconds"],
+                shell=False, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ArtifactError("mapping command failed: %s" % exc)
+        output = (completed.stdout or "")[:self.config["command_output_bytes"]].strip()
+        if completed.returncode != 0:
+            raise ArtifactError("mapping command returned %d: %s" % (completed.returncode, output))
+        return output
+
+
+def _pgm_header(path):
+    tokens = []
+    with io.open(path, "rb") as stream:
+        while len(tokens) < 4:
+            line = stream.readline()
+            if not line:
+                break
+            line = line.split(b"#", 1)[0]
+            tokens.extend(line.split())
+    if len(tokens) < 4 or tokens[0] not in (b"P2", b"P5"):
+        raise ArtifactError("PGM header is invalid")
+    try:
+        width, height, maximum = int(tokens[1]), int(tokens[2]), int(tokens[3])
+    except ValueError as exc:
+        raise ArtifactError("PGM dimensions are invalid") from exc
+    if width <= 0 or height <= 0 or maximum != 255:
+        raise ArtifactError("PGM dimensions or maximum value are invalid")
+    return width, height
+
+
+def _validate_pcd(path):
+    header = []
+    with io.open(path, "rb") as stream:
+        for unused in range(128):
+            line = stream.readline()
+            if not line:
+                break
+            try:
+                text = line.decode("ascii").strip()
+            except UnicodeDecodeError as exc:
+                raise ArtifactError("PCD header is not ASCII") from exc
+            header.append(text)
+            if text.upper().startswith("DATA "):
+                break
+    fields = {}
+    for line in header:
+        parts = line.split()
+        if parts:
+            fields[parts[0].upper()] = parts[1:]
+    if not {"FIELDS", "POINTS", "DATA"}.issubset(fields):
+        raise ArtifactError("PCD header is incomplete")
+    if not {"x", "y", "z"}.issubset(set(fields["FIELDS"])):
+        raise ArtifactError("PCD must contain x/y/z fields")
+    try:
+        points = int(fields["POINTS"][0])
+    except (ValueError, IndexError) as exc:
+        raise ArtifactError("PCD point count is invalid") from exc
+    if points <= 0 or fields["DATA"][0].lower() not in ("ascii", "binary", "binary_compressed"):
+        raise ArtifactError("PCD data declaration is invalid")
+
+
+def validate_artifacts(paths, max_artifact_bytes):
+    total = 0
+    for path in (paths.pcd_path, paths.pgm_path, paths.yaml_path):
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise ArtifactError("artifact is missing or is a symbolic link: %s" % path)
+        size = os.path.getsize(path)
+        if size <= 0:
+            raise ArtifactError("artifact is empty: %s" % path)
+        total += size
+    if total > max_artifact_bytes:
+        raise ArtifactError("artifact files exceed configured limit")
+    _validate_pcd(paths.pcd_path)
+    width, height = _pgm_header(paths.pgm_path)
+    try:
+        with io.open(paths.yaml_path, "r", encoding="utf-8") as stream:
+            metadata = yaml.safe_load(stream)
+    except (IOError, yaml.YAMLError) as exc:
+        raise ArtifactError("map YAML is invalid: %s" % exc)
+    if not isinstance(metadata, dict):
+        raise ArtifactError("map YAML root must be a mapping")
+    if os.path.basename(str(metadata.get("image", ""))) != os.path.basename(paths.pgm_path):
+        raise ArtifactError("map YAML image does not reference the PGM")
+    try:
+        resolution = float(metadata["resolution"])
+        origin = metadata["origin"]
+        occupied = float(metadata["occupied_thresh"])
+        free = float(metadata["free_thresh"])
+        finite = all(__import__("math").isfinite(float(value)) for value in origin)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ArtifactError("map YAML fields are invalid") from exc
+    if (resolution <= 0 or not isinstance(origin, list) or len(origin) != 3
+            or not finite or not 0 <= free < occupied <= 1):
+        raise ArtifactError("map YAML geometry or thresholds are invalid")
+    if width * height > max_artifact_bytes:
+        raise ArtifactError("PGM dimensions exceed configured limit")
+
+
+def wait_for_stable_artifacts(paths, config, clock=time.monotonic, sleeper=time.sleep):
+    deadline = clock() + config["artifact_generation_timeout_seconds"]
+    previous = None
+    stable = 0
+    while clock() < deadline:
+        current = []
+        complete = True
+        for path in (paths.pcd_path, paths.pgm_path, paths.yaml_path):
+            try:
+                stat = os.stat(path, follow_symlinks=False)
+                if not os.path.isfile(path) or stat.st_size <= 0:
+                    complete = False
+                    break
+                current.append((stat.st_size, stat.st_mtime_ns))
+            except OSError:
+                complete = False
+                break
+        current = tuple(current) if complete else None
+        if current is not None and current == previous:
+            stable += 1
+            if stable >= config["artifact_stable_polls"]:
+                validate_artifacts(paths, config["max_artifact_bytes"])
+                return
+        else:
+            stable = 0
+        previous = current
+        sleeper(config["artifact_poll_seconds"])
+    raise ArtifactError("timed out waiting for stable PCD, PGM and YAML artifacts")
+
+
+def build_archive(paths, config, identity):
+    files = {
+        "pcd": (os.path.basename(paths.pcd_path), paths.pcd_path),
+        "pgm": (os.path.basename(paths.pgm_path), paths.pgm_path),
+        "yaml": (os.path.basename(paths.yaml_path), paths.yaml_path),
+    }
+    archive_names = [value[0] for value in files.values()]
+    if (len(set(archive_names)) != 3 or "manifest.json" in archive_names
+            or any(not name or name in (".", "..") for name in archive_names)):
+        raise ArtifactError("artifact file names must be unique and safe")
+    manifest_files = {}
+    for role, value in files.items():
+        archive_name, source = value
+        manifest_files[role] = {
+            "path": archive_name, "byte_count": os.path.getsize(source),
+            "sha256": sha256_file(source),
+        }
+    generated_at = datetime.now(timezone.utc).isoformat()
+    manifest = {
+        "schema_version": 1, "map_id": identity["map_id"],
+        "device_id": config["device_id"], "session_id": identity["session_id"],
+        "frame_id": config["map_frame"], "generated_at": generated_at,
+        "files": manifest_files,
+    }
+    temporary = paths.archive_path + ".tmp"
+    with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True).encode("utf-8"))
+        for unused_role, value in files.items():
+            archive.write(value[1], value[0])
+    os.replace(temporary, paths.archive_path)
+    size = os.path.getsize(paths.archive_path)
+    if size <= 0 or size > config["max_artifact_bytes"]:
+        raise ArtifactError("result ZIP exceeds configured limit")
+    return {
+        "path": paths.archive_path, "byte_count": size,
+        "sha256": sha256_file(paths.archive_path), "generated_at": generated_at,
+    }
+
+
+class _ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+class ArtifactHttpServer(object):
+    def __init__(self, bind_host, port, clock=time.time):
+        self.clock = clock
+        self.lock = threading.RLock()
+        self.entries = {}
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                owner._serve(self)
+
+            def do_HEAD(self):
+                owner._serve(self, head_only=True)
+
+            def log_message(self, unused_format, *unused_args):
+                return
+
+        self.server = _ThreadedHTTPServer((bind_host, port), Handler)
+        self.thread = None
+
+    @property
+    def port(self):
+        return self.server.server_address[1]
+
+    def start(self):
+        self.thread = threading.Thread(target=self.server.serve_forever, name="map-artifact-http")
+        self.thread.daemon = True
+        self.thread.start()
+
+    def register(self, path, ttl_seconds):
+        token = uuid.uuid4().hex
+        expires = self.clock() + float(ttl_seconds)
+        with self.lock:
+            self.entries[token] = {"path": path, "expires": expires}
+        return token, datetime.fromtimestamp(expires, timezone.utc).isoformat()
+
+    def cleanup(self):
+        now = self.clock()
+        expired_paths = []
+        with self.lock:
+            for token in list(self.entries):
+                if self.entries[token]["expires"] <= now:
+                    expired_paths.append(self.entries.pop(token)["path"])
+        for path in set(expired_paths):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    def _serve(self, handler, head_only=False):
+        parsed = urlsplit(handler.path)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        token_values = query.get("token", [])
+        entry = None
+        if parsed.path == "/mapping/result.zip" and len(token_values) == 1:
+            requested = token_values[0]
+            with self.lock:
+                for token, candidate in self.entries.items():
+                    if hmac.compare_digest(token, requested) and candidate["expires"] > self.clock():
+                        entry = candidate
+                        break
+        if entry is None or not os.path.isfile(entry["path"]):
+            handler.send_error(404)
+            return
+        size = os.path.getsize(entry["path"])
+        start, end, partial = 0, size - 1, False
+        range_header = handler.headers.get("Range")
+        if range_header:
+            try:
+                if not range_header.startswith("bytes=") or "," in range_header:
+                    raise ValueError
+                first, last = range_header[6:].split("-", 1)
+                if not first:
+                    length = int(last)
+                    if length <= 0:
+                        raise ValueError
+                    start = max(0, size - length)
+                else:
+                    start = int(first)
+                    end = int(last) if last else size - 1
+                if start < 0 or start >= size or end < start:
+                    raise ValueError
+                end = min(end, size - 1)
+                partial = True
+            except (ValueError, TypeError):
+                handler.send_response(416)
+                handler.send_header("Content-Range", "bytes */%d" % size)
+                handler.end_headers()
+                return
+        length = end - start + 1
+        handler.send_response(206 if partial else 200)
+        handler.send_header("Content-Type", "application/zip")
+        handler.send_header("Accept-Ranges", "bytes")
+        handler.send_header("Content-Length", str(length))
+        if partial:
+            handler.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
+        handler.end_headers()
+        if head_only:
+            return
+        with io.open(entry["path"], "rb") as stream:
+            stream.seek(start)
+            remaining = length
+            while remaining:
+                chunk = stream.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                handler.wfile.write(chunk)
+                remaining -= len(chunk)
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+        if self.thread is not None and self.thread.is_alive():
+            self.thread.join(timeout=2.0)
+        self.thread = None

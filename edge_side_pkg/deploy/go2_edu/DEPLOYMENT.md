@@ -1,6 +1,6 @@
 # Go2 EDU 端侧监控套件部署指南
 
-本 profile 面向 Ubuntu 20.04、ROS Noetic、Go2 EDU 和 Unitree SDK2。必装包为 `epgeneral_device_config`、`epqrd_go2_bridge`、`epgeneral_mqtav`、`epgeneral_udp_telemetry`；任务状态接入时再安装 `epgeneral_task_control` 和设备运动适配器。
+本 profile 面向 Ubuntu 20.04、ROS Noetic、Go2 EDU 和 Unitree SDK2。必装包为 `epgeneral_device_config`、`epqrd_go2_bridge`、`epgeneral_mqtav`、`epgeneral_udp_telemetry`；任务状态接入时再安装 `epgeneral_task_control` 和设备运动适配器。遥控建图另需安装 `epgeneral_map_stream` v0.2.0 及目标设备的 SLAM start/stop 适配器。
 
 ## 1. 安装 SDK 与 ROS 依赖
 
@@ -28,6 +28,8 @@ ip -br address
 ping <Go2 控制器地址>
 sudo ufw allow 1883/tcp
 sudo ufw allow 14560/udp
+sudo ufw allow 14561/udp
+sudo ufw allow 14600/tcp
 ```
 
 DDS 依赖局域网组播。若 SDK 链路持续 offline，检查网卡、路由、防火墙和是否存在多个同网段接口。
@@ -57,6 +59,18 @@ sudo tcpdump -ni any udp port 14560
 ```
 
 `udp_tx=true` 只表示本机 `sendto` 成功；地面站是否在线仍由地面站收到 UDP heartbeat 判定。SportModeState 位置是局部里程计，不等同于地图全局定位。
+
+## 6. 启用 v2 遥控建图
+
+默认 `go2_edu_bringup.launch` 和 `start_ccs_edge_dev.sh` 不启动建图节点，避免在未配置 SLAM 适配器时误报可用。先编辑
+`EPGeneral_map_stream/config/mapping.yaml` 的点云/位姿话题、frame、外参、工作目录和
+`commands.start`/`commands.stop`，将默认 `/usr/local/bin/ccs-mapping-*` 占位符替换为设备实际命令，确认命令会在会话目录生成 `map.pcd`、`map.pgm` 和 `map.yaml`，再执行：
+
+```bash
+roslaunch epgeneral_map_stream epgeneral_map_stream.launch
+```
+
+端侧监听 UDP 14561、向地面站 UDP 14562 回传，地面站按 `device.ip` 访问端侧 TCP 14600 下载带短期令牌的成果 ZIP。部署前使用 `rostopic type/hz` 验证 PointCloud2 和位姿话题，并确保端侧与地面站 UTC 已同步。
 
 ## 5. 自启动与故障处理
 

@@ -4,11 +4,11 @@
 
 命名规则：通用包目录使用 `EPGeneral_<function>`，ROS/catkin 包名使用全小写 `epgeneral_<function>`。设备专属扩展使用 `EPDQUAV_`、`EPUGV_`、`EPQRD_`、`EPDATUGV_` 或 `EPAGUAV_` 目录前缀，对应 ROS 前缀为 `epdquav_`、`epugv_`、`epqrd_`、`epdatugv_`、`epaguav_`。
 
-地面站当前为 v0.15.1；视频链路要求端侧使用 `epgeneral_video_srt` v0.1.0。该 SRT 包不兼容旧 `epgeneral_usb_cam_rtsp`。v0.13.0 定义的可选 PGM 文件服务仍尚未由 `epgeneral_map_stream` v0.1.0 实现。
+地面站当前为 v0.16.0；视频链路要求端侧使用 `epgeneral_video_srt` v0.1.0。该 SRT 包不兼容旧 `epgeneral_usb_cam_rtsp`。`epgeneral_map_stream` 已升级为 v0.2.0，并实现 v2 遥控建图成果服务。
 
 地面站修改设备 ID 后，必须同步修改端侧共享 `device.yaml` 并重启 MQTT、UDP、建图、任务和视频节点。v0.15.1 只修复地面站融合算法的可迁移路径；v0.15.0 的展示与本地引用调整以及现有端侧协议字段、功能包版本均保持不变。
 
-本次新增独立版本的端侧 `epgeneral_task_control` v0.1.0，不修改既有协议字段或其他端侧包版本。
+本次新增端侧 `epgeneral_map_stream` v0.2.0；其他端侧包版本和既有协议字段保持不变。
 
 ## 包含内容
 
@@ -19,19 +19,19 @@
 - `epgeneral_mqtav` v0.3.0：订阅 ROS 状态和电池信息，并向地面站 MQTT Broker 发布 presence、heartbeat、status。
 - `epgeneral_video_srt` v0.1.0：订阅配置的 ROS 原始或压缩图像话题，并通过 GStreamer 以 SRT Listener 输出 baseline H.264/MPEG-TS，默认 UDP 9000。
 - `epgeneral_udp_telemetry` v0.2.1：按配置订阅 MAVROS/ROS 位姿、IMU、点云、地图生成状态和建图模式，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测。
-- `epgeneral_map_stream` v0.1.0：监听 UDP 14561 建图指令，同步预处理 PointCloud2 与位姿，并向地面站 UDP 14562 上传分片点云、同步位姿和静态外参。
+- `epgeneral_map_stream` v0.2.0：监听 v2 UDP 14561 协商/控制，同步预处理 PointCloud2 与位姿，上传采样窗口点云，并在 TCP 14600 提供带令牌的 PCD/PGM/YAML ZIP。
 - `epgeneral_task_control` v0.1.0：监听 UDP 14563 任务指令，原子保存 XML，通过 ROS 强类型接口协调执行，并向 UDP 14564 回传状态和进度。
 - `epgeneral_mqtav.zip`：包含 `epgeneral_mqtav` 与共享配置包的部署归档。
 
 ## v0.8.0 实时建图接口
 
-地面站与 `epgeneral_map_stream` v0.1.0 已实现 `ccs-map-stream-v1`：地面站向端侧 UDP 14561 发送开始/停止建图指令，并在 UDP 14562 接收同步位姿、外参和分片 XYZ 点云。`epgeneral_udp_telemetry` 仍只负责 UDP 14560 状态遥测，建图点云不进入遥测协议。
+地面站 v0.16.0 与 `epgeneral_map_stream` v0.2.0 使用独立 `ccs-map-stream-v2`：先通过 UDP 14561 协商，再向 UDP 14562 接收同步窗口点云和成果状态；最终 ZIP 通过端侧 TCP 14600 下载。`epgeneral_udp_telemetry` 仍只负责 UDP 14560 状态遥测，建图点云不进入遥测协议。
 
 双方实现遵循根目录 `docs/EDGE_DEVICE_INTERFACES.md`，包括 MessagePack 信封、1400 字节数据报上限、CRC32、zlib、`map <- body <- sensor` 坐标约定、ACK 幂等和超时处理。
 
 ## v0.11.0 联合建图兼容扩展
 
-地面站可同时为多台设备建立独立 `ccs-map-stream-v1` 会话，并在 `start_mapping` 中增加可选 `job_id`、`role` 和 `primary_device_id`。`epgeneral_map_stream` v0.1.0 会忽略额外字段，仍可作为单机或独立子会话上传点云；主从外参、实时预览和最终插件融合均由地面站处理。后续端侧版本可读取这些字段以展示联合任务关系，但不得改变现有点云载荷和坐标契约。
+历史 v1 后端支持多设备独立会话及可选 `job_id`、`role`、`primary_device_id` 字段；v0.2.0 端侧运行路径使用 v2 单机协商，不读取这些 v1 扩展字段。
 
 ## v0.9.0 任务接口状态
 

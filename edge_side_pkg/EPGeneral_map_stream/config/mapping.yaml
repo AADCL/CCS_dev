@@ -1,5 +1,5 @@
-schema_version: 1
-protocol_id: "ccs-map-stream-v1"
+schema_version: 2
+protocol_id: "ccs-map-stream-v2"
 
 network:
   bind_host: "0.0.0.0"
@@ -7,6 +7,11 @@ network:
   ground_station_ip: "192.168.151.100"
   data_port: 14562
   max_datagram_bytes: 1400
+
+http:
+  bind_host: "0.0.0.0"
+  port: 14600
+  token_ttl_seconds: 900.0
 
 ros:
   cloud:
@@ -35,15 +40,37 @@ sync:
   pose_buffer_size: 100
 
 preprocess:
+  sample_window_seconds: 0.20
   min_range_m: 0.30
   max_range_m: 100.0
-  min_voxel_size_m: 0.05
-  max_cloud_rate_hz: 5.0
+  voxel_size_m: 0.05
 
 timeouts:
+  prepare_probe_timeout_seconds: 1.5
+  ready_timeout_seconds: 60.0
   input_timeout_seconds: 3.0
   command_cache_seconds: 60.0
+  command_timeout_seconds: 2.0
+  artifact_generation_timeout_seconds: 540.0
+  artifact_poll_seconds: 0.5
+  artifact_stable_polls: 2
 
 limits:
   max_frame_points: 200000
+  max_window_points: 1000000
   max_decompressed_bytes: 2400000
+  max_artifact_bytes: 4294967296
+  min_free_bytes: 5368709120
+  command_output_bytes: 16384
+
+artifacts:
+  workspace_root: "/var/lib/ccs/map_stream"
+  pcd_path: "{session_dir}/map.pcd"
+  pgm_path: "{session_dir}/map.pgm"
+  yaml_path: "{session_dir}/map.yaml"
+
+# Replace these adapters with the deployed SLAM integration. They must return
+# quickly; the stop adapter triggers asynchronous map generation.
+commands:
+  start: ["/usr/local/bin/ccs-mapping-start", "--session", "{session_id}", "--output", "{session_dir}"]
+  stop: ["/usr/local/bin/ccs-mapping-stop", "--session", "{session_id}", "--output", "{session_dir}"]

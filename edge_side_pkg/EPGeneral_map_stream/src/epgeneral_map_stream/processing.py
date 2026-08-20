@@ -109,3 +109,55 @@ def preprocess_points(points, min_range_m, max_range_m, voxel_size_m, max_points
         selected = np.linspace(0, len(array) - 1, max_points, dtype=np.int64)
         array = array[selected]
     return np.ascontiguousarray(array, dtype="<f4")
+
+
+def transform_matrix(transform):
+    qx = float(transform["qx"])
+    qy = float(transform["qy"])
+    qz = float(transform["qz"])
+    qw = float(transform["qw"])
+    norm = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
+    if norm < 1e-6:
+        raise ProcessingError("transform quaternion is zero")
+    qx, qy, qz, qw = qx / norm, qy / norm, qz / norm, qw / norm
+    matrix = np.eye(4, dtype=np.float64)
+    matrix[:3, :3] = np.asarray([
+        [1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
+        [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
+        [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)],
+    ], dtype=np.float64)
+    matrix[:3, 3] = [float(transform["x"]), float(transform["y"]), float(transform["z"])]
+    if not np.isfinite(matrix).all():
+        raise ProcessingError("transform contains non-finite values")
+    return matrix
+
+
+def aggregate_window(scans, body_from_sensor, voxel_size_m, max_points):
+    """Express every synchronized scan in the final scan's sensor frame."""
+    if not scans:
+        return np.empty((0, 3), dtype="<f4"), None
+    reference_pose = scans[-1][1]
+    sensor_from_reference = np.linalg.inv(
+        np.dot(transform_matrix(reference_pose), transform_matrix(body_from_sensor)))
+    transformed = []
+    for points, map_from_body, unused_stamp in scans:
+        array = np.asarray(points, dtype=np.float64)
+        if not len(array):
+            continue
+        map_from_sensor = np.dot(transform_matrix(map_from_body), transform_matrix(body_from_sensor))
+        reference_from_sensor = np.dot(sensor_from_reference, map_from_sensor)
+        transformed.append(
+            np.dot(array, reference_from_sensor[:3, :3].T) + reference_from_sensor[:3, 3])
+    if not transformed:
+        return np.empty((0, 3), dtype="<f4"), reference_pose
+    combined = np.concatenate(transformed, axis=0)
+    combined = combined[np.isfinite(combined).all(axis=1)]
+    if not len(combined):
+        return np.empty((0, 3), dtype="<f4"), reference_pose
+    voxel_keys = np.floor(combined / float(voxel_size_m)).astype(np.int64)
+    unused_unique, indices = np.unique(voxel_keys, axis=0, return_index=True)
+    combined = combined[np.sort(indices)]
+    if len(combined) > max_points:
+        selected = np.linspace(0, len(combined) - 1, max_points, dtype=np.int64)
+        combined = combined[selected]
+    return np.ascontiguousarray(combined, dtype="<f4"), reference_pose

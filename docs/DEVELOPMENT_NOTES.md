@@ -1,5 +1,22 @@
 # 开发笔记
 
+## v0.16.0
+
+### 单机遥控建图
+
+- `RemoteMappingCoordinator` 与 v1 `MapBuildingService` 共享 UDP 14562 socket，但使用独立 `ccs-map-stream-v2` schema 2 解析与状态；v2 失败不回退 v1。
+- 准备阶段由端侧统一检查点云、位姿、成果存储和地图生成能力，平台仅在逐项通过且 frame 匹配后开放开始按钮。
+- 实时 `cloud_chunk` 仅用于预览。停止 ACK 后必须等待端侧 `artifact_status=ready`，最终真值只来自下载的 PCD+PGM+YAML。
+- HTTP 下载限制 URL 主机与设备 IP 一致、禁止重定向，并执行 Range 续传、ZIP 路径/符号链接/压缩比/未声明文件校验。
+- 地图仓储在同一事务中替换 `map.pcd`、`map.pgm`、`map.yaml` 和 `map.json`；失败恢复旧图层并保留下载检查点。
+- 端侧 `epgeneral_map_stream` v0.2.0 使用 v2 schema 2；采样窗口将多帧点云重投影到最后一帧传感器坐标，停止后由无 shell 命令钩子触发外部成果生成。
+- 端侧成果服务验证 PCD/PGM/YAML、生成 manifest 和 SHA-256，并在 TCP 14600 提供短期令牌 Range 下载；默认 SLAM 命令为占位符，真实设备部署时必须替换。
+
+### 共享地图显示
+
+- `PointCloudViewer` 内置图层、XY 网格、刻度与光标坐标控件，因此地图页、任务页与指控大屏共享一致行为。
+- 显示参数写入 `QSettings` 并通过共享信号同步；对过密网格和刻度设置安全的绘制数量上限。
+
 ## v0.15.1
 
 ### 融合算法路径生命周期
@@ -186,8 +203,8 @@
 
 ### 验证边界
 
-- Windows localhost 测试覆盖真实 UDP start/ACK/cloud/stop/ACK 和最终仓储提交。端侧 `epgeneral_map_stream` v0.1.0 已实现 `ccs-map-stream-v1` 并通过独立协议、处理、会话与 UDP 契约测试；真实 ROS Melodic 雷达/里程计联调仍需在目标设备执行。
-- 新增端侧 `epgeneral_map_stream` v0.1.0；地面站版本仍为 v0.8.0，其余端侧 ROS 包版本不变。
+- 历史 Windows localhost 测试覆盖 v1 start/ACK/cloud/stop/ACK；当前端侧 `epgeneral_map_stream` v0.2.0 已通过 v2 协议、处理、成果、HTTP Range 与 UDP 契约测试，真实 ROS Noetic 雷达/里程计/SLAM 钩子联调仍需在目标设备执行。
+- 端侧 `epgeneral_map_stream` 从 v0.1.0 升级为 v0.2.0；其余端侧 ROS 包版本不变。
 
 ## v0.7.1
 

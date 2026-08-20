@@ -22,16 +22,18 @@ class PgmMapData:
     metadata: PgmMapMetadata
     source_image_path: Path
 
-    def rgba(self) -> np.ndarray:
+    def rgba(self, alpha: float = 1.0) -> np.ndarray:
         pixels = np.flipud(self.pixels).astype(np.float32) / 255.0
         occupancy = pixels if self.metadata.negate else 1.0 - pixels
         rgba = np.zeros((*pixels.shape, 4), dtype=np.float32)
         occupied = occupancy >= self.metadata.occupied_thresh
         free = occupancy <= self.metadata.free_thresh
         unknown = ~(occupied | free)
-        rgba[free] = (0.05, 0.30, 0.34, 0.48)
-        rgba[occupied] = (0.92, 0.20, 0.48, 0.92)
-        rgba[unknown] = (0.12, 0.18, 0.28, 0.28)
+        opacity = min(1.0, max(0.0, float(alpha)))
+        rgba[free] = (1.0, 1.0, 1.0, opacity)
+        rgba[occupied] = (0.0, 0.0, 0.0, opacity)
+        unknown_gray = 205.0 / 255.0
+        rgba[unknown] = (unknown_gray, unknown_gray, unknown_gray, opacity)
         return rgba
 
 

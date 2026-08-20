@@ -16,6 +16,9 @@ from .map_building import (
     VoxelMapAccumulator,
 )
 from .map_building_config import MapBuildingConfig
+from .map_building_v2 import (
+    MapBuildingV2Protocol, RemoteMappingCoordinator, RemoteMappingProtocolError,
+)
 from .map_fusion import MapFusionRepository, MapFusionRunner, transform_points
 from .map_repository import MapRepository, MapRepositoryError
 from .pgm_fusion import PgmDownloadCoordinator
@@ -76,6 +79,8 @@ class MapBuildingService(QObject):
     pgm_source_completed = Signal(object)
     pgm_download_failed = Signal(str, str)
     pgm_download_completed = Signal(object)
+    remote_updated = Signal(object)
+    remote_navigation_locked = Signal(bool)
 
     def __init__(self, config: MapBuildingConfig, repository: MapRepository,
                  fusion_repository: MapFusionRepository | None = None,
@@ -91,6 +96,15 @@ class MapBuildingService(QObject):
         self.clock = clock
         self.socket_factory = socket_factory
         self.protocol = MapBuildingProtocol(config)
+        self.v2_protocol = MapBuildingV2Protocol(config)
+        self.remote = RemoteMappingCoordinator(
+            config, repository, self._send_v2_datagram, clock=clock,
+        )
+        self.remote.updated.connect(self.remote_updated)
+        self.remote.preview_updated.connect(self.preview_updated)
+        self.remote.completed.connect(self.completed)
+        self.remote.failed.connect(self.failed)
+        self.remote.navigation_locked.connect(self.remote_navigation_locked)
         self.pgm_download = PgmDownloadCoordinator(
             config, self._send_pgm_envelope, return_host=config.bind_host, clock=clock,
         )
@@ -109,12 +123,12 @@ class MapBuildingService(QObject):
     @property
     def active(self) -> bool:
         with self._lock:
-            return self._job is not None or self.pgm_download.active
+            return self._job is not None or self.pgm_download.active or self.remote.active
 
     @property
     def mapping_active(self) -> bool:
         with self._lock:
-            return self._job is not None
+            return self._job is not None or self.remote.active
 
     @property
     def pgm_download_active(self) -> bool:
@@ -122,7 +136,16 @@ class MapBuildingService(QObject):
 
     def device_active(self, device_id: str) -> bool:
         with self._lock:
-            return self._job is not None and device_id.casefold() in self._job.sessions
+            remote = self.remote.snapshot
+            return bool(
+                (self._job is not None and device_id.casefold() in self._job.sessions)
+                or (remote and remote.navigation_locked
+                    and remote.device_id.casefold() == device_id.casefold())
+            )
+
+    @property
+    def current_remote_snapshot(self):
+        return self.remote.snapshot
 
     @property
     def current_job_snapshot(self) -> MapBuildingJobSnapshot | None:
@@ -173,6 +196,7 @@ class MapBuildingService(QObject):
         self._thread.start()
 
     def stop(self) -> None:
+        self.remote.shutdown()
         self.interrupt_mapping("应用退出")
         self.pgm_download.cancel()
         self._running.clear()
@@ -188,6 +212,38 @@ class MapBuildingService(QObject):
             thread.join(timeout=2.0)
         self._thread = None
         self.available = False
+
+    def prepare_remote_mapping(self, definition: MapDefinition, device: DeviceSnapshot) -> str:
+        if not self.available or self._socket is None:
+            raise RuntimeError(self.module_message)
+        with self._lock:
+            if self._job is not None or self.pgm_download.active:
+                raise RuntimeError("其他建图或 PGM 下载任务正在运行")
+        return self.remote.prepare(
+            definition, device, self._local_address_for(device.ip_address),
+            self.config.data_port,
+        )
+
+    def retry_remote_preparation(self) -> None:
+        with self._lock:
+            if self._job is not None or self.pgm_download.active:
+                raise RuntimeError("其他建图或 PGM 下载任务正在运行")
+        snapshot = self.remote.snapshot
+        if snapshot is None:
+            raise RuntimeError("没有遥控建图任务")
+        device = self.remote.session.device
+        self.remote.retry_prepare(
+            self._local_address_for(device.ip_address), self.config.data_port
+        )
+
+    def begin_remote_mapping(self) -> None:
+        self.remote.begin()
+
+    def stop_remote_mapping(self, reason: str = "用户结束建图") -> None:
+        self.remote.stop_mapping(reason)
+
+    def cancel_remote_mapping(self, reason: str = "用户取消建图任务") -> None:
+        self.remote.cancel(reason)
 
     def start_mapping(self, definition: MapDefinition, device: DeviceSnapshot) -> str:
         return self.start_job(
@@ -222,7 +278,7 @@ class MapBuildingService(QObject):
             raise ValueError("主设备必须是唯一使用单位变换的坐标系")
         selected_algorithm = self._resolve_algorithm(algorithm)
         with self._lock:
-            if self._job is not None or self.pgm_download.active:
+            if self._job is not None or self.pgm_download.active or self.remote.active:
                 raise RuntimeError("建图或 PGM 下载任务正在运行")
             now = datetime.now(timezone.utc)
             started = self.clock()
@@ -254,7 +310,10 @@ class MapBuildingService(QObject):
             return job_id
 
     def stop_mapping(self, reason: str = "用户结束建图") -> None:
-        self.stop_job(reason)
+        if self.remote.active:
+            self.stop_remote_mapping(reason)
+        else:
+            self.stop_job(reason)
 
     def stop_job(self, reason: str = "用户结束建图") -> None:
         with self._lock:
@@ -389,7 +448,13 @@ class MapBuildingService(QObject):
             self._tick()
 
     def _handle_datagram(self, datagram: bytes, peer_ip: str) -> None:
-        envelope = self.protocol.decode(datagram)
+        try:
+            envelope = self.v2_protocol.decode(datagram)
+        except RemoteMappingProtocolError:
+            envelope = self.protocol.decode(datagram)
+        else:
+            self.remote.handle(envelope, peer_ip)
+            return
         if self.pgm_download.handle_envelope(envelope, peer_ip):
             return
         with self._lock:
@@ -488,6 +553,11 @@ class MapBuildingService(QObject):
 
     def _tick(self) -> None:
         self.pgm_download.tick()
+        remote = self.remote.session
+        if remote is not None:
+            self.remote.tick(
+                self._local_address_for(remote.device.ip_address), self.config.data_port
+            )
         with self._lock:
             job = self._job
             if job is None:
@@ -642,6 +712,12 @@ class MapBuildingService(QObject):
             self.protocol.encode(envelope),
             (peer_ip, self.config.device_control_port),
         )
+
+    def _send_v2_datagram(self, datagram: bytes, peer_ip: str) -> None:
+        udp_socket = self._socket
+        if udp_socket is None:
+            raise RuntimeError("UDP 建图 socket 未启动")
+        udp_socket.sendto(datagram, (peer_ip, self.config.device_control_port))
 
     def _mark_degraded(self, job: _ActiveJob, session: _DeviceSession, reason: str) -> None:
         if session.state == "failed":

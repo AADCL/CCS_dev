@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import os
 import re
@@ -901,6 +902,107 @@ class MapRepository(QObject):
         self._refresh_and_emit()
         return self.map_by_id(map_id) or updated
 
+    def commit_remote_mapping_artifact(
+        self,
+        map_id: str,
+        artifact,
+        metadata: MapBuildingResultMetadata,
+    ) -> MapDefinition:
+        """Atomically replace all authoritative map layers from a validated v2 artifact."""
+        current = self._require_map(map_id)
+        try:
+            cloud = self.loader.load(artifact.pcd_path)
+            pgm_data = self.pgm_loader.load_yaml(artifact.yaml_path)
+        except (OSError, PointCloudError, PgmMapError) as exc:
+            raise MapRepositoryError(f"遥控建图成果校验失败：{exc}") from exc
+        if artifact.frame_id != current.frame_id:
+            raise MapRepositoryError(
+                f"成果坐标系 {artifact.frame_id} 与地图坐标系 {current.frame_id} 不一致"
+            )
+        directory = self.root / current.directory_name
+        pgm_metadata = replace(
+            pgm_data.metadata, image_path="map.pgm", yaml_path="map.yaml"
+        )
+        normalized_yaml = yaml.safe_dump(
+            self.pgm_loader.normalized_yaml(pgm_metadata),
+            allow_unicode=True, sort_keys=False,
+        )
+        committed_metadata = replace(
+            metadata,
+            yaml_sha256=hashlib.sha256(normalized_yaml.encode("utf-8")).hexdigest(),
+        )
+        sources = {
+            "map.pcd": Path(artifact.pcd_path),
+            "map.pgm": Path(artifact.pgm_path),
+        }
+        installed: list[Path] = []
+        backups: dict[Path, Path] = {}
+        temporaries: dict[Path, Path] = {}
+        trajectory = directory / "trajectory.csv"
+        trajectory_backup = directory / ".trajectory.csv.remote.backup"
+        try:
+            for filename, source in sources.items():
+                target = directory / filename
+                temporary = directory / f".{filename}.remote.tmp"
+                backup = directory / f".{filename}.remote.backup"
+                temporary.unlink(missing_ok=True)
+                backup.unlink(missing_ok=True)
+                shutil.copy2(source, temporary)
+                temporaries[target] = temporary
+                if target.is_file():
+                    os.replace(target, backup)
+                    backups[target] = backup
+                os.replace(temporary, target)
+                installed.append(target)
+            yaml_target = directory / "map.yaml"
+            yaml_temporary = directory / ".map.yaml.remote.tmp"
+            yaml_backup = directory / ".map.yaml.remote.backup"
+            yaml_temporary.unlink(missing_ok=True)
+            yaml_backup.unlink(missing_ok=True)
+            yaml_temporary.write_bytes(normalized_yaml.encode("utf-8"))
+            temporaries[yaml_target] = yaml_temporary
+            if yaml_target.is_file():
+                os.replace(yaml_target, yaml_backup)
+                backups[yaml_target] = yaml_backup
+            os.replace(yaml_temporary, yaml_target)
+            installed.append(yaml_target)
+            trajectory_backup.unlink(missing_ok=True)
+            if trajectory.is_file():
+                os.replace(trajectory, trajectory_backup)
+            updated = replace(
+                current,
+                status=MapStatus.READY,
+                frame_id=artifact.frame_id,
+                pcd_path="map.pcd",
+                point_count=cloud.point_count,
+                bounds=cloud.bounds,
+                width_m=cloud.bounds.width,
+                height_m=cloud.bounds.height,
+                pgm=pgm_metadata,
+                trajectory_path=None,
+                last_mapping=committed_metadata,
+                updated_at=datetime.now(timezone.utc),
+                error_message=None,
+            )
+            self._write_metadata(updated)
+        except Exception as exc:
+            for temporary in temporaries.values():
+                temporary.unlink(missing_ok=True)
+            for target in reversed(installed):
+                target.unlink(missing_ok=True)
+                backup = backups.get(target)
+                if backup and backup.is_file():
+                    os.replace(backup, target)
+            if trajectory_backup.is_file():
+                os.replace(trajectory_backup, trajectory)
+            raise MapRepositoryError(f"遥控建图成果提交失败：{exc}") from exc
+        for backup in backups.values():
+            backup.unlink(missing_ok=True)
+        trajectory_backup.unlink(missing_ok=True)
+        shutil.rmtree(self.mapping_session_directory(map_id, metadata.session_id), ignore_errors=True)
+        self._refresh_and_emit()
+        return self.map_by_id(map_id) or updated
+
     def _require_map(self, map_id: str) -> MapDefinition:
         item = self.map_by_id(map_id)
         if item is None:
@@ -958,6 +1060,18 @@ class MapRepository(QObject):
                 dropped_frames=int(mapping_payload["dropped_frames"]),
                 received_points=int(mapping_payload["received_points"]),
                 fused_points=int(mapping_payload["fused_points"]),
+                sample_window_seconds=(
+                    float(mapping_payload["sample_window_seconds"])
+                    if mapping_payload.get("sample_window_seconds") is not None else None
+                ),
+                artifact_sha256=str(mapping_payload["artifact_sha256"])
+                if mapping_payload.get("artifact_sha256") else None,
+                pcd_sha256=str(mapping_payload["pcd_sha256"])
+                if mapping_payload.get("pcd_sha256") else None,
+                pgm_sha256=str(mapping_payload["pgm_sha256"])
+                if mapping_payload.get("pgm_sha256") else None,
+                yaml_sha256=str(mapping_payload["yaml_sha256"])
+                if mapping_payload.get("yaml_sha256") else None,
             ) if mapping_payload else None
             provenance = self._parse_provenance(payload.get("build_provenance"))
             pgm_fusion = self._parse_pgm_fusion(payload.get("pgm_fusion"))
@@ -1098,6 +1212,11 @@ class MapRepository(QObject):
             "dropped_frames": metadata.dropped_frames,
             "received_points": metadata.received_points,
             "fused_points": metadata.fused_points,
+            "sample_window_seconds": metadata.sample_window_seconds,
+            "artifact_sha256": metadata.artifact_sha256,
+            "pcd_sha256": metadata.pcd_sha256,
+            "pgm_sha256": metadata.pgm_sha256,
+            "yaml_sha256": metadata.yaml_sha256,
         }
 
     @staticmethod

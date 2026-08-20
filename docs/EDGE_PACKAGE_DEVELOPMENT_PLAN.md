@@ -55,18 +55,18 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：20/5/1 Hz 输出与配置一致；输入话题中断后状态变为 unavailable/unknown；端侧重启不会被地面站旧序列状态误判。
 
-## 5. `epgeneral_map_stream` v0.1.0
+## 5. `epgeneral_map_stream` v0.2.0
 
-**当前状态**：`ccs-map-stream-v1`、PointCloud2/位姿同步、zlib/CRC32、分片、资源限制和 session 状态机已通过纯 Python/localhost 测试；真实 ROS 雷达和里程计尚未验证。
+**当前状态**：`ccs-map-stream-v2`、prepare 检查、采样窗口点云、zlib/CRC32、分片、成果 ZIP/HTTP Range 和状态机已通过纯 Python/localhost 测试；真实 ROS 雷达、里程计和外部 SLAM 钩子尚未验证。
 
 **Alpha 任务**：
 
-1. 在 Noetic 验证 PointCloud2、Odometry、header frame、位姿字段路径和静态 `body_from_sensor` 外参。
+1. 在 Noetic 验证 v2 prepare/start/stop、PointCloud2、Odometry、header frame、位姿字段路径和静态 `body_from_sensor` 外参。
 2. 为每台端侧设备提供独立 session；同一进程禁止错误 map/device/session 复用，重启后必须等待新的 start。
 3. 严格执行最大点数、最大解压字节、点云距离、体素、5 Hz 上限和 1400 字节最终数据报限制。
 4. 验证整帧 zlib、整帧 CRC32、little-endian XYZ float32、乱序/重复分片和错误来源 IP。
-5. 将 start 指定的 return_host/return_port 作为上行目标，不写死地面站地址。
-6. stop/error 时释放 ROS subscriber、位姿缓存、发送 socket 和 session 资源，但保留控制 socket 接受下一次 start。
+5. 将 prepare 指定的 return_host/return_port 作为上行目标，不写死地面站地址；成果 HTTP 主机使用共享 device.ip。
+6. stop/error 时释放 ROS subscriber、位姿缓存、发送 socket 和 session 资源，异步等待外部 PCD/PGM/YAML 后保留 HTTP 成果并接受下一次 prepare。
 7. 与地面站多 session 测试联调，输出 frame、点数、丢帧和 session 状态日志。
 
 **验收**：参考设备能连续上传点云和同步位姿；话题超时发送 session error；缺片/CRC/非有限点不会产生半帧；重启和重复命令幂等。

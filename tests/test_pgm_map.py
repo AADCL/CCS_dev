@@ -31,7 +31,12 @@ class PgmMapLoaderTests(unittest.TestCase):
             self.assertEqual(data.pixels.shape, (2, 3))
             self.assertEqual(data.metadata.image_width, 3)
             self.assertAlmostEqual(data.metadata.width_m, 0.15)
-            self.assertEqual(data.rgba().shape, (2, 3, 4))
+            rgba = data.rgba()
+            self.assertEqual(rgba.shape, (2, 3, 4))
+            np.testing.assert_allclose(rgba[0, 0, :3], (1.0, 1.0, 1.0))
+            np.testing.assert_allclose(rgba[0, 1, :3], (205 / 255,) * 3)
+            np.testing.assert_allclose(rgba[0, 2, :3], (0.0, 0.0, 0.0))
+            np.testing.assert_allclose(data.rgba(0.55)[..., 3], 0.55)
 
     def test_loads_p5_without_skipping_whitespace_valued_pixels(self):
         with tempfile.TemporaryDirectory() as directory:
