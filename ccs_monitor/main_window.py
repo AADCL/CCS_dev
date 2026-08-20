@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -148,6 +149,8 @@ class MainWindow(QMainWindow):
             execution_service=self.task_execution_service,
         )
         self.command_page.fullscreen_requested.connect(self.set_dashboard_fullscreen)
+        if self.mapping_service is not None:
+            self.mapping_service.remote_navigation_locked.connect(self._set_mapping_navigation_lock)
         for page in (self.home_page, self.devices_page, self.map_page, self.task_page, self.command_page):
             self.pages.addWidget(page)
         layout.addWidget(self.pages, 1)
@@ -183,6 +186,10 @@ class MainWindow(QMainWindow):
     def set_current_page(self, index: int) -> None:
         if not 0 <= index < self.pages.count():
             return
+        remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
+        if remote is not None and remote.navigation_locked and index != 2:
+            self.nav_buttons[2].setChecked(True)
+            return
         if index != 1:
             self.devices_page.stop_video()
         self.map_page.set_active(index == 2)
@@ -211,11 +218,30 @@ class MainWindow(QMainWindow):
             self.showNormal()
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
+        if remote is not None and remote.navigation_locked:
+            answer = QMessageBox.question(
+                self,
+                "遥控建图进行中",
+                "关闭应用将取消当前遥控建图任务，是否继续？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            self.mapping_service.cancel_remote_mapping("用户关闭应用")
         self.devices_page.stop_video()
         self.map_page.set_active(False)
         self.task_page.set_active(False)
         self.command_page.set_active(False)
         super().closeEvent(event)
+
+    def _set_mapping_navigation_lock(self, locked: bool) -> None:
+        for index, button in enumerate(self.nav_buttons):
+            button.setEnabled(not locked or index == 2)
+        if locked and self.current_page_index != 2:
+            self.set_current_page(2)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if event.key() == Qt.Key.Key_Escape and self.dashboard_fullscreen:

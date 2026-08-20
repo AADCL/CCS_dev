@@ -1,8 +1,8 @@
 # 多异构智能体指挥与控制系统
 
-当前地面站版本：**v0.15.1**
+当前指控平台版本：**v0.16.0**
 
-端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.1.0**、epgeneral_task_control **v0.1.0**
+端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.2.0**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
@@ -14,7 +14,7 @@
 - **设备管理**：支持搜索、筛选、新建、编辑、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
 - **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
 - **视频监控**：通过系统 FFmpeg 按需连接端侧 UDP 9000 SRT Listener，显示 H.264/MPEG-TS 视频流。
-- **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原，可从点云生成 ROS PGM，并提供离线点云融合、端侧 PGM 下载与二维栅格融合、Python 算法插件及 UDP 14561/14562 单机/多机实时建图。
+- **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原；新增 `ccs-map-stream-v2` 单机遥控建图，包括准备协商、实时预览、端侧成果生成、HTTP 断点下载及 PCD+PGM+YAML 原子提交。
 - **任务系统**：支持 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态，支持全屏及面板折叠。
 - **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、SRT 推流、实时建图和任务协调包。
@@ -37,7 +37,7 @@ CCS_dev/
 │   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.0
 │   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
-│   ├── epgeneral_map_stream/             # ROS 实时建图上行包，v0.1.0
+│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.2.0
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
 │   ├── epgeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
@@ -74,10 +74,13 @@ CCS_dev/
 | UDP 14560 | 端侧 → 地面站 | 高频遥测与心跳 |
 | UDP 14561 | 地面站 → 端侧 | 实时建图控制 |
 | UDP 14562 | 端侧 → 地面站 | 建图点云数据 |
+| TCP 动态 | 指控平台 → 端侧 | v2 建图 ZIP 成果 HTTP 下载（端侧返回带短期令牌的 URL） |
 | UDP 14563 | 地面站 → 端侧 | 任务下发与控制 |
 | UDP 14564 | 端侧 → 地面站 | 任务 ACK、状态和进度 |
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
+
+v0.16.0 配套端侧 `epgeneral_map_stream` v0.2.0 已实现 `ccs-map-stream-v2`；端侧必须配置真实 SLAM start/stop 适配器和成果目录，不会自动回退到 v1。
 
 ## 部署方法
 
@@ -348,6 +351,9 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.16.0 · 2026-08-20**
+<small>新增单机遥控建图 v2 指控平台流程、HTTP 成果下载与原子提交，并统一点云/PGM/网格/坐标显示。</small>
 
 **v0.15.1 · 2026-08-19**
 <small>彻底移除融合算法注册和建图启动过程对旧设备绝对路径的依赖，支持跨目录、跨设备和跨系统部署。</small>

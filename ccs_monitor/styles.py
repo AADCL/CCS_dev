@@ -133,6 +133,10 @@ def save_theme_mode(mode: ThemeMode | str, settings: QSettings | None = None) ->
 
 def _replace_style_colors(style: str, palette: ThemePalette) -> str:
     replacements = {
+        "#21415c": palette.chart_grid,
+        "#8fb3c9": palette.muted,
+        "#123c5d": palette.selected_background,
+        "#38bdf8": palette.primary,
         "#0b1118": palette.page_background,
         "#0b131b": palette.page_background,
         "#0e1720": palette.background,
@@ -633,6 +637,27 @@ QLabel#viewerStatus {
     border: 1px solid #223442;
     border-radius: 5px;
     padding: 24px;
+}
+
+QFrame#mapViewerToolbar {
+    background: transparent;
+    border-bottom: 1px solid #21415C;
+}
+
+QPushButton#mapLayerSegment {
+    min-width: 46px;
+    padding: 4px 8px;
+}
+
+QPushButton#mapLayerSegment:checked {
+    color: #FFFFFF;
+    background: #123C5D;
+    border-color: #38BDF8;
+}
+
+QLabel#mapCursorCoordinate {
+    color: #8FB3C9;
+    padding: 2px 8px;
 }
 QLabel#deviceName {
     color: #f1f5fa;

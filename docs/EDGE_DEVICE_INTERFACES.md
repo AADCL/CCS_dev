@@ -1,9 +1,8 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.15.1`，更新日期：2026-08-19。
+文档版本：`v0.16.0`，更新日期：2026-08-20。
 
-地面站 v0.15.1 使用系统 FFmpeg SRT Caller 接收视频；端侧使用 `epgeneral_video_srt` v0.1.0 SRT Listener。该部署变更不兼容旧 RTSP 包。MQTT 与 UDP 14560–14564 协议不变；v0.15.1 仅修复地面站融合算法静态路径，不修改端侧接口。
-端侧 `epgeneral_map_stream` v0.1.0 尚未实现 PGM 文件服务；旧端侧可继续执行实时建图，但 PGM 下载会超时并显示“不支持”。
+指控平台 v0.16.0 与端侧 `epgeneral_map_stream` v0.2.0 已实现 `ccs-map-stream-v2` 单机遥控建图。既有 MQTT、SRT、UDP 遥测、v1 后端和任务协议保持兼容；v2 端侧不自动回退 v1。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -14,8 +13,9 @@
 | MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | epgeneral_mqtav v0.3.0 |
 | UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.2.1 |
 | SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.0 |
-| UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
-| UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | epgeneral_map_stream v0.1.0 |
+| UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | 保留后端 |
+| UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | 保留后端 |
+| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.2.0 |
 | UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 | UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 
@@ -126,7 +126,44 @@ IPv6 地址使用方括号。地面站先执行 `ffmpeg -hide_banner -protocols`
 
 端侧和地面站的延迟配置均以毫秒保存；SRT URL 的 `latency` 查询参数使用微秒，因此地面站乘以 1000。端侧应开放 UDP 9000，并通过 `gst-inspect-1.0 srtsink` 检查插件。系统 FFmpeg 必须由用户安装且带 libsrt。
 
-## UDP 14561/14562 实时建图
+## UDP 14561/14562 单机遥控建图 v2（指控平台 v0.16.0）
+
+v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.2.0` 实现以下流程；最终 PCD、PGM 和 YAML 由配置的外部 start/stop 命令生成。
+
+v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sent_at_ns/payload`，消息类型为 `prepare_mapping`、`prepare_result`、`start_mapping`、`stop_mapping`、`command_ack`、`session_heartbeat`、`session_status`、`cloud_chunk` 和 `artifact_status`。
+
+`prepare_mapping` 下发 `request_id`、`return_host`、`return_port` 及 `required_inputs=[pointcloud,pose,artifact_storage,map_generation]`。端侧必须返回：
+
+```python
+{
+  "request_id": "...", "accepted": True,
+  "checks": [{"name": "pointcloud", "available": True, "reason": ""}],
+  "sample_window_seconds": 0.2,
+  "frame_id": "map",
+  "capability_version": "0.2.0",
+  "error_code": "", "reason": ""
+}
+```
+
+`accepted` 必须等于所有 checks 的逻辑与；指控平台还会检查 frame 一致性。通过后 `start_mapping` 带 `coordinate_contract=sensor+map_body+body_sensor`，实时 `cloud_chunk` 字段和校验规则与 v1 一致，但仅用于预览。
+
+`stop_mapping` ACK 只表示开始生成成果。端侧以 `artifact_status.state=generating|ready|error` 报告进度；ready payload 必须包含：
+
+```python
+{
+  "state": "ready",
+  "url": "http://<设备IP>:<端口>/mapping/result.zip?token=<短期令牌>",
+  "byte_count": 123456,
+  "sha256": "<64 hex>",
+  "expires_at": "2026-08-20T10:10:00+00:00"
+}
+```
+
+指控平台只允许 URL 主机等于设备 IP 的明文 HTTP，禁止重定向，并使用 Range 续传。端侧默认在 TCP 14600 提供固定路径 `/mapping/result.zip?token=<短期令牌>`，令牌有效期默认 15 分钟。ZIP 必须且只能包含 `manifest.json` 及清单声明的一个 PCD、一个 PGM、一个 ROS YAML。清单 schema 1 包含 `map_id/device_id/session_id/frame_id/generated_at`，以及 `files.pcd/pgm/yaml` 的 `path/byte_count/sha256`。路径穿越、符号链接、重复或未声明文件、异常压缩比和任何校验不匹配均会拒绝整个成果。
+
+端侧 `config/mapping.yaml` 的 `commands.start` 与 `commands.stop` 是不经 shell 执行的参数数组。允许模板字段为 `map_id`、`device_id`、`session_id`、`session_dir`、`pcd_path`、`pgm_path`、`yaml_path`；命令只应快速触发外部 SLAM，节点随后等待会话目录下三个文件稳定。默认配置中的 `/usr/local/bin/ccs-mapping-start` 和 `ccs-mapping-stop` 是部署占位符，必须替换为目标设备实际适配器。
+
+## UDP 14561/14562 实时建图 v1（保留后端）
 
 此协议独立于 UDP 14560。地面站绑定 14562，并使用该 socket 向所选设备 IP 的 14561 发送控制指令。端侧必须把上行数据发回 `start_mapping.return_host:return_port`，并保持 source IP 与 `devices.json` 一致。
 
@@ -328,13 +365,13 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 - stop 后停止发送，释放 ROS subscriber、位姿缓存和会话资源；控制 socket 保持监听以接受下一次 start，进程退出时再关闭。
 - 在 localhost/局域网测试乱序、重复、缺片、CRC 错误、点云/位姿超时、重复命令和干净退出。
 
-当前结论：地面站 v0.8.0 与端侧 `epgeneral_map_stream` v0.1.0 已实现上述协议。自动测试覆盖协议、处理、会话与 localhost UDP 契约；ROS Melodic 真机上的雷达、里程计和局域网联调仍需在部署设备执行。
+当前结论：v1 作为历史后端保留；v0.16.0 地面站与端侧 `epgeneral_map_stream` v0.2.0 的 v2 协议已通过协议、处理、成果和 localhost UDP 契约测试。ROS Noetic 真机上的雷达、里程计、外部 SLAM 钩子和局域网联调仍需在部署设备执行。
 
 ## UDP 地图任务控制接口（ccs-task-control-v1）
 
 ### 兼容性与网络
 
-- 地面站版本：v0.15.1；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
+- 指控平台版本：v0.16.0；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
 - 可信内网明文 MessagePack，schema 1；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。

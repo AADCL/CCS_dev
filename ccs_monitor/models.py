@@ -302,6 +302,11 @@ class MapBuildingResultMetadata:
     dropped_frames: int
     received_points: int
     fused_points: int
+    sample_window_seconds: float | None = None
+    artifact_sha256: str | None = None
+    pcd_sha256: str | None = None
+    pgm_sha256: str | None = None
+    yaml_sha256: str | None = None
 
 
 @dataclass(frozen=True)

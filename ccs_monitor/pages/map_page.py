@@ -9,10 +9,11 @@ import uuid
 from datetime import datetime, timezone
 
 import numpy as np
-from PySide6.QtCore import QEvent, QTimer, Signal, Qt
+from PySide6.QtCore import QEvent, QSettings, QTimer, Signal, Qt, QObject
 from PySide6.QtGui import QColor, QMouseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
+    QButtonGroup,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -43,6 +44,7 @@ from PySide6.QtWidgets import (
 from ..data_source import DeviceDataSource
 from ..map_repository import MapRepository, MapRepositoryError
 from ..map_building import MapBuildingSessionSnapshot
+from ..map_building_v2 import RemoteMappingSnapshot
 from ..map_fusion import MapFusionError, MapFusionRepository, MapFusionRunner
 from ..models import (
     DeviceMapMarker,
@@ -78,6 +80,48 @@ STATUS_TEXT = {
 }
 
 MAP_PAN_DRAG_SPEED = 3.0
+
+
+class MapViewerSettings(QObject):
+    changed = Signal()
+
+    def __init__(self, settings: QSettings | None = None) -> None:
+        super().__init__()
+        self.settings = settings or QSettings("CCS", "CCS Device Monitor")
+        self.grid_visible = self._bool("map_viewer/grid_visible", True)
+        self.grid_spacing = self._float("map_viewer/grid_spacing", 1.0, 0.01, 1000.0)
+        self.grid_opacity = self._float("map_viewer/grid_opacity", 35.0, 10.0, 100.0)
+        self.coordinates_visible = self._bool("map_viewer/coordinates_visible", True)
+        self.tick_spacing = self._float("map_viewer/tick_spacing", 5.0, 0.01, 1000.0)
+        self.cursor_visible = self._bool("map_viewer/cursor_visible", True)
+
+    def update(self, **values) -> None:
+        changed = False
+        for name, value in values.items():
+            if not hasattr(self, name) or getattr(self, name) == value:
+                continue
+            setattr(self, name, value)
+            self.settings.setValue(f"map_viewer/{name}", value)
+            changed = True
+        if changed:
+            self.settings.sync()
+            self.changed.emit()
+
+    def _bool(self, key: str, default: bool) -> bool:
+        value = self.settings.value(key, default)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    def _float(self, key: str, default: float, minimum: float, maximum: float) -> float:
+        try:
+            value = float(self.settings.value(key, default))
+        except (TypeError, ValueError):
+            value = default
+        return min(maximum, max(minimum, value))
+
+
+MAP_VIEWER_SETTINGS = MapViewerSettings()
 
 
 def calculate_turntable_pan(
@@ -291,8 +335,7 @@ class MapCreationModeDialog(QDialog):
         title.setObjectName("dialogTitle")
         root.addWidget(title)
         for mode, name, detail in (
-            ("single", "单机建图", "选择一台设备并立即协商实时点云"),
-            ("multi", "多机建图", "选择至少两台设备并配置主从坐标外参"),
+            ("single", "单机遥控建图", "创建任务后先与端侧协商点云、位姿和成果能力"),
             ("empty", "空地图", "创建不绑定设备的地图档案，稍后导入或建图"),
         ):
             button = QPushButton(f"{name}\n{detail}")
@@ -426,7 +469,7 @@ class MappingSetupDialog(QDialog):
         self.validation.setObjectName("validationError")
         root.addWidget(self.validation)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        self.start_button = buttons.addButton("开始建图", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.start_button = buttons.addButton("创建建图任务", QDialogButtonBox.ButtonRole.AcceptRole)
         self.start_button.setObjectName("primaryButton")
         self.start_button.clicked.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -1087,6 +1130,9 @@ class PointCloudViewer(QWidget):
         self._marker_visual = None
         self._shape_visuals: list[object] = []
         self._pgm_visual = None
+        self._pgm_data = None
+        self._grid_visual = None
+        self._coordinate_visual = None
         self._device_axis_visual = None
         self._trail_visual = None
         self._camera = None
@@ -1107,8 +1153,52 @@ class PointCloudViewer(QWidget):
         self._task_conflicts: list[tuple[float, float, float]] = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        self.display_toolbar = QFrame()
+        self.display_toolbar.setObjectName("mapViewerToolbar")
+        controls = QHBoxLayout(self.display_toolbar)
+        controls.setContentsMargins(8, 5, 8, 5)
+        controls.setSpacing(7)
+        self.layer_group = QButtonGroup(self)
+        self.layer_group.setExclusive(True)
+        self.layer_buttons: dict[str, QPushButton] = {}
+        for mode, label in (("pointcloud", "点云"), ("grid", "PGM"), ("overlay", "叠加")):
+            button = QPushButton(label)
+            button.setObjectName("mapLayerSegment")
+            button.setCheckable(True)
+            button.setProperty("segmentMode", mode)
+            button.clicked.connect(lambda _checked=False, value=mode: self.set_layer_mode(value))
+            self.layer_group.addButton(button)
+            self.layer_buttons[mode] = button
+        self.layer_buttons["overlay"].setChecked(True)
+        self.grid_check = QCheckBox("网格")
+        self.grid_spacing_input = NoButtonDoubleSpinBox()
+        self.grid_spacing_input.setRange(0.01, 1000.0)
+        self.grid_spacing_input.setDecimals(2)
+        self.grid_spacing_input.setSuffix(" m")
+        self.grid_opacity_input = NoButtonSpinBox()
+        self.grid_opacity_input.setRange(10, 100)
+        self.grid_opacity_input.setSuffix(" %")
+        self.coordinate_check = QCheckBox("坐标")
+        self.tick_spacing_input = NoButtonDoubleSpinBox()
+        self.tick_spacing_input.setRange(0.01, 1000.0)
+        self.tick_spacing_input.setDecimals(2)
+        self.tick_spacing_input.setSuffix(" m")
+        self.cursor_check = QCheckBox("光标坐标")
+        for widget in (
+            QLabel("图层"), *self.layer_buttons.values(), self.grid_check,
+            self.grid_spacing_input, self.grid_opacity_input, self.coordinate_check,
+            self.tick_spacing_input, self.cursor_check,
+        ):
+            controls.addWidget(widget)
+        controls.addStretch()
+        layout.addWidget(self.display_toolbar)
         self._stack = QStackedWidget()
         layout.addWidget(self._stack)
+        self.cursor_coordinate = QLabel("")
+        self.cursor_coordinate.setObjectName("mapCursorCoordinate")
+        self.cursor_coordinate.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.cursor_coordinate.setVisible(False)
+        layout.addWidget(self.cursor_coordinate)
         self.status = QLabel("尚未加载点云")
         self.status.setObjectName("viewerStatus")
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1118,6 +1208,26 @@ class PointCloudViewer(QWidget):
             self._initialize_canvas(canvas_factory)
         except Exception as exc:
             self.status.setText(f"三维渲染不可用：{exc}\n请检查 VisPy 与 OpenGL 环境")
+        MAP_VIEWER_SETTINGS.changed.connect(self._apply_display_settings)
+        self.grid_check.toggled.connect(
+            lambda value: MAP_VIEWER_SETTINGS.update(grid_visible=bool(value))
+        )
+        self.grid_spacing_input.valueChanged.connect(
+            lambda value: MAP_VIEWER_SETTINGS.update(grid_spacing=float(value))
+        )
+        self.grid_opacity_input.valueChanged.connect(
+            lambda value: MAP_VIEWER_SETTINGS.update(grid_opacity=float(value))
+        )
+        self.coordinate_check.toggled.connect(
+            lambda value: MAP_VIEWER_SETTINGS.update(coordinates_visible=bool(value))
+        )
+        self.tick_spacing_input.valueChanged.connect(
+            lambda value: MAP_VIEWER_SETTINGS.update(tick_spacing=float(value))
+        )
+        self.cursor_check.toggled.connect(
+            lambda value: MAP_VIEWER_SETTINGS.update(cursor_visible=bool(value))
+        )
+        self._apply_display_settings()
 
     def _initialize_canvas(self, canvas_factory: Callable[[], object] | None) -> None:
         if canvas_factory is None:
@@ -1136,6 +1246,7 @@ class PointCloudViewer(QWidget):
         self._stack.addWidget(native)
         self._stack.setCurrentWidget(native)
         native.setMinimumSize(420, 320)
+        native.setMouseTracking(True)
         native.installEventFilter(self)
         central_widget = getattr(self._canvas, "central_widget", None)
         if central_widget is None:
@@ -1157,6 +1268,10 @@ class PointCloudViewer(QWidget):
         self._device_axis_visual = scene.visuals.Line(parent=self._view.scene)
         self._trail_visual = scene.visuals.Line(parent=self._view.scene)
         self._conflict_visual = scene.visuals.Markers(parent=self._view.scene)
+        self._grid_visual = scene.visuals.Line(parent=self._view.scene)
+        self._coordinate_visual = scene.visuals.Text(
+            parent=self._view.scene, font_size=8, anchor_x="center", anchor_y="center"
+        )
         scene.visuals.XYZAxis(parent=self._view.scene)
 
     def load_map(self, definition: MapDefinition, pcd_path: str | Path) -> None:
@@ -1174,6 +1289,7 @@ class PointCloudViewer(QWidget):
             )
             self.pointcloud_loaded = True
             self.set_layer_mode(self.layer_mode)
+            self._render_coordinate_grid()
             self.reset_view()
             self._render_markers()
             native = getattr(self._canvas, "native", None)
@@ -1193,12 +1309,16 @@ class PointCloudViewer(QWidget):
                 raise PgmMapError("VisPy/OpenGL 渲染器未初始化")
             from vispy import scene
 
+            self._pgm_data = data
             if self._pgm_visual is None:
                 self._pgm_visual = scene.visuals.Image(
-                    data.rgba(), parent=self._view.scene, method="subdivide"
+                    data.rgba(0.55 if self.layer_mode == "overlay" else 1.0),
+                    parent=self._view.scene, method="subdivide"
                 )
             else:
-                self._pgm_visual.set_data(data.rgba())
+                self._pgm_visual.set_data(
+                    data.rgba(0.55 if self.layer_mode == "overlay" else 1.0)
+                )
             transform = scene.transforms.MatrixTransform()
             transform.scale((data.metadata.resolution, data.metadata.resolution, 1.0))
             transform.rotate(math.degrees(data.metadata.origin_yaw), (0, 0, 1))
@@ -1206,6 +1326,7 @@ class PointCloudViewer(QWidget):
             self._pgm_visual.transform = transform
             self.pgm_loaded = True
             self.set_layer_mode(self.layer_mode)
+            self._render_coordinate_grid()
             self.reset_view()
             native = getattr(self._canvas, "native", None)
             if native is not None:
@@ -1218,10 +1339,19 @@ class PointCloudViewer(QWidget):
         if mode not in {"pointcloud", "grid", "overlay"}:
             raise ValueError(f"未知地图图层模式：{mode}")
         self.layer_mode = mode
+        for name, button in self.layer_buttons.items():
+            button.blockSignals(True)
+            button.setChecked(name == mode)
+            button.blockSignals(False)
         if self._points_visual is not None:
             self._points_visual.visible = self.pointcloud_loaded and mode in {"pointcloud", "overlay"}
         if self._pgm_visual is not None:
             self._pgm_visual.visible = self.pgm_loaded and mode in {"grid", "overlay"}
+            if self._pgm_data is not None:
+                self._pgm_visual.set_data(
+                    self._pgm_data.rgba(0.55 if mode == "overlay" else 1.0)
+                )
+        self._update_layer_controls()
 
     def clear(self) -> None:
         self.current_map = None
@@ -1239,9 +1369,12 @@ class PointCloudViewer(QWidget):
             self._trail_visual.set_data(pos=np.empty((0, 3), dtype=np.float32))
         self.pointcloud_loaded = False
         self.pgm_loaded = False
+        self._pgm_data = None
         self.selected_device_pose = None
         self.device_trail = ()
         self.show_message("尚未加载点云")
+        self._render_coordinate_grid()
+        self._update_layer_controls()
 
     def set_live_points(self, points: np.ndarray, bounds=None) -> None:
         array = np.asarray(points, dtype=np.float32)
@@ -1255,6 +1388,7 @@ class PointCloudViewer(QWidget):
             native = getattr(self._canvas, "native", None)
             if native is not None:
                 self._stack.setCurrentWidget(native)
+            self._update_layer_controls()
         if bounds is not None and self._camera is not None:
             center = (
                 (bounds.min_x + bounds.max_x) / 2,
@@ -1265,6 +1399,7 @@ class PointCloudViewer(QWidget):
                 self._camera.center = center
                 self._camera.distance = max(bounds.width, bounds.height, bounds.depth, 1.0) * 1.8
                 self._live_view_initialized = True
+            self._render_coordinate_grid(bounds)
 
     def clear_live_points(self) -> None:
         self._live_view_initialized = False
@@ -1328,11 +1463,132 @@ class PointCloudViewer(QWidget):
             if point is not None:
                 self.map_point_picked.emit(*point)
             return True
+        if watched is native and event.type() == QEvent.Type.MouseMove:
+            if MAP_VIEWER_SETTINGS.cursor_visible:
+                point = self._screen_to_map(
+                    event.position().x(), event.position().y(), watched.width(), watched.height()
+                )
+                if point is not None:
+                    self.cursor_coordinate.setText(f"X {point[0]:.2f} m    Y {point[1]:.2f} m")
+                    self.cursor_coordinate.setVisible(True)
+            return False
+        if watched is native and event.type() == QEvent.Type.Leave:
+            self.cursor_coordinate.setVisible(False)
         return super().eventFilter(watched, event)
+
+    def _apply_display_settings(self) -> None:
+        controls = (
+            (self.grid_check, MAP_VIEWER_SETTINGS.grid_visible),
+            (self.grid_spacing_input, MAP_VIEWER_SETTINGS.grid_spacing),
+            (self.grid_opacity_input, int(MAP_VIEWER_SETTINGS.grid_opacity)),
+            (self.coordinate_check, MAP_VIEWER_SETTINGS.coordinates_visible),
+            (self.tick_spacing_input, MAP_VIEWER_SETTINGS.tick_spacing),
+            (self.cursor_check, MAP_VIEWER_SETTINGS.cursor_visible),
+        )
+        for control, value in controls:
+            control.blockSignals(True)
+            if isinstance(control, QCheckBox):
+                control.setChecked(bool(value))
+            else:
+                control.setValue(value)
+            control.blockSignals(False)
+        self.grid_spacing_input.setEnabled(MAP_VIEWER_SETTINGS.grid_visible)
+        self.grid_opacity_input.setEnabled(MAP_VIEWER_SETTINGS.grid_visible)
+        self.tick_spacing_input.setEnabled(MAP_VIEWER_SETTINGS.coordinates_visible)
+        if not MAP_VIEWER_SETTINGS.cursor_visible:
+            self.cursor_coordinate.setVisible(False)
+        self._render_coordinate_grid()
+
+    def _update_layer_controls(self) -> None:
+        has_points = self.pointcloud_loaded or len(self._live_point_data) > 0
+        self.layer_buttons["pointcloud"].setEnabled(has_points)
+        self.layer_buttons["grid"].setEnabled(self.pgm_loaded)
+        self.layer_buttons["overlay"].setEnabled(has_points and self.pgm_loaded)
+
+    def _map_xy_bounds(self):
+        if self.current_map and self.current_map.bounds:
+            bounds = self.current_map.bounds
+            return bounds.min_x, bounds.max_x, bounds.min_y, bounds.max_y
+        if self.current_map and self.current_map.pgm:
+            pgm = self.current_map.pgm
+            corners = []
+            cosine, sine = math.cos(pgm.origin_yaw), math.sin(pgm.origin_yaw)
+            for x, y in ((0, 0), (pgm.width_m, 0), (0, pgm.height_m), (pgm.width_m, pgm.height_m)):
+                corners.append((pgm.origin_x + cosine * x - sine * y,
+                                pgm.origin_y + sine * x + cosine * y))
+            return (min(p[0] for p in corners), max(p[0] for p in corners),
+                    min(p[1] for p in corners), max(p[1] for p in corners))
+        if len(self._live_point_data):
+            return (float(self._live_point_data[:, 0].min()), float(self._live_point_data[:, 0].max()),
+                    float(self._live_point_data[:, 1].min()), float(self._live_point_data[:, 1].max()))
+        return None
+
+    def _render_coordinate_grid(self, bounds=None) -> None:
+        if self._grid_visual is None or self._coordinate_visual is None:
+            return
+        xy = None
+        if bounds is not None:
+            xy = bounds.min_x, bounds.max_x, bounds.min_y, bounds.max_y
+        xy = xy or self._map_xy_bounds()
+        if xy is None or not MAP_VIEWER_SETTINGS.grid_visible:
+            self._grid_visual.set_data(pos=np.empty((0, 3), dtype=np.float32))
+            self._coordinate_visual.visible = False
+            return
+        min_x, max_x, min_y, max_y = xy
+        spacing = MAP_VIEWER_SETTINGS.grid_spacing
+        padding = spacing
+        first_x = math.floor((min_x - padding) / spacing) * spacing
+        last_x = math.ceil((max_x + padding) / spacing) * spacing
+        first_y = math.floor((min_y - padding) / spacing) * spacing
+        last_y = math.ceil((max_y + padding) / spacing) * spacing
+        x_values = np.arange(first_x, last_x + spacing * 0.5, spacing)
+        y_values = np.arange(first_y, last_y + spacing * 0.5, spacing)
+        if len(x_values) + len(y_values) > 4000:
+            factor = math.ceil((len(x_values) + len(y_values)) / 4000)
+            x_values, y_values = x_values[::factor], y_values[::factor]
+        segments = []
+        for x in x_values:
+            segments.extend(((x, first_y, -0.02), (x, last_y, -0.02)))
+        for y in y_values:
+            segments.extend(((first_x, y, -0.02), (last_x, y, -0.02)))
+        alpha = MAP_VIEWER_SETTINGS.grid_opacity / 100.0
+        color = (0.5, 0.5, 0.5, alpha)
+        self._grid_visual.set_data(
+            pos=np.asarray(segments, dtype=np.float32), color=color,
+            connect="segments", width=1.0,
+        )
+        if not MAP_VIEWER_SETTINGS.coordinates_visible:
+            self._coordinate_visual.visible = False
+            return
+        tick = MAP_VIEWER_SETTINGS.tick_spacing
+        tx = np.arange(math.ceil(first_x / tick) * tick, last_x + tick * 0.5, tick)
+        ty = np.arange(math.ceil(first_y / tick) * tick, last_y + tick * 0.5, tick)
+        if len(tx) + len(ty) > 300:
+            factor = math.ceil((len(tx) + len(ty)) / 300)
+            tx, ty = tx[::factor], ty[::factor]
+        positions = [(x, first_y, 0.01) for x in tx] + [(first_x, y, 0.01) for y in ty]
+        labels = [f"{x:g}" for x in tx] + [f"{y:g}" for y in ty]
+        self._coordinate_visual.text = labels
+        self._coordinate_visual.pos = np.asarray(positions, dtype=np.float32)
+        self._coordinate_visual.color = self.theme_palette.muted
+        self._coordinate_visual.visible = bool(labels)
 
     def _screen_to_map(self, x: float, y: float, width: int, height: int) -> tuple[float, float] | None:
         if self.current_map is None or width <= 0 or height <= 0:
             return None
+        if self._view is not None and self._camera is not None:
+            try:
+                transform = self._view.scene.transform
+                near = np.asarray(transform.imap((x, y, 0.0, 1.0)), dtype=np.float64)[:3]
+                far = np.asarray(transform.imap((x, y, 1.0, 1.0)), dtype=np.float64)[:3]
+                direction = far - near
+                if np.isfinite((near, far)).all() and abs(direction[2]) > 1e-9:
+                    distance = -near[2] / direction[2]
+                    intersection = near + distance * direction
+                    if np.isfinite(intersection).all():
+                        return float(intersection[0]), float(intersection[1])
+            except Exception:
+                pass
         if self.current_map.bounds is not None:
             bounds = self.current_map.bounds
             min_x, max_x = bounds.min_x, bounds.max_x
@@ -1504,6 +1760,7 @@ class PointCloudViewer(QWidget):
         self._render_markers()
         self.set_selected_device_pose(self.selected_device_pose)
         self.set_device_trail(self.device_trail)
+        self._render_coordinate_grid()
         self.status.update()
         self.update()
 
@@ -1513,6 +1770,7 @@ class MapDetailPage(QWidget):
     reload_requested = Signal()
     export_requested = Signal()
     mapping_requested = Signal()
+    mapping_cancel_requested = Signal()
 
     def __init__(self, viewer_factory: Callable[[], PointCloudViewer] | None = None) -> None:
         super().__init__()
@@ -1540,7 +1798,14 @@ class MapDetailPage(QWidget):
         self.mapping_button = QPushButton("重新建图")
         self.mapping_button.setObjectName("primaryButton")
         self.mapping_button.clicked.connect(self.mapping_requested)
-        for button in (reset, fit, reload_button, export_button, self.mapping_button):
+        self.cancel_mapping_button = QPushButton("取消任务")
+        self.cancel_mapping_button.setObjectName("dangerButton")
+        self.cancel_mapping_button.clicked.connect(self.mapping_cancel_requested)
+        self.cancel_mapping_button.setVisible(False)
+        for button in (
+            reset, fit, reload_button, export_button,
+            self.cancel_mapping_button, self.mapping_button,
+        ):
             toolbar.addWidget(button)
         root.addLayout(toolbar)
         self.info = QLabel("")
@@ -1562,6 +1827,11 @@ class MapDetailPage(QWidget):
         status_layout.addWidget(self.mapping_metrics, 1)
         self.mapping_status.setVisible(False)
         root.addWidget(self.mapping_status)
+        self.readiness_details = QLabel("")
+        self.readiness_details.setObjectName("muted")
+        self.readiness_details.setWordWrap(True)
+        self.readiness_details.setVisible(False)
+        root.addWidget(self.readiness_details)
         self.viewer = viewer_factory() if viewer_factory else PointCloudViewer()
         root.addWidget(self.viewer, 1)
         self._started_at = None
@@ -1634,6 +1904,54 @@ class MapDetailPage(QWidget):
         else:
             self._elapsed_timer.stop()
 
+    def update_remote_mapping(self, snapshot: RemoteMappingSnapshot) -> None:
+        self.mapping_status.setVisible(True)
+        self.mapping_state.setText(snapshot.message)
+        last_data = (
+            snapshot.last_data_at.astimezone().strftime("%H:%M:%S")
+            if snapshot.last_data_at else "--"
+        )
+        progress = ""
+        if snapshot.artifact_bytes_total:
+            percent = snapshot.artifact_bytes_received * 100.0 / snapshot.artifact_bytes_total
+            progress = f"  ·  下载 {percent:.1f}%"
+        self.mapping_metrics.setText(
+            f"完整帧 {snapshot.complete_frames}  ·  丢帧 {snapshot.dropped_frames}  ·  "
+            f"接收点 {snapshot.received_points:,}  ·  预览点 {snapshot.fused_points:,}  ·  "
+            f"最后数据 {last_data}{progress}"
+        )
+        checks = []
+        for item in snapshot.readiness_checks:
+            state = "可用" if item.available else "不可用"
+            checks.append(f"{item.name} {state}{'：' + item.reason if item.reason else ''}")
+        summary = "  ·  ".join(checks)
+        if snapshot.sample_window_seconds is not None:
+            summary += ("  ·  " if summary else "") + (
+                f"端侧采样窗口 {snapshot.sample_window_seconds:g} s"
+            )
+        if snapshot.capability_version:
+            summary += f"  ·  能力版本 {snapshot.capability_version}"
+        self.readiness_details.setText(summary)
+        self.readiness_details.setVisible(bool(summary))
+        labels = {
+            "preparing": "正在协商", "ready": "开始建图",
+            "starting": "正在启动", "mapping": "结束建图",
+            "warning": "结束建图", "stopping": "正在结束",
+            "generating": "正在生成", "downloading": "正在下载",
+            "validating": "正在校验", "failed": "重新协商",
+            "cancelled": "重新建图", "completed": "重新建图",
+        }
+        self.mapping_button.setText(labels.get(snapshot.state, "重新建图"))
+        self.mapping_button.setEnabled(snapshot.state in {"ready", "mapping", "warning", "failed"})
+        self.cancel_mapping_button.setVisible(snapshot.state not in {"completed", "cancelled"})
+        self.cancel_mapping_button.setEnabled(snapshot.state not in {"downloading", "validating"})
+        self._started_at = snapshot.started_at
+        self._refresh_elapsed()
+        if snapshot.navigation_locked:
+            self._elapsed_timer.start()
+        else:
+            self._elapsed_timer.stop()
+
     def _refresh_elapsed(self) -> None:
         if self._started_at:
             seconds = max(0, int((datetime.now().astimezone() - self._started_at.astimezone()).total_seconds()))
@@ -1680,6 +1998,7 @@ class MapPage(QWidget):
         self._pgm_fusion_include_existing = False
         self.pgm_fusion_engine = PgmFusionEngine()
         self.telemetry_store = telemetry_store
+        self._remote_trail: list[tuple[float, float, float]] = []
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self._build(viewer_factory)
         self._render_cards()
@@ -1698,6 +2017,9 @@ class MapPage(QWidget):
             self.mapping_service.pgm_source_updated.connect(self._on_pgm_source_updated)
             self.mapping_service.pgm_download_failed.connect(self._on_pgm_download_failed)
             self.mapping_service.pgm_download_completed.connect(self._on_pgm_download_completed)
+            self.mapping_service.remote_updated.connect(self._on_remote_mapping_updated)
+        if self.telemetry_store is not None:
+            self.telemetry_store.telemetry_updated.connect(self._on_remote_telemetry)
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
@@ -1720,6 +2042,7 @@ class MapPage(QWidget):
         self.detail_page.reload_requested.connect(self._reload_current_map)
         self.detail_page.export_requested.connect(self._export_current_map)
         self.detail_page.mapping_requested.connect(self._toggle_mapping)
+        self.detail_page.mapping_cancel_requested.connect(self._cancel_remote_mapping)
         if self.mapping_service is None:
             self.detail_page.set_mapping_available(False, "UDP 建图模块未配置")
         else:
@@ -1868,10 +2191,10 @@ class MapPage(QWidget):
         try:
             definition = self.repository.create(dialog.name_input.text(), creators)
             self.show_detail(definition.map_id)
-            self.mapping_service.start_job(
-                definition, selected_devices, dialog.primary_device_id(),
-                dialog.transforms(), dialog.algorithm_id(),
-            )
+            if len(selected_devices) != 1:
+                raise ValueError("v0.16.0 只支持单机遥控建图")
+            self._remote_trail.clear()
+            self.mapping_service.prepare_remote_mapping(definition, selected_devices[0])
         except (MapRepositoryError, RuntimeError, ValueError) as exc:
             QMessageBox.critical(self, "地图创建失败", str(exc))
 
@@ -2326,6 +2649,10 @@ class MapPage(QWidget):
         self._offer_interrupted_session(map_id)
 
     def show_list(self) -> None:
+        remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
+        if remote is not None and remote.navigation_locked:
+            QMessageBox.information(self, "遥控建图进行中", "请先结束或取消建图任务")
+            return
         if self.mapping_service is not None and self.mapping_service.active:
             self.mapping_service.interrupt_mapping("返回地图列表")
         self.detail_page.viewer.clear()
@@ -2333,14 +2660,24 @@ class MapPage(QWidget):
         self.page_stack.setCurrentWidget(self.list_page)
 
     def set_active(self, active: bool) -> None:
-        if not active and self.mapping_service is not None and self.mapping_service.active:
+        if (not active and self.mapping_service is not None and self.mapping_service.active
+                and not self.mapping_service.remote.active):
             self.mapping_service.interrupt_mapping("切换主导航")
 
     def _toggle_mapping(self) -> None:
         if self.mapping_service is None or not self.current_map_id:
             return
-        if self.mapping_service.active:
-            self.mapping_service.stop_mapping()
+        remote = self.mapping_service.current_remote_snapshot
+        if remote is not None:
+            try:
+                if remote.state == "ready":
+                    self.mapping_service.begin_remote_mapping()
+                elif remote.state in {"mapping", "warning"}:
+                    self.mapping_service.stop_remote_mapping()
+                elif remote.state == "failed":
+                    self.mapping_service.retry_remote_preparation()
+            except RuntimeError as exc:
+                QMessageBox.warning(self, "遥控建图", str(exc))
             return
         definition = self.repository.map_by_id(self.current_map_id)
         if definition is None:
@@ -2362,13 +2699,6 @@ class MapPage(QWidget):
             QMessageBox.warning(self, "无法开始建图", "没有可用的已保存设备")
             return
         mode = "single"
-        if len(candidates) >= 2:
-            selected_mode, accepted = QInputDialog.getItem(
-                self, "重新建图", "建图模式", ("单机建图", "多机建图"), 0, False,
-            )
-            if not accepted:
-                return
-            mode = "multi" if selected_mode == "多机建图" else "single"
         dialog = MappingSetupDialog(
             mode, candidates, self.fusion_repository.algorithms(enabled_only=True),
             name=definition.name, name_editable=False, parent=self,
@@ -2378,10 +2708,10 @@ class MapPage(QWidget):
         selected_ids = set(dialog.selected_device_ids())
         selected_devices = [item for item in candidates if item.device_id in selected_ids]
         try:
-            self.mapping_service.start_job(
-                definition, selected_devices, dialog.primary_device_id(),
-                dialog.transforms(), dialog.algorithm_id(),
-            )
+            if len(selected_devices) != 1:
+                raise ValueError("v0.16.0 只支持单机遥控建图")
+            self._remote_trail.clear()
+            self.mapping_service.prepare_remote_mapping(definition, selected_devices[0])
         except (RuntimeError, ValueError) as exc:
             QMessageBox.critical(self, "建图启动失败", str(exc))
 
@@ -2390,6 +2720,10 @@ class MapPage(QWidget):
             self.detail_page.update_mapping(snapshot)
 
     def _on_mapping_preview(self, session_id: str, points: object, bounds: object) -> None:
+        remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
+        if remote and remote.session_id == session_id and remote.map_id == self.current_map_id:
+            self.detail_page.viewer.set_live_points(points, bounds)
+            return
         snapshot = self.mapping_service.current_snapshot if self.mapping_service else None
         if snapshot and snapshot.session_id == session_id and snapshot.map_id == self.current_map_id:
             self.detail_page.viewer.set_live_points(points, bounds)
@@ -2402,6 +2736,37 @@ class MapPage(QWidget):
     def _on_mapping_failed(self, message: str) -> None:
         if self.page_stack.currentWidget() == self.detail_page:
             self.detail_page.mapping_state.setText(message)
+
+    def _on_remote_mapping_updated(self, snapshot: RemoteMappingSnapshot) -> None:
+        if snapshot.map_id == self.current_map_id:
+            self.detail_page.update_remote_mapping(snapshot)
+
+    def _cancel_remote_mapping(self) -> None:
+        if self.mapping_service is not None:
+            self.mapping_service.cancel_remote_mapping()
+        self._remote_trail.clear()
+        self.detail_page.viewer.clear_live_points()
+        self.detail_page.viewer.set_selected_device_pose(None)
+        self.detail_page.viewer.set_device_trail([])
+
+    def _on_remote_telemetry(self, device_id: str, snapshot: object) -> None:
+        remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
+        if (remote is None or remote.map_id != self.current_map_id
+                or device_id.casefold() != remote.device_id.casefold()):
+            return
+        pose = getattr(snapshot, "global_pose", None)
+        if pose is None or float(getattr(pose, "sample_age_seconds", 999.0)) > 2.0:
+            self.detail_page.viewer.set_selected_device_pose(None)
+            if remote.state in {"mapping", "warning"}:
+                self.detail_page.mapping_state.setText("全局位姿缺失或已超时")
+            return
+        self.detail_page.viewer.set_selected_device_pose(pose)
+        position = (float(pose.x), float(pose.y), float(pose.z))
+        if not self._remote_trail or self._remote_trail[-1] != position:
+            self._remote_trail.append(position)
+            if len(self._remote_trail) > 10000:
+                self._remote_trail = self._remote_trail[-10000:]
+        self.detail_page.viewer.set_device_trail(self._remote_trail)
 
     def _on_mapping_degraded(self, snapshot: object) -> None:
         failed = [item for item in snapshot.device_sessions if item.state == "failed"]
