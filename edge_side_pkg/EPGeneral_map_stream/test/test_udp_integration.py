@@ -12,10 +12,15 @@ from epgeneral_map_stream.config import load_config
 from epgeneral_map_stream.node import RosMapStreamNode
 from epgeneral_map_stream.protocol import encode_envelope
 
+try:
+    from .test_paths import device_config_path
+except ImportError:
+    from test_paths import device_config_path
+
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAPPING = os.path.join(PACKAGE, "config", "mapping.yaml")
-DEVICE = os.path.join(os.path.dirname(PACKAGE), "epgeneral_device_config", "config", "device.yaml")
+DEVICE = device_config_path(PACKAGE)
 
 
 def free_port():
@@ -50,8 +55,37 @@ class FakeRospy(object):
         pass
 
     def get_published_topics(self):
-        return [(self.config["cloud_topic"], self.config["cloud_message_type"]),
+        return [(self.config["input_cloud_topic"], self.config["input_cloud_message_type"]),
+                (self.config["input_imu_topic"], self.config["input_imu_message_type"]),
+                (self.config["cloud_topic"], self.config["cloud_message_type"]),
                 (self.config["pose_topic"], self.config["pose_message_type"])]
+
+    def wait_for_message(self, topic, unused_class, timeout=None):
+        stamp = type("Stamp", (), {"to_nsec": lambda self: 123456789})()
+        vector = type("Vector", (), {"x": 0.0, "y": 0.0, "z": 0.0})()
+        if topic == self.config["input_imu_topic"]:
+            orientation = type("Quaternion", (), {"x": 0.0, "y": 0.0,
+                                                    "z": 0.0, "w": 1.0})()
+            return type("Imu", (), {
+                "header": type("Header", (), {"stamp": stamp,
+                                                "frame_id": self.config["input_imu_frame"]})(),
+                "orientation": orientation, "angular_velocity": vector,
+                "linear_acceleration": vector})()
+        if topic == self.config["pose_topic"]:
+            position = type("Position", (), {"x": 0.0, "y": 0.0, "z": 0.0})()
+            orientation = type("Quaternion", (), {"x": 0.0, "y": 0.0,
+                                                    "z": 0.0, "w": 1.0})()
+            pose = type("Pose", (), {"position": position, "orientation": orientation})()
+            return type("Odometry", (), {
+                "header": type("Header", (), {"stamp": stamp,
+                                                "frame_id": self.config["map_frame"]})(),
+                "child_frame_id": self.config["body_frame"],
+                "pose": type("PoseWithCovariance", (), {"pose": pose})()})()
+        frame = (self.config["input_cloud_frame"]
+                 if topic == self.config["input_cloud_topic"] else self.config["cloud_frame"])
+        return type("Cloud", (), {
+            "header": type("Header", (), {"stamp": stamp, "frame_id": frame})(),
+            "fields": []})()
 
     def Subscriber(self, unused_topic, unused_type, unused_callback, **unused_kwargs):
         return FakeSubscriber()
@@ -67,16 +101,21 @@ class FakeRospy(object):
 
 
 class Runner(object):
-    def check(self):
+    def check(self, unused_commands):
         pass
 
-    def run(self, command, values):
-        if "stop" in command[0]:
-            with io.open(values["pcd_path"], "w", encoding="ascii") as stream:
-                stream.write("FIELDS x y z\nPOINTS 1\nDATA ascii\n0 0 0\n")
-            with io.open(values["pgm_path"], "wb") as stream:
+    def run(self, arguments, timeout=None):
+        name = os.path.basename(arguments[0])
+        if name == "stop_fast_lio.sh":
+            for path in (arguments[3], arguments[4]):
+                with io.open(path, "w", encoding="ascii") as stream:
+                    stream.write("FIELDS x y z\nPOINTS 1\nDATA ascii\n1 0 0\n")
+            fresh_ns = time.time_ns() + 1_000_000_000
+            os.utime(arguments[3], ns=(fresh_ns, fresh_ns))
+        elif name == "generate_pgm.sh":
+            with io.open(arguments[5], "wb") as stream:
                 stream.write(b"P5\n1 1\n255\n\x00")
-            with io.open(values["yaml_path"], "w", encoding="utf-8") as stream:
+            with io.open(arguments[6], "w", encoding="utf-8") as stream:
                 yaml.safe_dump({
                     "image": "map.pgm", "resolution": 0.1,
                     "origin": [0, 0, 0], "negate": 0,
@@ -92,9 +131,13 @@ class UdpIntegrationTests(unittest.TestCase):
                 bind_host="127.0.0.1", ground_station_ip="127.0.0.1",
                 device_ip="127.0.0.1", control_port=free_port(), http_bind_host="127.0.0.1",
                 http_port=0, workspace_root=directory, min_free_bytes=1,
+                generated_pcd_path=os.path.join(directory, "generated.pcd"),
+                source_pcd_path=os.path.join(directory, "source.pcd"),
                 artifact_poll_seconds=0.001, artifact_stable_polls=2,
                 artifact_generation_timeout_seconds=1.0,
             )
+            with io.open(config["source_pcd_path"], "w", encoding="ascii") as stream:
+                stream.write("old source PCD")
             ground = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.addCleanup(ground.close)
             ground.bind(("127.0.0.1", 0))
@@ -110,7 +153,7 @@ class UdpIntegrationTests(unittest.TestCase):
             prepare = encode_envelope(config, identity, "prepare_mapping", 0, {
                 "request_id": "udp-prepare", "return_host": "127.0.0.1",
                 "return_port": config["data_port"],
-                "required_inputs": ["pointcloud", "pose", "artifact_storage", "map_generation"],
+                "required_inputs": ["pointcloud", "imu", "artifact_storage", "map_generation"],
             })
             ground.sendto(prepare, ("127.0.0.1", config["control_port"]))
             response = msgpack.unpackb(ground.recvfrom(4096)[0], raw=False)
@@ -134,5 +177,6 @@ class UdpIntegrationTests(unittest.TestCase):
                 item = msgpack.unpackb(ground.recvfrom(4096)[0], raw=False)
                 if item["message_type"] == "artifact_status":
                     states.append(item["payload"]["state"])
-            self.assertEqual(states, ["generating", "ready"])
+            self.assertGreaterEqual(states.count("generating"), 1)
+            self.assertEqual(states[-1], "ready")
             self.assertEqual(node.state, "standby")

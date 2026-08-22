@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import ipaddress
 import json
 import math
 import os
+import queue
 import shutil
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -17,13 +21,14 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import msgpack
+import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from .map_building import (
-    CloudFrameAssembler, MapBuildingEnvelope, VoxelMapAccumulator,
+    MapBuildingEnvelope,
 )
 from .map_building_config import MapBuildingConfig
-from .models import DeviceSnapshot, MapBuildingResultMetadata, MapDefinition
+from .models import DeviceSnapshot, MapBounds, MapBuildingResultMetadata, MapDefinition
 from .map_repository import MapRepository, MapRepositoryError
 from .pgm_map import PgmMapLoader, PgmMapError
 from .point_cloud import MapPointCloudLoader, PointCloudError
@@ -49,6 +54,15 @@ class RemoteReadinessCheck:
 
 
 @dataclass(frozen=True)
+class RemoteMappingLogEntry:
+    timestamp: datetime
+    direction: str
+    event: str
+    summary: str
+    level: str = "INFO"
+
+
+@dataclass(frozen=True)
 class RemoteMappingSnapshot:
     map_id: str
     device_id: str
@@ -58,7 +72,7 @@ class RemoteMappingSnapshot:
     started_at: datetime
     readiness_checks: tuple[RemoteReadinessCheck, ...] = ()
     sample_window_seconds: float | None = None
-    frame_id: str = "map"
+    frame_id: str = "lio_odom"
     capability_version: str = ""
     complete_frames: int = 0
     dropped_frames: int = 0
@@ -68,6 +82,7 @@ class RemoteMappingSnapshot:
     artifact_bytes_received: int = 0
     artifact_bytes_total: int = 0
     error_code: str = ""
+    log_entries: tuple[RemoteMappingLogEntry, ...] = ()
 
     @property
     def navigation_locked(self) -> bool:
@@ -86,6 +101,84 @@ class ArtifactDescriptor:
 
 
 @dataclass(frozen=True)
+class CloudFragmentDescriptor:
+    fragment_id: int
+    url: str
+    byte_count: int
+    sha256: str
+    point_count: int
+    frame_id: str
+    started_at_ns: int
+    ended_at_ns: int
+    expires_at: datetime
+
+
+class PreviewAccumulator:
+    """Bounded vectorized voxel preview; final map data never depends on it."""
+
+    def __init__(self, voxel_size_m: float, maximum: int) -> None:
+        self.voxel_size_m = float(voxel_size_m)
+        self.maximum = int(maximum)
+        self.received_points = 0
+        self._points = np.empty((0, 3), dtype=np.float32)
+
+    def add(self, points: np.ndarray) -> None:
+        incoming = np.asarray(points, dtype=np.float32)
+        if incoming.ndim != 2 or incoming.shape[1] != 3 or not np.isfinite(incoming).all():
+            raise ValueError("PCD 分片必须包含有限 XYZ 点")
+        self.received_points += len(incoming)
+        combined = np.concatenate((self._points, incoming), axis=0)
+        keys = np.floor(combined / self.voxel_size_m).astype(np.int64)
+        _unique, indices = np.unique(keys, axis=0, return_index=True)
+        combined = combined[np.sort(indices)]
+        if len(combined) > self.maximum:
+            selected = np.linspace(0, len(combined) - 1, self.maximum, dtype=np.int64)
+            combined = combined[selected]
+        self._points = np.ascontiguousarray(combined, dtype=np.float32)
+
+    def points(self) -> np.ndarray:
+        return self._points.copy()
+
+    def bounds(self) -> MapBounds | None:
+        if not len(self._points):
+            return None
+        minimum = self._points.min(axis=0)
+        maximum = self._points.max(axis=0)
+        return MapBounds(*minimum.tolist(), *maximum.tolist())
+
+
+def load_preview_pcd(path: Path, descriptor: CloudFragmentDescriptor) -> np.ndarray:
+    with path.open("rb") as stream:
+        header: list[str] = []
+        while True:
+            line = stream.readline()
+            if not line or len(header) > 64:
+                raise ArtifactValidationError("PCD 分片头部不完整")
+            text = line.decode("ascii", "strict").strip()
+            header.append(text)
+            if text.upper().startswith("DATA "):
+                break
+        fields = {parts[0].upper(): parts[1:] for parts in (
+            line.split() for line in header if line and not line.startswith("#"))}
+        if (fields.get("FIELDS") != ["x", "y", "z"]
+                or fields.get("SIZE") != ["4", "4", "4"]
+                or fields.get("TYPE") != ["F", "F", "F"]
+                or fields.get("DATA", [""])[0].lower() != "binary"):
+            raise ArtifactValidationError("PCD 分片格式不是二进制 XYZ float32")
+        try:
+            declared = int(fields["POINTS"][0])
+        except (KeyError, IndexError, ValueError) as exc:
+            raise ArtifactValidationError("PCD 分片点数无效") from exc
+        raw = stream.read()
+    if declared != descriptor.point_count or len(raw) != declared * 12:
+        raise ArtifactValidationError("PCD 分片数据长度与声明不一致")
+    points = np.frombuffer(raw, dtype="<f4").reshape((-1, 3)).copy()
+    if not np.isfinite(points).all():
+        raise ArtifactValidationError("PCD 分片包含非有限坐标")
+    return points
+
+
+@dataclass(frozen=True)
 class ValidatedArtifact:
     root: Path
     pcd_path: Path
@@ -98,8 +191,9 @@ class ValidatedArtifact:
 
 class MapBuildingV2Protocol:
     MESSAGE_TYPES = {
-        "prepare_mapping", "prepare_result", "start_mapping", "stop_mapping",
-        "command_ack", "session_heartbeat", "session_status", "cloud_chunk",
+        "prepare_mapping", "prepare_result", "start_mapping", "stop_mapping", "abort_mapping",
+        "cloud_fragment_ack",
+        "command_ack", "session_heartbeat", "session_status", "cloud_fragment_ready",
         "artifact_status",
     }
 
@@ -168,6 +262,11 @@ class MapBuildingV2Protocol:
             not isinstance(item, str) or not item.strip() for item in required
         ):
             raise RemoteMappingProtocolError("required_inputs 无效")
+        if "restart_active" in payload and not isinstance(payload["restart_active"], bool):
+            raise RemoteMappingProtocolError("restart_active 无效")
+        if payload.get("preview_transport") != self.config.preview_transport:
+            raise RemoteMappingProtocolError("prepare_mapping.preview_transport 无效")
+        self._number(payload, "fragment_interval_seconds", 0.1)
 
     def _validate_prepare_result(self, payload: dict[str, Any]) -> None:
         self._string(payload, "request_id")
@@ -187,19 +286,37 @@ class MapBuildingV2Protocol:
         self._number(payload, "sample_window_seconds", 0.001)
         self._string(payload, "frame_id")
         self._string(payload, "capability_version")
+        if payload.get("preview_transport") != self.config.preview_transport:
+            raise RemoteMappingProtocolError("prepare_result.preview_transport 无效")
+        self._number(payload, "fragment_interval_seconds", 0.1)
+        if "restarted" in payload and not isinstance(payload["restarted"], bool):
+            raise RemoteMappingProtocolError("prepare_result.restarted 无效")
+        for key in ("previous_state", "active_session_id"):
+            if key in payload:
+                self._string(payload, key)
 
     def _validate_start_mapping(self, payload: dict[str, Any]) -> None:
         self._string(payload, "request_id")
         if payload.get("coordinate_contract") != "sensor+map_body+body_sensor":
             raise RemoteMappingProtocolError("坐标契约无效")
+        if payload.get("preview_transport") != self.config.preview_transport:
+            raise RemoteMappingProtocolError("实时预览传输方式无效")
+        self._number(payload, "fragment_interval_seconds", 0.1)
 
     def _validate_stop_mapping(self, payload: dict[str, Any]) -> None:
         self._string(payload, "request_id")
         self._string(payload, "reason")
 
+    def _validate_abort_mapping(self, payload: dict[str, Any]) -> None:
+        self._validate_stop_mapping(payload)
+
+    def _validate_cloud_fragment_ack(self, payload: dict[str, Any]) -> None:
+        self._string(payload, "request_id")
+        self._integer(payload, "fragment_id", 0)
+
     def _validate_command_ack(self, payload: dict[str, Any]) -> None:
         self._string(payload, "request_id")
-        if payload.get("command") not in {"start_mapping", "stop_mapping"}:
+        if payload.get("command") not in {"start_mapping", "stop_mapping", "abort_mapping"}:
             raise RemoteMappingProtocolError("v2 ACK command 无效")
         if not isinstance(payload.get("accepted"), bool):
             raise RemoteMappingProtocolError("v2 ACK accepted 无效")
@@ -215,27 +332,20 @@ class MapBuildingV2Protocol:
         if payload.get("reason") is not None and not isinstance(payload["reason"], str):
             raise RemoteMappingProtocolError("v2 会话原因无效")
 
-    def _validate_cloud_chunk(self, payload: dict[str, Any]) -> None:
-        self._integer(payload, "frame_id", 0)
-        count = self._integer(payload, "chunk_count", 1, 4096)
-        self._integer(payload, "chunk_index", 0, count - 1)
-        self._integer(payload, "frame_crc32", 0, 0xFFFFFFFF)
-        self._integer(payload, "sample_stamp_ns", 0)
+    def _validate_cloud_fragment_ready(self, payload: dict[str, Any]) -> None:
+        self._integer(payload, "fragment_id", 0)
+        self._string(payload, "url", maximum=4096)
+        self._integer(payload, "byte_count", 1, self.config.max_preview_fragment_bytes)
+        digest = self._string(payload, "sha256")
+        if len(digest) != 64 or any(c not in "0123456789abcdefABCDEF" for c in digest):
+            raise RemoteMappingProtocolError("PCD 分片 SHA-256 无效")
         self._integer(payload, "point_count", 1, self.config.max_frame_points)
-        if not isinstance(payload.get("data"), bytes) or not payload["data"]:
-            raise RemoteMappingProtocolError("cloud_chunk.data 无效")
-        for key in ("map_from_body", "body_from_sensor"):
-            transform = payload.get(key)
-            if not isinstance(transform, dict):
-                raise RemoteMappingProtocolError(f"{key} 无效")
-            values = []
-            for field_name in ("x", "y", "z", "qx", "qy", "qz", "qw"):
-                value = transform.get(field_name)
-                if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
-                    raise RemoteMappingProtocolError(f"{key}.{field_name} 无效")
-                values.append(float(value))
-            if math.sqrt(sum(item * item for item in values[3:])) < 1e-6:
-                raise RemoteMappingProtocolError(f"{key} 四元数无效")
+        self._string(payload, "frame_id")
+        self._string(payload, "expires_at")
+        started = self._integer(payload, "started_at_ns", 0)
+        ended = self._integer(payload, "ended_at_ns", started)
+        if ended < started:
+            raise RemoteMappingProtocolError("PCD 分片时间范围无效")
 
     def _validate_artifact_status(self, payload: dict[str, Any]) -> None:
         if payload.get("state") not in {"generating", "ready", "error"}:
@@ -510,6 +620,21 @@ def descriptor_from_payload(payload: dict[str, Any]) -> ArtifactDescriptor:
         raise RemoteMappingProtocolError(f"成果描述无效：{exc}") from exc
 
 
+def cloud_fragment_from_payload(payload: dict[str, Any]) -> CloudFragmentDescriptor:
+    try:
+        expires_at = datetime.fromisoformat(str(payload["expires_at"]).replace("Z", "+00:00"))
+        if expires_at.tzinfo is None:
+            raise ValueError
+        return CloudFragmentDescriptor(
+            int(payload["fragment_id"]), str(payload["url"]), int(payload["byte_count"]),
+            str(payload["sha256"]).lower(), int(payload["point_count"]),
+            str(payload["frame_id"]), int(payload["started_at_ns"]),
+            int(payload["ended_at_ns"]), expires_at.astimezone(timezone.utc),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RemoteMappingProtocolError(f"PCD 分片描述无效：{exc}") from exc
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -527,8 +652,7 @@ class _RemoteSession:
     device: DeviceSnapshot
     session_id: str
     request_id: str
-    assembler: CloudFrameAssembler
-    accumulator: VoxelMapAccumulator
+    accumulator: PreviewAccumulator
     started_at: datetime
     started_monotonic: float
     state: str = "preparing"
@@ -537,7 +661,6 @@ class _RemoteSession:
     command_attempts: int = 0
     last_command_at: float = 0.0
     last_sequence: int = -1
-    seen_cloud_sequences: set[int] = field(default_factory=set)
     checks: tuple[RemoteReadinessCheck, ...] = ()
     sample_window_seconds: float | None = None
     frame_id: str = "map"
@@ -545,11 +668,19 @@ class _RemoteSession:
     complete_frames: int = 0
     dropped_frames: int = 0
     last_complete_frame_at: float | None = None
+    last_heartbeat_at: float | None = None
     last_data_at: datetime | None = None
     artifact_bytes_received: int = 0
     artifact_bytes_total: int = 0
     error_code: str = ""
     generation_started_at: float | None = None
+    command_started_at: float = 0.0
+    command_deadline_at: float = 0.0
+    restart_active: bool = False
+    log_entries: list[RemoteMappingLogEntry] = field(default_factory=list)
+    queued_fragments: set[int] = field(default_factory=set)
+    processed_fragments: dict[int, None] = field(default_factory=dict)
+    outbound_sequence: int = 1000
 
 
 class RemoteMappingCoordinator(QObject):
@@ -573,8 +704,14 @@ class RemoteMappingCoordinator(QObject):
         self.validator = ArtifactPackageValidator(config)
         self.session: _RemoteSession | None = None
         self._artifact_thread: Any | None = None
-        import threading
         self._lock = threading.RLock()
+        self._preview_queue: queue.Queue[tuple[_RemoteSession, CloudFragmentDescriptor]] = queue.Queue(
+            maxsize=config.max_pending_preview_fragments)
+        self._preview_stop = threading.Event()
+        self._preview_root = Path(tempfile.mkdtemp(prefix="ccs-map-preview-"))
+        self._preview_thread = threading.Thread(
+            target=self._preview_loop, name="ccs-map-preview", daemon=True)
+        self._preview_thread.start()
 
     @property
     def snapshot(self) -> RemoteMappingSnapshot | None:
@@ -597,13 +734,14 @@ class RemoteMappingCoordinator(QObject):
             session_id = os.urandom(16).hex()
             session = _RemoteSession(
                 definition, device, session_id, os.urandom(16).hex(),
-                CloudFrameAssembler(self.config, self.clock),
-                VoxelMapAccumulator(
-                    self.config.voxel_size_m, self.config.max_accumulated_voxels,
-                    self.config.max_preview_points,
-                ), now, self.clock(), frame_id=definition.frame_id,
+                PreviewAccumulator(self.config.voxel_size_m, self.config.max_preview_points),
+                now, self.clock(), frame_id=self.config.remote_mapping_frame,
             )
             self.session = session
+            self._start_command(
+                session, "prepare_mapping", self.config.prepare_command_timeout_seconds
+            )
+            self._log(session, "LOCAL", "session", "创建遥控建图会话")
             self._send_command(session, return_host=return_host, return_port=return_port, force=True)
             self._emit(session)
             return session_id
@@ -615,9 +753,11 @@ class RemoteMappingCoordinator(QObject):
             session.message = "正在重新检查端侧建图条件"
             session.error_code = ""
             session.checks = ()
-            session.command = "prepare_mapping"
-            session.request_id = os.urandom(16).hex()
-            session.command_attempts = 0
+            session.restart_active = True
+            self._start_command(
+                session, "prepare_mapping", self.config.recovery_command_timeout_seconds
+            )
+            self._log(session, "LOCAL", "recovery", "请求清理端侧活动会话并重新协商", "WARN")
             self._send_command(session, return_host=return_host, return_port=return_port, force=True)
             self._emit(session)
 
@@ -626,9 +766,10 @@ class RemoteMappingCoordinator(QObject):
             session = self._require({"ready"})
             session.state = "starting"
             session.message = "正在下发开始建图指令"
-            session.command = "start_mapping"
-            session.request_id = os.urandom(16).hex()
-            session.command_attempts = 0
+            session.restart_active = False
+            self._start_command(
+                session, "start_mapping", self.config.start_command_timeout_seconds
+            )
             self._send_command(session, force=True)
             self._emit(session)
 
@@ -637,9 +778,20 @@ class RemoteMappingCoordinator(QObject):
             session = self._require({"mapping", "warning"})
             session.state = "stopping"
             session.message = "正在通知端侧结束建图"
-            session.command = "stop_mapping"
-            session.request_id = os.urandom(16).hex()
-            session.command_attempts = 0
+            self._start_command(
+                session, "stop_mapping", self.config.prepare_command_timeout_seconds
+            )
+            self._send_command(session, reason=reason, force=True)
+            self._emit(session)
+
+    def abort_mapping(self, reason: str = "用户强制结束建图") -> None:
+        with self._lock:
+            session = self._require({"ready", "starting", "mapping", "warning", "failed"})
+            session.state = "aborting"
+            session.message = "正在强制结束端侧建图会话"
+            self._start_command(
+                session, "abort_mapping", self.config.recovery_command_timeout_seconds
+            )
             self._send_command(session, reason=reason, force=True)
             self._emit(session)
 
@@ -648,9 +800,9 @@ class RemoteMappingCoordinator(QObject):
             session = self.session
             if session is None:
                 return
-            if session.state in {"starting", "mapping", "warning"}:
+            if session.state in {"ready", "starting", "mapping", "warning", "failed"}:
                 try:
-                    self._send_stop_once(session, reason)
+                    self._send_abort_once(session, reason)
                 except OSError:
                     pass
             session.state = "cancelled"
@@ -660,6 +812,9 @@ class RemoteMappingCoordinator(QObject):
 
     def shutdown(self) -> None:
         self.cancel("应用退出")
+        self._preview_stop.set()
+        self._preview_thread.join(timeout=2.0)
+        shutil.rmtree(self._preview_root, ignore_errors=True)
         thread = self._artifact_thread
         if thread and thread.is_alive():
             thread.join(timeout=2.0)
@@ -675,21 +830,30 @@ class RemoteMappingCoordinator(QObject):
                 raise RemoteMappingProtocolError("v2 数据报设备或会话标识不一致")
             if peer_ip != session.device.ip_address:
                 raise RemoteMappingProtocolError("v2 数据报来源 IP 与设备配置不一致")
-            if envelope.message_type == "cloud_chunk":
-                self._cloud(session, envelope)
-                return True
             if envelope.sequence <= session.last_sequence:
                 return True
             session.last_sequence = envelope.sequence
             payload = envelope.payload
+            session.last_heartbeat_at = self.clock()
+            self._log(
+                session, "RX", envelope.message_type,
+                self._response_summary(envelope.message_type, payload),
+                "ERROR" if payload.get("state") == "error" or payload.get("accepted") is False else "INFO",
+            )
             if envelope.message_type == "prepare_result":
                 self._prepare_result(session, payload)
             elif envelope.message_type == "command_ack":
                 self._ack(session, payload)
-            elif envelope.message_type == "session_status" and payload["state"] == "error":
-                self._fail(session, str(payload.get("reason") or "端侧建图错误"), "EDGE_ERROR")
+            elif envelope.message_type == "session_status":
+                if payload["state"] == "error":
+                    self._fail(session, str(payload.get("reason") or "端侧建图错误"), "EDGE_ERROR")
+                elif payload["state"] == "starting" and session.state == "starting":
+                    session.message = str(payload.get("reason") or "端侧正在启动 FAST_LIO")
+                    self._emit(session)
             elif envelope.message_type == "artifact_status":
                 self._artifact_status(session, payload)
+            elif envelope.message_type == "cloud_fragment_ready":
+                self._cloud_fragment(session, payload)
             return True
 
     def tick(self, return_host: str, return_port: int) -> None:
@@ -698,26 +862,31 @@ class RemoteMappingCoordinator(QObject):
             if session is None:
                 return
             now = self.clock()
-            expired = session.assembler.expire()
-            session.dropped_frames += expired
-            if session.state in {"preparing", "starting", "stopping"}:
+            if session.state in {"preparing", "starting", "stopping", "aborting"}:
                 if (session.command_attempts < self.config.command_max_attempts
                         and now - session.last_command_at >= self.config.command_retry_seconds):
                     self._send_command(
                         session, return_host=return_host, return_port=return_port
                     )
-                elif session.command_attempts >= self.config.command_max_attempts:
+                if now >= session.command_deadline_at:
                     self._fail(
                         session, f"端侧未响应 {session.command} 指令", "COMMAND_TIMEOUT"
                     )
                 return
             if session.state in {"mapping", "warning"}:
                 silence = now - (session.last_complete_frame_at or session.started_monotonic)
-                if silence >= self.config.error_timeout_seconds:
-                    self._fail(session, "超过 5 秒未收到完整点云帧", "CLOUD_TIMEOUT")
+                heartbeat_silence = now - (session.last_heartbeat_at or session.started_monotonic)
+                if (silence >= self.config.error_timeout_seconds
+                        and heartbeat_silence >= self.config.heartbeat_timeout_seconds):
+                    self._fail(
+                        session,
+                        f"超过 {self.config.error_timeout_seconds:g} 秒无完整点云且端侧心跳中断",
+                        "CLOUD_TIMEOUT",
+                    )
                 elif silence >= self.config.warning_timeout_seconds and session.state == "mapping":
                     session.state = "warning"
-                    session.message = "点云链路超时警告"
+                    session.message = "完整点云暂时中断，端侧会话仍在线"
+                    self._log(session, "LOCAL", "CLOUD_WARNING", session.message, "WARN")
                     self._emit(session)
             if (session.state == "generating" and session.generation_started_at is not None
                     and now - session.generation_started_at
@@ -735,13 +904,22 @@ class RemoteMappingCoordinator(QObject):
         session.sample_window_seconds = float(payload["sample_window_seconds"])
         session.frame_id = str(payload["frame_id"])
         session.capability_version = str(payload["capability_version"])
-        if session.frame_id != session.definition.frame_id:
+        if payload.get("restarted"):
+            previous = str(payload.get("previous_state") or "unknown")
+            active_id = str(payload.get("active_session_id") or session.session_id)
+            self._log(
+                session, "RX", "recovery",
+                f"端侧已清理活动会话 {active_id[:8]}（原状态 {previous}）",
+            )
+        if session.frame_id != self.config.remote_mapping_frame:
             self._fail(
                 session,
-                f"端侧坐标系 {session.frame_id} 与地图 {session.definition.frame_id} 不一致",
+                f"端侧实时建图坐标系 {session.frame_id} 与要求的"
+                f" {self.config.remote_mapping_frame} 不一致",
                 "FRAME_MISMATCH",
             )
         elif payload["accepted"]:
+            session.restart_active = False
             session.state = "ready"
             session.message = "端侧建图条件已就绪"
             self._emit(session)
@@ -763,33 +941,95 @@ class RemoteMappingCoordinator(QObject):
             session.state = "mapping"
             session.message = "遥控建图中"
             session.last_complete_frame_at = self.clock()
+            session.last_heartbeat_at = session.last_complete_frame_at
+            self._log(session, "LOCAL", "state", "开始接收实时建图点云")
             self._emit(session)
         elif session.command == "stop_mapping" and session.state == "stopping":
             session.state = "generating"
             session.message = "端侧正在生成 PCD 和 PGM 成果"
             session.generation_started_at = self.clock()
             self._emit(session)
+        elif session.command == "abort_mapping" and session.state == "aborting":
+            session.state = "aborted"
+            session.message = "端侧建图会话已强制结束，可重新开始建图"
+            self._log(session, "LOCAL", "aborted", session.message, "WARN")
+            self._emit(session)
+            self.session = None
 
-    def _cloud(self, session: _RemoteSession, envelope: MapBuildingEnvelope) -> None:
+    def _cloud_fragment(self, session: _RemoteSession, payload: dict[str, Any]) -> None:
         if session.state not in {"mapping", "warning"}:
             return
-        if envelope.sequence in session.seen_cloud_sequences:
+        descriptor = cloud_fragment_from_payload(payload)
+        if descriptor.frame_id != self.config.remote_mapping_frame:
+            self._fail(session, "PCD 分片坐标系不匹配", "FRAME_MISMATCH")
             return
-        session.seen_cloud_sequences.add(envelope.sequence)
-        completed = session.assembler.push(envelope)
-        if completed is None:
+        if descriptor.fragment_id in session.processed_fragments:
+            self._send_fragment_ack(session, descriptor.fragment_id)
             return
-        points, _trajectory = completed
-        session.accumulator.add(points)
-        session.complete_frames += 1
-        session.last_complete_frame_at = self.clock()
-        session.last_data_at = datetime.now(timezone.utc)
-        session.state = "mapping"
-        session.message = "遥控建图中"
-        self.preview_updated.emit(
-            session.session_id, session.accumulator.preview(), session.accumulator.bounds()
-        )
-        self._emit(session)
+        if descriptor.fragment_id in session.queued_fragments:
+            return
+        try:
+            self.downloader.validate_descriptor(
+                ArtifactDescriptor(descriptor.url, descriptor.byte_count,
+                                   descriptor.sha256, descriptor.expires_at),
+                session.device.ip_address)
+            self._preview_queue.put_nowait((session, descriptor))
+            session.queued_fragments.add(descriptor.fragment_id)
+        except queue.Full:
+            self._log(session, "LOCAL", "preview_backpressure",
+                      "PCD 分片下载队列已满，等待端侧重发", "WARN")
+
+    def _preview_loop(self) -> None:
+        while not self._preview_stop.is_set() or not self._preview_queue.empty():
+            try:
+                session, descriptor = self._preview_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            target = self._preview_root / session.session_id / f"{descriptor.fragment_id:08d}.pcd"
+            try:
+                self.downloader.download(
+                    ArtifactDescriptor(descriptor.url, descriptor.byte_count,
+                                       descriptor.sha256, descriptor.expires_at),
+                    session.device.ip_address, target)
+                points = load_preview_pcd(target, descriptor)
+                with self._lock:
+                    session.queued_fragments.discard(descriptor.fragment_id)
+                    if self.session is not session or session.state not in {"mapping", "warning"}:
+                        continue
+                    session.accumulator.add(points)
+                    self._remember_processed_fragment(session, descriptor.fragment_id)
+                    session.complete_frames += 1
+                    session.last_complete_frame_at = self.clock()
+                    session.last_data_at = datetime.now(timezone.utc)
+                    session.state = "mapping"
+                    session.message = "遥控建图中"
+                    preview = session.accumulator.points()
+                    bounds = session.accumulator.bounds()
+                    self._log(
+                        session, "RX", "pcd_fragment",
+                        f"分片 {descriptor.fragment_id}，{len(points):,} 点，"
+                        f"预览保留 {len(preview):,} 点")
+                    self._send_fragment_ack(session, descriptor.fragment_id)
+                    self.preview_updated.emit(session.session_id, preview, bounds)
+                    self._emit(session)
+            except (ArtifactDownloadError, ArtifactValidationError, OSError, ValueError) as exc:
+                with self._lock:
+                    session.queued_fragments.discard(descriptor.fragment_id)
+                    if self.session is session:
+                        session.dropped_frames += 1
+                        self._log(session, "LOCAL", "fragment_failed", str(exc), "WARN")
+            finally:
+                target.unlink(missing_ok=True)
+                self._preview_queue.task_done()
+
+    def _remember_processed_fragment(
+        self, session: _RemoteSession, fragment_id: int
+    ) -> None:
+        session.processed_fragments[fragment_id] = None
+        maximum = max(64, self.config.max_pending_preview_fragments * 16)
+        while len(session.processed_fragments) > maximum:
+            oldest = next(iter(session.processed_fragments))
+            session.processed_fragments.pop(oldest, None)
 
     def _artifact_status(self, session: _RemoteSession, payload: dict[str, Any]) -> None:
         if payload["state"] == "error":
@@ -837,10 +1077,21 @@ class RemoteMappingCoordinator(QObject):
                         return
                     session.state = "validating"
                     session.message = "正在校验 PCD、PGM 和 YAML"
+                    self._log(session, "LOCAL", "artifact", "成果下载完成，开始完整性校验")
                     self._emit(session)
                 artifact = self.validator.validate(
                     archive, root / "validated", map_id=session.definition.map_id,
                     device_id=session.device.device_id, session_id=session.session_id,
+                )
+                if artifact.frame_id != self.config.remote_mapping_frame:
+                    raise ArtifactValidationError(
+                        f"端侧成果坐标系 {artifact.frame_id} 与实时建图坐标系 "
+                        f"{self.config.remote_mapping_frame} 不一致"
+                    )
+                # lio_odom is the local frame used during capture. Once the
+                # artifact is accepted, its local origin becomes the map frame.
+                artifact = dataclasses.replace(
+                    artifact, frame_id=self.config.final_map_frame
                 )
                 ended = datetime.now(timezone.utc)
                 metadata = MapBuildingResultMetadata(
@@ -864,8 +1115,10 @@ class RemoteMappingCoordinator(QObject):
             with self._lock:
                 if self.session is not session:
                     return
+                session.frame_id = self.config.final_map_frame
                 session.state = "completed"
                 session.message = "遥控建图成果已保存"
+                self._log(session, "LOCAL", "completed", "成果已提交，坐标系切换为 map")
                 self._emit(session)
                 self.completed.emit(definition)
                 self.session = None
@@ -884,12 +1137,17 @@ class RemoteMappingCoordinator(QObject):
                 "request_id": session.request_id,
                 "return_host": return_host,
                 "return_port": return_port,
-                "required_inputs": ["pointcloud", "pose", "artifact_storage", "map_generation"],
+                "required_inputs": ["pointcloud", "imu", "artifact_storage", "map_generation"],
+                "restart_active": session.restart_active,
+                "preview_transport": self.config.preview_transport,
+                "fragment_interval_seconds": self.config.fragment_interval_seconds,
             }
         elif session.command == "start_mapping":
             payload = {
                 "request_id": session.request_id,
                 "coordinate_contract": "sensor+map_body+body_sensor",
+                "preview_transport": self.config.preview_transport,
+                "fragment_interval_seconds": self.config.fragment_interval_seconds,
             }
         else:
             payload = {"request_id": session.request_id, "reason": reason or "用户结束建图"}
@@ -900,6 +1158,11 @@ class RemoteMappingCoordinator(QObject):
         self.sender(self.protocol.encode(envelope), session.device.ip_address)
         session.command_attempts += 1
         session.last_command_at = self.clock()
+        self._log(
+            session, "TX", session.command,
+            f"第 {session.command_attempts} 次下发，request={session.request_id[:8]}"
+            + ("，清理并重启活动会话" if session.restart_active else ""),
+        )
 
     def _send_stop_once(self, session: _RemoteSession, reason: str) -> None:
         envelope = MapBuildingEnvelope(
@@ -909,10 +1172,28 @@ class RemoteMappingCoordinator(QObject):
         )
         self.sender(self.protocol.encode(envelope), session.device.ip_address)
 
+    def _send_abort_once(self, session: _RemoteSession, reason: str) -> None:
+        envelope = MapBuildingEnvelope(
+            session.definition.map_id, session.device.device_id, session.session_id,
+            "abort_mapping", session.command_attempts + 1, time.time_ns(),
+            {"request_id": os.urandom(16).hex(), "reason": reason},
+        )
+        self.sender(self.protocol.encode(envelope), session.device.ip_address)
+
+    def _send_fragment_ack(self, session: _RemoteSession, fragment_id: int) -> None:
+        session.outbound_sequence += 1
+        envelope = MapBuildingEnvelope(
+            session.definition.map_id, session.device.device_id, session.session_id,
+            "cloud_fragment_ack", session.outbound_sequence, time.time_ns(),
+            {"request_id": os.urandom(16).hex(), "fragment_id": fragment_id},
+        )
+        self.sender(self.protocol.encode(envelope), session.device.ip_address)
+
     def _fail(self, session: _RemoteSession, message: str, code: str) -> None:
         session.state = "failed"
         session.message = message
         session.error_code = code
+        self._log(session, "LOCAL", code, message, "ERROR")
         self._emit(session)
         self.failed.emit(message)
 
@@ -930,8 +1211,44 @@ class RemoteMappingCoordinator(QObject):
             session.complete_frames, session.dropped_frames,
             session.accumulator.received_points, len(session.accumulator.points()),
             session.last_data_at, session.artifact_bytes_received,
-            session.artifact_bytes_total, session.error_code,
+            session.artifact_bytes_total, session.error_code, tuple(session.log_entries),
         )
+
+    def _start_command(self, session: _RemoteSession, command: str, timeout: float) -> None:
+        now = self.clock()
+        session.command = command
+        session.request_id = os.urandom(16).hex()
+        session.command_attempts = 0
+        session.command_started_at = now
+        session.command_deadline_at = now + timeout
+
+    @staticmethod
+    def _response_summary(message_type: str, payload: dict[str, Any]) -> str:
+        if message_type == "prepare_result":
+            state = "通过" if payload.get("accepted") else "拒绝"
+            detail = str(payload.get("reason") or "")
+            return f"协商{state}" + (f"：{detail}" if detail else "")
+        if message_type == "command_ack":
+            state = "接受" if payload.get("accepted") else "拒绝"
+            detail = str(payload.get("reason") or "")
+            return f"{payload.get('command', 'command')} {state}" + (
+                f"：{detail}" if detail else ""
+            )
+        if message_type in {"session_status", "session_heartbeat", "artifact_status"}:
+            detail = str(payload.get("reason") or payload.get("message") or "")
+            return str(payload.get("state") or message_type) + (f"：{detail}" if detail else "")
+        if message_type == "cloud_fragment_ready":
+            return f"PCD 分片 {payload.get('fragment_id')}，{payload.get('point_count', 0):,} 点"
+        return message_type
+
+    @staticmethod
+    def _log(session: _RemoteSession, direction: str, event: str, summary: str,
+             level: str = "INFO") -> None:
+        session.log_entries.append(RemoteMappingLogEntry(
+            datetime.now(timezone.utc), direction, event, summary, level,
+        ))
+        if len(session.log_entries) > 200:
+            del session.log_entries[:-200]
 
     def _emit(self, session: _RemoteSession) -> None:
         snapshot = self._snapshot(session)

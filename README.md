@@ -1,8 +1,8 @@
 # 多异构智能体指挥与控制系统
 
-当前指控平台版本：**v0.16.0**
+当前指控平台版本：**v0.18.1**
 
-端侧包版本：epgeneral_mqtav **v0.3.0**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.2.0**、epgeneral_task_control **v0.1.0**
+端侧包版本：epgeneral_mqtav **v0.3.1**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.6.0**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
@@ -15,7 +15,7 @@
 - **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
 - **视频监控**：通过系统 FFmpeg 按需连接端侧 UDP 9000 SRT Listener，显示 H.264/MPEG-TS 视频流。
 - **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原；新增 `ccs-map-stream-v2` 单机遥控建图，包括准备协商、实时预览、端侧成果生成、HTTP 断点下载及 PCD+PGM+YAML 原子提交。
-- **任务系统**：支持 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
+- **任务系统**：支持按地图实际米制边界进行 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态，支持全屏及面板折叠。
 - **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、SRT 推流、实时建图和任务协调包。
 - **离线授时**：指控平台内置 NTPv4 Server；端侧一键启动脚本先从地面站校时，成功后再启动 ROS 功能包。
@@ -34,10 +34,10 @@ CCS_dev/
 ├── examples/                      # 地图融合插件等扩展示例
 ├── edge_side_pkg/
 │   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
-│   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.0
+│   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.1
 │   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
-│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.2.0
+│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.6.0
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
 │   ├── epgeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
@@ -73,14 +73,14 @@ CCS_dev/
 | UDP 9000 | 地面站 → 端侧 | SRT H.264/MPEG-TS 视频 |
 | UDP 14560 | 端侧 → 地面站 | 高频遥测与心跳 |
 | UDP 14561 | 地面站 → 端侧 | 实时建图控制 |
-| UDP 14562 | 端侧 → 地面站 | 建图点云数据 |
+| UDP 14562 | 双向 | 建图状态、PCD 分片描述符与确认 |
 | TCP 动态 | 指控平台 → 端侧 | v2 建图 ZIP 成果 HTTP 下载（端侧返回带短期令牌的 URL） |
 | UDP 14563 | 地面站 → 端侧 | 任务下发与控制 |
 | UDP 14564 | 端侧 → 地面站 | 任务 ACK、状态和进度 |
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
-v0.16.0 配套端侧 `epgeneral_map_stream` v0.2.0 已实现 `ccs-map-stream-v2`；端侧必须配置真实 SLAM start/stop 适配器和成果目录，不会自动回退到 v1。
+v0.18.1 配套端侧 `epgeneral_map_stream` v0.6.0 将实时预览改为每秒生成不可变二进制 PCD 分片，由平台通过 TCP 14600 后台下载、校验并增量显示；UDP 14562 只承载状态、分片描述符和 ACK。最终 PCD/PGM/YAML 仍以 session 绑定的成果 ZIP 为准，固定源 PCD 未由本 session 更新时会拒绝打包。
 
 ## 部署方法
 
@@ -186,6 +186,9 @@ sudo install -D -m 0644 edge_side_pkg/deploy/go2_edu/config/timesyncd-ccs.conf \
 sudo systemctl restart systemd-timesyncd
 sudo install -m 0750 edge_side_pkg/deploy/go2_edu/start_ccs_edge_dev.sh \
   /home/nvidia/ccs_edge_ws/start_ccs_edge_dev.sh
+sudo install -d -m 0750 /home/nvidia/ccs_edge_ws/config/go2_edu
+sudo install -m 0640 edge_side_pkg/deploy/go2_edu/config/*.yaml \
+  /home/nvidia/ccs_edge_ws/config/go2_edu/
 /home/nvidia/ccs_edge_ws/start_ccs_edge_dev.sh
 ```
 
@@ -351,6 +354,12 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.18.0 · 2026-08-22**
+<small>延长遥控建图命令截止时间，支持无成果清理活动会话并重新协商，新增端到端命令日志面板。</small>
+
+**v0.16.1 · 2026-08-21**
+<small>增加 MQTT 启动会话代际并规范化 UDP 设备会话，修复端侧重启后的乱序误判和高频遥测不显示。</small>
 
 **v0.16.0 · 2026-08-20**
 <small>新增单机遥控建图 v2 指控平台流程、HTTP 成果下载与原子提交，并统一点云/PGM/网格/坐标显示。</small>

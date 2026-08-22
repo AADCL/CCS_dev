@@ -21,6 +21,10 @@ catkin_package(CATKIN_DEPENDS rospy roslib sensor_msgs nav_msgs epgeneral_device
 catkin_install_python(PROGRAMS scripts/epgeneral_map_stream_node.py scripts/check_version.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
+install(PROGRAMS scripts/start_fast_lio.sh scripts/stop_fast_lio.sh
+  scripts/abort_fast_lio.sh scripts/generate_pgm.sh
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/scripts)
+
 install(DIRECTORY config launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
 if(CATKIN_ENABLE_TESTING)

@@ -7,8 +7,9 @@ import msgpack
 
 
 MESSAGE_TYPES = {
-    "prepare_mapping", "prepare_result", "start_mapping", "stop_mapping",
-    "command_ack", "session_heartbeat", "session_status", "cloud_chunk",
+    "prepare_mapping", "prepare_result", "start_mapping", "stop_mapping", "abort_mapping",
+    "cloud_fragment_ack", "request_cloud_chunks", "cloud_chunk",
+    "command_ack", "session_heartbeat", "session_status", "cloud_fragment_ready",
     "artifact_status",
 }
 
@@ -72,7 +73,9 @@ def unpack_envelope(datagram, config):
 def decode_command(datagram, config):
     raw = unpack_envelope(datagram, config)
     message_type = raw["message_type"]
-    if message_type not in ("prepare_mapping", "start_mapping", "stop_mapping"):
+    if message_type not in (
+            "prepare_mapping", "start_mapping", "stop_mapping", "abort_mapping",
+            "cloud_fragment_ack", "request_cloud_chunks"):
         raise ProtocolError("only mapping commands are accepted")
     payload = raw["payload"]
     _identifier(payload.get("request_id"), "request_id", 256)
@@ -86,11 +89,28 @@ def decode_command(datagram, config):
         if (not isinstance(required, list) or not required or len(required) > 64
                 or any(not isinstance(item, str) or not item.strip() for item in required)):
             raise ProtocolError("required_inputs is invalid")
+        if ("restart_active" in payload
+                and not isinstance(payload["restart_active"], bool)):
+            raise ProtocolError("restart_active is invalid")
+        if payload.get("preview_transport", "pcd_fragment_http") != "pcd_fragment_http":
+            raise ProtocolError("unsupported preview transport")
+        _number(payload.get("fragment_interval_seconds", 1.0), "fragment_interval_seconds", 0.1)
     elif message_type == "start_mapping":
         if payload.get("coordinate_contract") != "sensor+map_body+body_sensor":
             raise ProtocolError("unsupported coordinate contract")
-    else:
+        if payload.get("preview_transport", "pcd_fragment_http") != "pcd_fragment_http":
+            raise ProtocolError("unsupported preview transport")
+        _number(payload.get("fragment_interval_seconds", 1.0), "fragment_interval_seconds", 0.1)
+    elif message_type in ("stop_mapping", "abort_mapping"):
         _identifier(payload.get("reason"), "reason", 256)
+    elif message_type == "cloud_fragment_ack":
+        _integer(payload.get("fragment_id"), "fragment_id")
+    else:
+        _integer(payload.get("frame_id"), "frame_id")
+        missing = payload.get("missing_chunks")
+        if (not isinstance(missing, list) or not missing
+                or any(not isinstance(item, int) or item < 0 for item in missing)):
+            raise ProtocolError("missing_chunks is invalid")
     return raw
 
 
@@ -115,38 +135,21 @@ def encode_envelope(config, identity, message_type, sequence, payload):
 
 
 def encode_cloud_chunks(config, identity, first_sequence, metadata, compressed):
-    if not compressed:
-        raise ProtocolError("compressed cloud is empty")
+    """Legacy encoder retained for v0.5 test/tools; v0.6 runtime does not call it."""
     crc32 = zlib.crc32(compressed) & 0xFFFFFFFF
     chunk_size = max(1, config["max_datagram_bytes"] - 512)
-    for unused_attempt in range(32):
+    while chunk_size > 0:
         pieces = [compressed[index:index + chunk_size]
                   for index in range(0, len(compressed), chunk_size)]
-        if len(pieces) > 4096:
-            raise ProtocolError("cloud requires too many chunks")
         encoded = []
-        overflow = 0
-        for index, piece in enumerate(pieces):
-            payload = dict(metadata)
-            payload.update({
-                "chunk_count": len(pieces), "chunk_index": index,
-                "frame_crc32": crc32, "data": piece,
-            })
-            try:
-                datagram = encode_envelope(
-                    config, identity, "cloud_chunk", first_sequence + index, payload)
-            except ProtocolError:
-                raw = dict(payload)
-                raw["data"] = b""
-                overhead = len(encode_envelope(
-                    config, identity, "cloud_chunk", first_sequence + index, raw))
-                overflow = max(
-                    overflow, overhead + len(piece) - config["max_datagram_bytes"])
-                continue
-            encoded.append(datagram)
-        if len(encoded) == len(pieces):
+        try:
+            for index, piece in enumerate(pieces):
+                payload = dict(metadata)
+                payload.update({"chunk_count": len(pieces), "chunk_index": index,
+                                "frame_crc32": crc32, "data": piece})
+                encoded.append(encode_envelope(
+                    config, identity, "cloud_chunk", first_sequence + index, payload))
             return encoded
-        chunk_size -= max(overflow + 8, 16)
-        if chunk_size <= 0:
-            break
-    raise ProtocolError("cannot fit cloud chunks within datagram limit")
+        except ProtocolError:
+            chunk_size -= 32
+    raise ProtocolError("cannot fit legacy cloud chunks")

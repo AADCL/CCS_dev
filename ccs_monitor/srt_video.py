@@ -34,6 +34,8 @@ class SrtVideoConfig:
     connect_timeout_us: int = 5_000_000
     retry_delay_ms: int = 1000
     max_retries: int = 3
+    first_frame_timeout_ms: int = 7000
+    stderr_limit_bytes: int = 32768
 
     @property
     def frame_bytes(self) -> int:
@@ -161,7 +163,8 @@ def load_srt_video_config(path: str | Path | None = None) -> SrtVideoConfig:
         ("output_width", 640), ("output_height", 480), ("output_fps", 30),
         ("probe_size_bytes", 1_000_000), ("analyze_duration_us", 1_000_000),
         ("connect_timeout_us", 5_000_000), ("retry_delay_ms", 1000),
-        ("max_retries", 3),
+        ("max_retries", 3), ("first_frame_timeout_ms", 7000),
+        ("stderr_limit_bytes", 32768),
     )}
     if any(values[name] <= 0 for name in values if name != "max_retries"):
         raise SrtVideoConfigError("SRT 视频尺寸、帧率和超时参数必须大于 0")
@@ -179,6 +182,7 @@ class SrtFfmpegReceiver(QObject):
     frame_ready = Signal(QImage)
     state_changed = Signal(str)
     error_occurred = Signal(str)
+    diagnostic = Signal(str)
 
     def __init__(self, config: SrtVideoConfig | None = None,
                  process_factory: Callable[[QObject], QProcess] | None = None,
@@ -194,10 +198,16 @@ class SrtFfmpegReceiver(QObject):
         self._checking_protocols = False
         self._retries = 0
         self._stderr = bytearray()
+        self._playing = False
+        self._first_frame_timed_out = False
         self._retry_timer = QTimer(self)
         self._retry_timer.setSingleShot(True)
         self._retry_timer.setInterval(self.config.retry_delay_ms)
         self._retry_timer.timeout.connect(self._start_stream_process)
+        self._first_frame_timer = QTimer(self)
+        self._first_frame_timer.setSingleShot(True)
+        self._first_frame_timer.setInterval(self.config.first_frame_timeout_ms)
+        self._first_frame_timer.timeout.connect(self._on_first_frame_timeout)
 
     @property
     def endpoint(self) -> SrtEndpoint | None:
@@ -217,8 +227,11 @@ class SrtFfmpegReceiver(QObject):
         self._requested = False
         self._checking_protocols = False
         self._retry_timer.stop()
+        self._first_frame_timer.stop()
         self._buffer.clear()
         self._stderr.clear()
+        self._playing = False
+        self._first_frame_timed_out = False
         process, self._process = self._process, None
         if process is not None and process.state() != QProcess.ProcessState.NotRunning:
             process.kill()
@@ -247,12 +260,15 @@ class SrtFfmpegReceiver(QObject):
         self._checking_protocols = False
         self._buffer.clear()
         self._stderr.clear()
+        self._playing = False
+        self._first_frame_timed_out = False
         self._process = self._new_process()
         self._process.readyReadStandardOutput.connect(self._read_stdout)
         self._process.readyReadStandardError.connect(self._read_stderr)
         args = self.ffmpeg_arguments(self._endpoint)
         self.state_changed.emit("connecting")
         self._process.start(self.config.ffmpeg_executable, args)
+        self._first_frame_timer.start()
 
     def ffmpeg_arguments(self, endpoint: SrtEndpoint) -> list[str]:
         vf = (
@@ -286,11 +302,27 @@ class SrtFfmpegReceiver(QObject):
         image = QImage(latest, self.config.output_width, self.config.output_height,
                        self.config.output_width * 4, QImage.Format.Format_RGBA8888).copy()
         self.frame_ready.emit(image)
-        self.state_changed.emit("playing")
+        if not self._playing:
+            self._playing = True
+            self._first_frame_timer.stop()
+            self.state_changed.emit("playing")
 
     def _read_stderr(self) -> None:
         if self._process is not None:
-            self._stderr.extend(bytes(self._process.readAllStandardError()))
+            chunk = bytes(self._process.readAllStandardError())
+            self._stderr.extend(chunk)
+            if len(self._stderr) > self.config.stderr_limit_bytes:
+                del self._stderr[:-self.config.stderr_limit_bytes]
+            text = chunk.decode("utf-8", "replace").strip()
+            if text:
+                self.diagnostic.emit(text[-2000:])
+
+    def _on_first_frame_timeout(self) -> None:
+        if not self._requested or self._playing or self._process is None:
+            return
+        self._first_frame_timed_out = True
+        self.diagnostic.emit("FFmpeg 已启动，但首帧等待超时")
+        self._process.kill()
 
     def _on_process_error(self, error: QProcess.ProcessError) -> None:
         if not self._requested:
@@ -317,10 +349,12 @@ class SrtFfmpegReceiver(QObject):
             return
         if not self._requested:
             return
-        message = (
+        self._first_frame_timer.stop()
+        message = ("SRT 首帧等待超时" if self._first_frame_timed_out else
             "FFmpeg 输出帧尺寸异常"
             if self._buffer else self.classify_error(self._stderr.decode("utf-8", "replace"))
         )
+        self._first_frame_timed_out = False
         self._schedule_retry_or_fail(message)
 
     def _schedule_retry_or_fail(self, message: str) -> None:
@@ -400,6 +434,9 @@ class SrtVideoWidget(QFrame):
         self.receiver.frame_ready.connect(self._show_frame)
         self.receiver.state_changed.connect(self._on_state)
         self.receiver.error_occurred.connect(self._on_error)
+        diagnostic = getattr(self.receiver, "diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.connect(self._on_diagnostic)
         if self._configuration_error:
             self._show_status(self._configuration_error)
 
@@ -493,7 +530,9 @@ class SrtVideoWidget(QFrame):
             "playing": "SRT 视频流已开始播放",
             "stopped": "SRT 视频流已停止",
         }
-        if state in labels:
+        if state == "playing":
+            self.video_stack.setCurrentWidget(self.video_output)
+        elif state in labels:
             self._show_status(labels[state])
         elif state == "error":
             self._set_switch(False)
@@ -510,6 +549,9 @@ class SrtVideoWidget(QFrame):
         self._show_status(text)
         self._last_event_state = "error"
         self.stream_event.emit("error", text)
+
+    def _on_diagnostic(self, message: str) -> None:
+        self.stream_event.emit("diagnostic", f"FFmpeg：{message}")
 
     def _show_status(self, text: str) -> None:
         self.status_label.setText(text)

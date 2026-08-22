@@ -1,6 +1,73 @@
 # 更新记录
 
-<!-- epgeneral_map_stream_VERSION: 0.2.0 -->
+<!-- epgeneral_map_stream_VERSION: 0.6.0 -->
+
+## v0.6.0 - 2026-08-22
+
+- 实时预览由 UDP 点云分片改为每秒生成不可变二进制 PCD，使用带令牌 HTTP 下载与 `cloud_fragment_ready/cloud_fragment_ack` 确认。
+- ROS 点云窗口进入固定大小后台队列；未确认分片、描述符重发和磁盘文件均设硬上限并可清理。
+- 记录 FAST_LIO 启动前源 PCD 指纹，停止后要求文件由当前 session 重新生成，禁止旧 PCD 进入成果 ZIP。
+- Go2 MID360 使用包内 FAST_LIO launch 启用退出保存；启动前删除旧固定输出，PGM 前原子发布已验证 PCD，生成失败时恢复原公开地图。
+- 2026-08-22 在 `QRD_001` 完成端侧构建与实测：连续 HTTP PCD 分片 ACK、当前 session PCD/PGM/YAML 和 manifest ZIP 均通过校验。
+
+## v0.5.0 - 2026-08-22
+
+- 缓存最近 3 个编码点云帧，响应 `request_cloud_chunks` 选择性补发缺失 UDP 分片。
+- 新增 `abort_mapping`，无成果清理活动会话并停止 FAST_LIO，成果生成阶段保持不可中断。
+- 补包和强制结束操作写入 ROS 日志及 `map_stream.log`。
+
+## v0.4.1 - 2026-08-22
+
+### 修复
+
+- 修复 FAST_LIO 点云回调偶发早于同时间戳里程计回调时，点云被立即判定为 `no pose within synchronization tolerance` 的问题。
+- 点云最多短暂缓存 3 帧等待原 50 ms 窗口内的对应位姿；真正超时或队列溢出时记录原因与 header 时间差。
+
+## v0.4.0 - 2026-08-22
+
+### 新增
+
+- start 收到后立即回传 `session_status=starting`，FAST_LIO 数据就绪后再返回成功 ACK。
+- 新增 `abort_fast_lio.sh` 无成果中止路径，并将命令、状态转换、话题探测、子进程输出、耗时和退出码写入 ROS 日志与 `map_stream.log`。
+
+### 调整
+
+- `prepare_mapping` 支持 `restart_active=true`；ready/starting/mapping/error 会话会注销订阅、清空缓存、停止 FAST_LIO、删除 PID 和临时成果后重新准备。
+- stopping/generating/serving 阶段拒绝强制重启并返回当前 session、状态和不可中断原因；恢复后的 `prepare_result` 可带 `restarted`、`previous_state`、`active_session_id`。
+- `/livox/imu` 仅要求正确消息类型和一条新数据；实时建图使用 `lio_odom`，最终成果使用 `map`。
+
+### 修复
+
+- 修复指控端 start 超时后，端侧残留 mapping 会话导致后续协商持续返回 BUSY 的问题。
+
+## v0.3.1 - 2026-08-21
+
+### 调整
+
+- 适配 Go2 MID360 的 `go2_bringup/10_fastlio_mapping.launch` 和 `/lio/*` 话题。
+- 支持将设备固定 PCD 快照到会话目录，并用固定配置生成、归档 PGM/YAML。
+
+## v0.3.0 - 2026-08-21
+
+### 新增
+
+- 新增 Livox 点云/IMU 协商检查，以及 IMU 时间戳、frame 和有限值校验。
+- 新增 FAST_LIO 启动/停止与 PGM 生成三个独立 Bash 包装器。
+- 开始阶段等待 `/cloud_registered` 和 `/Odometry` 有效数据后才确认建图。
+
+### 调整
+
+- 配置升级为 schema 3，FAST_LIO 与 PGM 工作空间、包、launch、参数和超时均可配置。
+- 停止流程调整为 FAST_LIO 保存 PCD、PGM 生成器输出 PGM/YAML、完整性校验与打包。
+- 默认集成配置改为不可直接部署的明显占位值，prepare 会提前拒绝。
+
+### 修复
+
+- FAST_LIO map-frame 注册点云先转换回传感器坐标，再沿用平台实时预览坐标契约。
+
+### 删除
+
+- 无。
 
 ## v0.2.0 - 2026-08-20
 

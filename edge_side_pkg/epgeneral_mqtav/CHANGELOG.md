@@ -1,8 +1,18 @@
 # 修改日志
 
-<!-- epgeneral_mqtav_VERSION: 0.3.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.3.1 -->
 
-当前版本：`v0.3.0`
+当前版本：`v0.3.1`
+
+## [0.3.1] - 2026-08-21
+
+### Added
+
+- presence、heartbeat 和 status 增加同一进程生命周期稳定的可选 `session_id`。
+
+### Fixed
+
+- 修复端侧节点重启后 sequence 从 1 重新计数，导致持续运行的地面站将后续状态永久判为乱序的问题。
 
 ## [0.3.0] - 2026-07-31
 

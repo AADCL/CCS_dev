@@ -2,24 +2,37 @@
   "schema_version": 1,
   "protocol_id": "ccs-map-stream-v1",
   "protocol_v2_id": "ccs-map-stream-v2",
+  "frames": {
+    "remote_mapping": "lio_odom",
+    "final_map": "map"
+  },
   "network": {
     "bind_host": "0.0.0.0",
     "data_port": 14562,
     "device_control_port": 14561,
-    "max_datagram_bytes": 1400
+    "max_datagram_bytes": 1400,
+    "receive_buffer_bytes": 4194304
   },
   "stream": {
     "cloud_rate_hz": 5.0,
     "voxel_size_m": 0.10,
     "compression": "zlib",
-    "point_format": "xyz_f32_le"
+    "point_format": "xyz_f32_le",
+    "preview_transport": "pcd_fragment_http",
+    "fragment_interval_seconds": 1.0
   },
   "timeouts": {
     "command_retry_seconds": 0.5,
     "command_max_attempts": 5,
-    "frame_timeout_seconds": 1.0,
-    "warning_timeout_seconds": 2.0,
-    "error_timeout_seconds": 5.0,
+    "prepare_command_timeout_seconds": 10.0,
+    "start_command_timeout_seconds": 45.0,
+    "recovery_command_timeout_seconds": 45.0,
+    "frame_timeout_seconds": 5.0,
+    "warning_timeout_seconds": 10.0,
+    "error_timeout_seconds": 30.0,
+    "heartbeat_timeout_seconds": 5.0,
+    "retransmit_delay_seconds": 0.35,
+    "retransmit_max_attempts": 3,
     "artifact_generation_timeout_seconds": 600.0,
     "http_connect_timeout_seconds": 5.0,
     "http_read_timeout_seconds": 30.0
@@ -29,6 +42,8 @@
     "max_decompressed_bytes": 2400000,
     "max_accumulated_voxels": 5000000,
     "max_preview_points": 300000,
+    "max_preview_fragment_bytes": 8388608,
+    "max_pending_preview_fragments": 4,
     "http_download_attempts": 3,
     "max_artifact_bytes": 4294967296
   }

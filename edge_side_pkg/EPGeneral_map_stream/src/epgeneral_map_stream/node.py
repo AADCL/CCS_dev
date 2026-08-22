@@ -1,25 +1,28 @@
 import os
+import queue
 import socket
 import threading
 import time
 import uuid
-import zlib
 
 from .artifacts import (
     ArtifactError, ArtifactHttpServer, CommandRunner, SessionPaths,
-    build_archive, wait_for_stable_artifacts,
+    build_archive, file_fingerprint, require_fresh_file, wait_for_stable_artifacts,
+    write_binary_pcd,
 )
-from .config import ConfigError, load_config
+from .config import ConfigError, build_integration_commands, load_config
 from .processing import (
     PoseBuffer, PoseSample, ProcessingError, aggregate_window,
-    extract_pointcloud2, preprocess_points, stamp_to_ns, transform_from_pose,
+    extract_pointcloud2, map_points_to_sensor, preprocess_points, stamp_to_ns,
+    sensor_points_to_map, transform_from_pose,
 )
-from .protocol import ProtocolError, decode_command, encode_cloud_chunks, encode_envelope
+from .protocol import ProtocolError, decode_command, encode_envelope
 
 
 ERROR_CODES = {
     "BUSY", "INVALID_CONFIG", "MAP_ID_MISMATCH", "DEVICE_ID_MISMATCH",
-    "SENSOR_UNAVAILABLE", "POSE_UNAVAILABLE", "ARTIFACT_STORAGE_UNAVAILABLE",
+    "SENSOR_UNAVAILABLE", "IMU_UNAVAILABLE", "POSE_UNAVAILABLE",
+    "ARTIFACT_STORAGE_UNAVAILABLE",
     "MAP_GENERATION_UNAVAILABLE", "UNSUPPORTED_INPUT", "UNSUPPORTED_FORMAT",
     "INTERNAL_ERROR", "COMMAND_FAILED", "ARTIFACT_ERROR",
 }
@@ -42,12 +45,16 @@ class MappingSession(object):
         self.scans = []
         self.window_points = 0
         self.window_started_at = None
+        self.pending_clouds = []
+        self.fragment_cache = {}
+        self.source_pcd_baseline = None
+        self.mapping_started_at_ns = 0
 
 
 class RosMapStreamNode(object):
     def __init__(self, rospy, config, socket_factory=socket.socket,
                  clock=time.monotonic, message_resolver=None, command_runner=None,
-                 artifact_server=None):
+                 artifact_server=None, log_path=None):
         self.rospy = rospy
         self.config = config
         self.socket_factory = socket_factory
@@ -58,6 +65,8 @@ class RosMapStreamNode(object):
         self.socket = None
         self.control_thread = None
         self.generation_thread = None
+        self.preview_thread = None
+        self.preview_queue = queue.Queue(maxsize=config["max_pending_preview_fragments"])
         self.watchdog_timer = None
         self.running = threading.Event()
         self.lock = threading.RLock()
@@ -65,6 +74,48 @@ class RosMapStreamNode(object):
         self.state = "standby"
         self.request_cache = {}
         self.sequences = {}
+        self.log_path = os.path.abspath(os.path.expanduser(log_path)) if log_path else None
+        self.log_lock = threading.Lock()
+        self.file_log_throttles = {}
+
+    def _write_log(self, level, message, args):
+        if self.log_path is None:
+            return
+        try:
+            rendered = message % args if args else message
+        except (TypeError, ValueError):
+            rendered = "%s %s" % (message, args)
+        try:
+            with self.log_lock:
+                directory = os.path.dirname(self.log_path)
+                if not os.path.isdir(directory):
+                    os.makedirs(directory)
+                with open(self.log_path, "a", encoding="utf-8") as stream:
+                    stream.write("%s %-5s %s\n" % (
+                        time.strftime("%Y-%m-%d %H:%M:%S"), level, rendered))
+        except OSError:
+            pass
+
+    def _log_info(self, message, *args):
+        self.rospy.loginfo(message, *args)
+        self._write_log("INFO", message, args)
+
+    def _log_warn(self, message, *args):
+        self.rospy.logwarn(message, *args)
+        self._write_log("WARN", message, args)
+
+    def _log_error(self, message, *args):
+        self.rospy.logerr(message, *args)
+        self._write_log("ERROR", message, args)
+
+    def _log_warn_throttle(self, seconds, message, key=None):
+        self.rospy.logwarn_throttle(seconds, message)
+        now = self.clock()
+        throttle_key = key or message
+        previous = self.file_log_throttles.get(throttle_key)
+        if previous is None or now - previous >= seconds:
+            self.file_log_throttles[throttle_key] = now
+            self._write_log("WARN", message, ())
 
     def start(self):
         udp_socket = self.socket_factory(socket.AF_INET, socket.SOCK_DGRAM)
@@ -80,13 +131,17 @@ class RosMapStreamNode(object):
             raise
         self.socket = udp_socket
         self.running.set()
+        self.preview_thread = threading.Thread(
+            target=self._preview_loop, name="map-preview-pcd")
+        self.preview_thread.daemon = True
+        self.preview_thread.start()
         self.control_thread = threading.Thread(
             target=self._control_loop, name="ros-map-stream-control")
         self.control_thread.daemon = True
         self.control_thread.start()
         self.watchdog_timer = self.rospy.Timer(self.rospy.Duration(0.1), self._watchdog)
         self.rospy.on_shutdown(self.close)
-        self.rospy.loginfo(
+        self._log_info(
             "epgeneral_map_stream v2 standby; UDP %s:%d HTTP %s:%d",
             self.config["bind_host"], self.config["control_port"],
             self.config["http_bind_host"], self.artifact_server.port,
@@ -100,31 +155,35 @@ class RosMapStreamNode(object):
                 continue
             except OSError:
                 if self.running.is_set():
-                    self.rospy.logerr("mapping control socket failed")
+                    self._log_error("mapping control socket failed")
                 return
             try:
                 self.handle_datagram(datagram, address[0])
             except Exception as exc:
-                self.rospy.logerr("mapping command handling failed: %s", exc)
+                self._log_error("mapping command handling failed: %s", exc)
 
     def handle_datagram(self, datagram, peer_ip):
         if peer_ip != self.config["ground_station_ip"]:
-            self.rospy.logwarn("ignored mapping command from unexpected IP %s", peer_ip)
+            self._log_warn("ignored mapping command from unexpected IP %s", peer_ip)
             return
         try:
             command = decode_command(datagram, self.config)
         except ProtocolError as exc:
-            self.rospy.logwarn("invalid mapping command: %s", exc)
+            self._log_warn("invalid mapping command: %s", exc)
             return
+        self._log_command("RX", command["message_type"], command)
         request_id = command["payload"]["request_id"]
         with self.lock:
             cached = self.request_cache.get(request_id)
             if cached and cached["expires_at"] >= self.clock():
                 if self._same_request(cached, command):
+                    self._log_info(
+                        "mapping cache hit command=%s session=%s request=%s",
+                        command["message_type"], command["session_id"][:8], request_id[:8])
                     self._send(cached["identity"], cached["destination"],
                                cached["message_type"], cached["payload"])
                 else:
-                    self.rospy.logwarn("ignored conflicting reuse of request ID %s", request_id)
+                    self._log_warn("ignored conflicting reuse of request ID %s", request_id)
                 return
         if command["device_id"].casefold() != self.config["device_id"].casefold():
             destination = self._command_destination(command, peer_ip)
@@ -138,8 +197,12 @@ class RosMapStreamNode(object):
             self._handle_prepare(command, peer_ip)
         elif command["message_type"] == "start_mapping":
             self._handle_start(command)
-        else:
+        elif command["message_type"] == "stop_mapping":
             self._handle_stop(command)
+        elif command["message_type"] == "abort_mapping":
+            self._handle_abort(command)
+        else:
+            self._handle_fragment_ack(command)
 
     @staticmethod
     def _same_request(cached, command):
@@ -167,11 +230,35 @@ class RosMapStreamNode(object):
             return
         with self.lock:
             active = self.session
-            if active is not None and active.state in (
-                    "starting", "mapping", "stopping", "generating"):
+        restarted = False
+        previous_state = ""
+        active_session_id = ""
+        if active is not None:
+            active_session_id = active.identity["session_id"]
+            previous_state = active.state
+            same_session = (
+                command["map_id"] == active.identity["map_id"]
+                and command["session_id"] == active.identity["session_id"])
+            if not payload.get("restart_active") or not same_session:
                 self._send_prepare_rejection(
-                    command, destination, "BUSY", "another mapping session is active")
+                    command, destination, "BUSY", "another mapping session is active",
+                    previous_state=previous_state, active_session_id=active_session_id)
                 return
+            if active.state not in ("ready", "starting", "mapping", "error"):
+                self._send_prepare_rejection(
+                    command, destination, "BUSY",
+                    "active session cannot be restarted while artifacts are being finalized",
+                    previous_state=previous_state, active_session_id=active_session_id)
+                return
+            try:
+                self._restart_active_session(active)
+            except (ArtifactError, RuntimeError) as exc:
+                self._send_prepare_rejection(
+                    command, destination, "COMMAND_FAILED",
+                    "cannot restart active session: %s" % exc,
+                    previous_state=previous_state, active_session_id=active_session_id)
+                return
+            restarted = True
         try:
             paths = SessionPaths(self.config, {
                 "map_id": command["map_id"], "session_id": command["session_id"]})
@@ -184,6 +271,9 @@ class RosMapStreamNode(object):
         with self.lock:
             self.session = session
             self.state = "preparing"
+        self._log_info(
+            "mapping prepare started session=%s restarted=%s previous_state=%s",
+            session.identity["session_id"][:8], restarted, previous_state or "none")
         checks = self._readiness_checks(payload["required_inputs"], session)
         accepted = all(item["available"] for item in checks)
         reason = "; ".join(item["reason"] for item in checks
@@ -199,8 +289,16 @@ class RosMapStreamNode(object):
             "sample_window_seconds": self.config["sample_window_seconds"],
             "frame_id": self.config["map_frame"],
             "capability_version": self.config["capability_version"],
+            "preview_transport": self.config["preview_transport"],
+            "fragment_interval_seconds": self.config["sample_window_seconds"],
             "error_code": error_code, "reason": reason,
+            "restarted": restarted,
         }
+        if restarted:
+            result.update({
+                "previous_state": previous_state,
+                "active_session_id": active_session_id,
+            })
         if accepted:
             with self.lock:
                 if self.session is session:
@@ -215,9 +313,31 @@ class RosMapStreamNode(object):
         self._cache_response(command, "prepare_result", result, destination)
         self._send(session.identity, destination, "prepare_result", result)
 
+    def _restart_active_session(self, session):
+        self._log_warn(
+            "mapping recovery requested session=%s state=%s; discarding live mapping data",
+            session.identity["session_id"][:8], session.state)
+        with self.lock:
+            session.token = uuid.uuid4().hex
+        self._unregister(session)
+        self._cleanup_fragments(session)
+        if session.state in ("starting", "mapping"):
+            commands = build_integration_commands(self.config, session.paths.values)
+            self._run_command(
+                "abort_fast_lio", commands["abort_fast_lio"],
+                self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+        session.paths.reset()
+        with self.lock:
+            if self.session is session:
+                self.session = None
+                self.state = "standby"
+        self._log_info(
+            "mapping recovery cleanup completed session=%s",
+            session.identity["session_id"][:8])
+
     def _readiness_checks(self, required, session):
         checks = []
-        known = {"pointcloud", "pose", "artifact_storage", "map_generation"}
+        known = {"pointcloud", "imu", "pose", "artifact_storage", "map_generation"}
         published = {}
         try:
             published = dict(self.rospy.get_published_topics())
@@ -228,31 +348,48 @@ class RosMapStreamNode(object):
             try:
                 if name == "pointcloud":
                     self._probe_topic(
-                        self.config["cloud_topic"], self.config["cloud_message_type"],
-                        published, self._validate_cloud_probe)
+                        self.config["input_cloud_topic"],
+                        self.config["input_cloud_message_type"], published,
+                        self._validate_input_cloud_probe,
+                        self.config["prepare_probe_timeout_seconds"] / 2.0)
+                    available, code = True, ""
+                elif name == "imu":
+                    self._probe_topic(
+                        self.config["input_imu_topic"],
+                        self.config["input_imu_message_type"], published,
+                        None,
+                        self.config["prepare_probe_timeout_seconds"] / 2.0)
                     available, code = True, ""
                 elif name == "pose":
                     self._probe_topic(
-                        self.config["pose_topic"], self.config["pose_message_type"],
-                        published, self._validate_pose_probe)
+                        self.config["pose_topic"],
+                        self.config["pose_message_type"], published,
+                        self._validate_pose_probe,
+                        self.config["prepare_probe_timeout_seconds"] / 2.0)
                     available, code = True, ""
                 elif name == "artifact_storage":
                     session.paths.prepare(self.config["min_free_bytes"])
                     available, code = True, ""
                 elif name == "map_generation":
-                    self.command_runner.check()
+                    self.command_runner.check(build_integration_commands(
+                        self.config, session.paths.values))
                     available, code = True, ""
                 elif name not in known:
                     reason = "required input is not supported"
             except (ArtifactError, ConfigError, ProcessingError, RuntimeError) as exc:
                 reason = str(exc)
                 code = {
-                    "pointcloud": "SENSOR_UNAVAILABLE", "pose": "POSE_UNAVAILABLE",
+                    "pointcloud": "SENSOR_UNAVAILABLE", "imu": "IMU_UNAVAILABLE",
+                    "pose": "IMU_UNAVAILABLE",
                     "artifact_storage": "ARTIFACT_STORAGE_UNAVAILABLE",
                     "map_generation": "MAP_GENERATION_UNAVAILABLE",
                 }.get(name, "UNSUPPORTED_INPUT")
             checks.append({"name": name, "available": available,
                            "reason": reason, "error_code": code})
+            log_method = self._log_info if available else self._log_warn
+            log_method(
+                "mapping readiness check=%s available=%s reason=%s",
+                name, available, reason or "none")
         return checks
 
     def _resolve_message(self, message_type):
@@ -265,27 +402,40 @@ class RosMapStreamNode(object):
             raise ConfigError("configured ROS message class is unavailable")
         return message_class
 
-    def _probe_topic(self, topic, expected_type, published, validator):
-        if published.get(topic) != expected_type:
+    def _probe_topic(self, topic, expected_type, published, validator, timeout):
+        if published is not None and published.get(topic) != expected_type:
             raise RuntimeError("topic is unavailable or has the wrong type: %s" % topic)
         message_class = self._resolve_message(expected_type)
         wait_for_message = getattr(self.rospy, "wait_for_message", None)
         if wait_for_message is not None:
             try:
                 message = wait_for_message(
-                    topic, message_class,
-                    timeout=max(0.1, self.config["prepare_probe_timeout_seconds"] / 2.0))
+                    topic, message_class, timeout=max(0.1, timeout))
             except Exception as exc:
                 raise RuntimeError("topic did not provide fresh data: %s" % exc)
-            validator(message)
+            if validator is not None:
+                validator(message)
+            frame_id = getattr(getattr(message, "header", None), "frame_id", "")
+            self._log_info(
+                "mapping topic probe passed topic=%s type=%s frame=%s",
+                topic, expected_type, frame_id or "n/a")
 
-    def _validate_cloud_probe(self, message):
-        if message.header.frame_id != self.config["sensor_frame"]:
-            raise ProcessingError("cloud frame_id does not match configured sensor frame")
+    @staticmethod
+    def _validate_cloud_fields(message):
         fields = {field.name for field in getattr(message, "fields", [])}
         if fields and not {"x", "y", "z"}.issubset(fields):
             raise ProcessingError("PointCloud2 does not contain x/y/z fields")
         stamp_to_ns(message.header.stamp)
+
+    def _validate_input_cloud_probe(self, message):
+        if message.header.frame_id != self.config["input_cloud_frame"]:
+            raise ProcessingError("Livox cloud frame_id does not match configured input frame")
+        self._validate_cloud_fields(message)
+
+    def _validate_stream_cloud_probe(self, message):
+        if message.header.frame_id != self.config["cloud_frame"]:
+            raise ProcessingError("FAST_LIO cloud frame_id does not match configured stream frame")
+        self._validate_cloud_fields(message)
 
     def _validate_pose_probe(self, message):
         if message.header.frame_id != self.config["map_frame"]:
@@ -311,11 +461,29 @@ class RosMapStreamNode(object):
         with self.lock:
             session.state = "starting"
             self.state = "starting"
+            session.source_pcd_baseline = file_fingerprint(self.config["generated_pcd_path"])
+            session.mapping_started_at_ns = time.time_ns()
+        self._log_info(
+            "mapping source baseline session=%s fingerprint=%s",
+            session.identity["session_id"][:8], session.source_pcd_baseline or "missing")
+        self._send_session_message(session, "session_status", {
+            "state": "starting", "reason": "starting FAST_LIO and waiting for outputs",
+            "error_code": ""})
+        commands = build_integration_commands(self.config, session.paths.values)
         try:
+            self._run_command(
+                "start_fast_lio", commands["start_fast_lio"],
+                timeout=self.config["fast_lio_startup_timeout_seconds"])
+            self._wait_for_fast_lio_outputs()
             self._subscribe_session(session)
-            self.command_runner.run(self.config["start_command"], session.paths.values)
         except Exception as exc:
             self._unregister(session)
+            try:
+                self._run_command(
+                    "abort_after_start_failure", commands["abort_fast_lio"],
+                    timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+            except Exception:
+                pass
             with self.lock:
                 if self.session is session:
                     self.session = None
@@ -335,6 +503,19 @@ class RosMapStreamNode(object):
         self._send(session.identity, session.destination, "command_ack", ack)
         self._send_session_message(session, "session_status", {
             "state": "mapping", "reason": "", "error_code": ""})
+
+    def _wait_for_fast_lio_outputs(self):
+        deadline = self.clock() + self.config["fast_lio_startup_timeout_seconds"]
+        for topic, message_type, validator in (
+                (self.config["cloud_topic"], self.config["cloud_message_type"],
+                 self._validate_stream_cloud_probe),
+                (self.config["pose_topic"], self.config["pose_message_type"],
+                 self._validate_pose_probe)):
+            remaining = deadline - self.clock()
+            if remaining <= 0:
+                raise RuntimeError("FAST_LIO output startup timed out")
+            self._probe_topic(
+                topic, message_type, None, validator, remaining)
 
     def _handle_stop(self, command):
         with self.lock:
@@ -364,9 +545,71 @@ class RosMapStreamNode(object):
         self.generation_thread.daemon = True
         self.generation_thread.start()
 
-    def _generate_artifact(self, session):
+    def _handle_abort(self, command):
+        with self.lock:
+            session = self.session
+            valid = (session is not None
+                     and session.state in ("ready", "starting", "mapping", "error")
+                     and command["map_id"] == session.identity["map_id"]
+                     and command["session_id"] == session.identity["session_id"])
+        if not valid:
+            self._reject(
+                command,
+                "mapping session cannot be aborted while artifacts are being finalized",
+                "BUSY", self._command_destination(command, self.config["ground_station_ip"]))
+            return
         try:
-            self.command_runner.run(self.config["stop_command"], session.paths.values)
+            self._restart_active_session(session)
+        except (ArtifactError, RuntimeError) as exc:
+            self._reject(command, "cannot abort mapping: %s" % exc,
+                         "COMMAND_FAILED", session.destination)
+            return
+        ack = self._ack_payload(command, True)
+        self._cache_response(command, "command_ack", ack, session.destination)
+        self._send(session.identity, session.destination, "command_ack", ack)
+        self._log_warn("mapping session aborted without artifacts session=%s",
+                       session.identity["session_id"][:8])
+
+    def _handle_fragment_ack(self, command):
+        payload = command["payload"]
+        with self.lock:
+            session = self.session
+            valid = (session is not None and session.state in ("mapping", "generating")
+                     and command["map_id"] == session.identity["map_id"]
+                     and command["session_id"] == session.identity["session_id"])
+            entry = session.fragment_cache.pop(payload["fragment_id"], None) if valid else None
+        if not valid:
+            return
+        if entry is not None:
+            self.artifact_server.unregister(entry["token"], delete=True)
+        self._log_info(
+            "mapping preview acknowledged session=%s fragment=%d",
+            session.identity["session_id"][:8], payload["fragment_id"])
+
+    def _generate_artifact(self, session):
+        commands = build_integration_commands(self.config, session.paths.values)
+        try:
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating", "message": "stopping FAST_LIO and saving PCD",
+                "reason": ""})
+            self._run_command(
+                "stop_fast_lio", commands["stop_fast_lio"],
+                timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+            fingerprint = require_fresh_file(
+                self.config["generated_pcd_path"], session.source_pcd_baseline,
+                session.mapping_started_at_ns)
+            self._log_info(
+                "mapping source freshness passed session=%s fingerprint=%s",
+                session.identity["session_id"][:8], fingerprint)
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating", "message": "generating PGM and map YAML",
+                "reason": ""})
+            self._run_command(
+                "generate_pgm", commands["generate_pgm"],
+                timeout=self.config["pgm_generation_timeout_seconds"] + 6.0)
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating", "message": "validating mapping artifacts",
+                "reason": ""})
             wait_for_stable_artifacts(session.paths, self.config)
             descriptor = build_archive(session.paths, self.config, session.identity)
             token, expires_at = self.artifact_server.register(
@@ -382,6 +625,7 @@ class RosMapStreamNode(object):
                 "reason": "",
             }
             self._send_session_message(session, "artifact_status", payload)
+            self._cleanup_fragments(session)
             with self.lock:
                 if self.session is session:
                     session.state = "serving"
@@ -391,6 +635,7 @@ class RosMapStreamNode(object):
         except Exception as exc:
             self._send_session_message(session, "artifact_status", {
                 "state": "error", "reason": str(exc)})
+            self._cleanup_fragments(session)
             with self.lock:
                 if self.session is session:
                     self.session = None
@@ -422,12 +667,29 @@ class RosMapStreamNode(object):
                 message, self.config["pose_position_path"], self.config["pose_orientation_path"])
             stamp_ns = stamp_to_ns(message.header.stamp)
         except (AttributeError, ProcessingError) as exc:
-            self.rospy.logwarn_throttle(5.0, "pose preprocessing failed: %s" % exc)
+            self._log_warn_throttle(5.0, "pose preprocessing failed: %s" % exc)
             return
         with self.lock:
             if self.session is session and session.token == token:
                 session.pose_buffer.add(PoseSample(stamp_ns, transform))
                 session.last_pose_at = self.clock()
+                pending = session.pending_clouds
+                session.pending_clouds = []
+            else:
+                pending = []
+        tolerance_ns = int(self.config["sync_tolerance_seconds"] * 1000000000)
+        for cloud_stamp_ns, received_at, cloud_message in pending:
+            pose = session.pose_buffer.closest(cloud_stamp_ns, tolerance_ns)
+            if pose is not None:
+                self._process_cloud(
+                    token, session, cloud_message, cloud_stamp_ns, pose, received_at)
+            elif stamp_ns > cloud_stamp_ns + tolerance_ns:
+                self._log_sync_drop(cloud_stamp_ns, stamp_ns, "pose advanced past cloud")
+            else:
+                with self.lock:
+                    if self.session is session and session.token == token:
+                        session.pending_clouds.append(
+                            (cloud_stamp_ns, received_at, cloud_message))
 
     def _cloud_callback(self, token, message):
         now = self.clock()
@@ -437,18 +699,41 @@ class RosMapStreamNode(object):
                 return
             session.last_cloud_at = now
         try:
-            self._validate_cloud_probe(message)
+            self._validate_stream_cloud_probe(message)
             stamp_ns = stamp_to_ns(message.header.stamp)
-            pose = session.pose_buffer.closest(
-                stamp_ns, int(self.config["sync_tolerance_seconds"] * 1000000000))
+        except (AttributeError, ProcessingError, ValueError) as exc:
+            self._log_warn_throttle(5.0, "cloud preprocessing failed: %s" % exc)
+            return
+        tolerance_ns = int(self.config["sync_tolerance_seconds"] * 1000000000)
+        with self.lock:
+            if self.session is not session or session.token != token or session.state != "mapping":
+                return
+            pose = session.pose_buffer.closest(stamp_ns, tolerance_ns)
             if pose is None:
-                raise ProcessingError("no pose within synchronization tolerance")
+                newest_stamp = session.pose_buffer.newest_stamp()
+                if newest_stamp is not None and newest_stamp > stamp_ns + tolerance_ns:
+                    self._log_sync_drop(stamp_ns, newest_stamp, "cloud arrived too late")
+                    return
+                session.pending_clouds.append((stamp_ns, now, message))
+                if len(session.pending_clouds) > 3:
+                    dropped_stamp, unused_received, unused_message = session.pending_clouds.pop(0)
+                    self._log_sync_drop(
+                        dropped_stamp, newest_stamp, "pending cloud queue full")
+                return
+        self._process_cloud(token, session, message, stamp_ns, pose, now)
+
+    def _process_cloud(self, token, session, message, stamp_ns, pose, received_at):
+        try:
+            points = extract_pointcloud2(message)
+            if self.config["cloud_coordinates"] == "map":
+                points = map_points_to_sensor(
+                    points, pose.transform, self.config["body_from_sensor"])
             points = preprocess_points(
-                extract_pointcloud2(message), self.config["min_range_m"],
+                points, self.config["min_range_m"],
                 self.config["max_range_m"], self.config["voxel_size_m"],
                 self.config["max_window_points"])
         except (AttributeError, ProcessingError, ValueError) as exc:
-            self.rospy.logwarn_throttle(5.0, "cloud preprocessing failed: %s" % exc)
+            self._log_warn_throttle(5.0, "cloud preprocessing failed: %s" % exc)
             return
         if not len(points):
             return
@@ -457,16 +742,24 @@ class RosMapStreamNode(object):
             if self.session is not session or session.token != token or session.state != "mapping":
                 return
             if session.window_started_at is None:
-                session.window_started_at = now
+                session.window_started_at = received_at
             remaining = self.config["max_window_points"] - session.window_points
             if remaining > 0:
                 points = points[:remaining]
                 session.scans.append((points, pose.transform, stamp_ns))
                 session.window_points += len(points)
-            flush = (now - session.window_started_at >= self.config["sample_window_seconds"]
+            flush = (received_at - session.window_started_at >= self.config["sample_window_seconds"]
                      or session.window_points >= self.config["max_window_points"])
         if flush:
             self._flush_window(session, token)
+
+    def _log_sync_drop(self, cloud_stamp_ns, pose_stamp_ns, reason):
+        delta = "no pose"
+        if pose_stamp_ns is not None:
+            delta = "%.3f ms" % ((pose_stamp_ns - cloud_stamp_ns) / 1000000.0)
+        self._log_warn_throttle(
+            5.0, "cloud/pose synchronization dropped cloud: %s; delta=%s" % (
+                reason, delta), key="cloud_pose_sync_drop")
 
     def _flush_window(self, session, token):
         with self.lock:
@@ -477,35 +770,69 @@ class RosMapStreamNode(object):
             session.window_points = 0
             session.window_started_at = None
         try:
-            points, reference_pose = aggregate_window(
-                scans, self.config["body_from_sensor"], self.config["voxel_size_m"],
-                self.config["max_frame_points"])
-            if not len(points):
-                return
-            raw = points.tobytes(order="C")
-            if len(raw) > self.config["max_decompressed_bytes"]:
-                raise ProcessingError("processed window exceeds decompressed byte limit")
-            compressed = zlib.compress(raw)
-            stamp_ns = scans[-1][2]
-            with self.lock:
-                if self.session is not session or session.token != token or session.state != "mapping":
-                    return
-                frame_id = session.frame_id
-                session.frame_id += 1
-                first_sequence = self._peek_sequence(session.identity["session_id"])
-                datagrams = encode_cloud_chunks(self.config, session.identity, first_sequence, {
-                    "frame_id": frame_id, "sample_stamp_ns": stamp_ns,
-                    "point_count": len(points), "map_from_body": reference_pose,
-                    "body_from_sensor": self.config["body_from_sensor"],
-                }, compressed)
-                self.sequences[session.identity["session_id"]] = first_sequence + len(datagrams)
-            for datagram in datagrams:
+            self.preview_queue.put_nowait((session, token, scans))
+        except queue.Full:
+            self._log_warn_throttle(
+                5.0, "preview PCD queue is full; dropping one preview window",
+                key="preview_queue_full")
+
+    def _preview_loop(self):
+        while self.running.is_set() or not self.preview_queue.empty():
+            try:
+                session, token, scans = self.preview_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            try:
+                points, reference_pose = aggregate_window(
+                    scans, self.config["body_from_sensor"], self.config["voxel_size_m"],
+                    self.config["max_frame_points"])
+                if not len(points):
+                    continue
+                points = sensor_points_to_map(
+                    points, reference_pose, self.config["body_from_sensor"])
                 with self.lock:
                     if self.session is not session or session.token != token or session.state != "mapping":
-                        return
-                    self.socket.sendto(datagram, session.destination)
-        except (OSError, ProcessingError, ProtocolError, ValueError, zlib.error) as exc:
-            self.rospy.logerr("cloud window encoding failed: %s", exc)
+                        continue
+                    fragment_id = session.frame_id
+                    session.frame_id += 1
+                path = os.path.join(session.paths.fragment_dir, "%08d.pcd" % fragment_id)
+                descriptor = write_binary_pcd(path, points)
+                if descriptor["byte_count"] > self.config["max_preview_fragment_bytes"]:
+                    raise ArtifactError("preview PCD exceeds configured byte limit")
+                route = "/mapping/preview/%s/%08d.pcd" % (
+                    session.identity["session_id"], fragment_id)
+                http_token, expires_at = self.artifact_server.register(
+                    path, self.config["http_token_ttl_seconds"], route=route,
+                    content_type="application/octet-stream")
+                host = ("[%s]" % self.config["device_ip"]
+                        if ":" in self.config["device_ip"] else self.config["device_ip"])
+                payload = {
+                    "fragment_id": fragment_id,
+                    "url": "http://%s:%d%s?token=%s" % (
+                        host, self.artifact_server.port, route, http_token),
+                    "byte_count": descriptor["byte_count"], "sha256": descriptor["sha256"],
+                    "point_count": len(points), "frame_id": self.config["map_frame"],
+                    "started_at_ns": scans[0][2], "ended_at_ns": scans[-1][2],
+                    "expires_at": expires_at,
+                }
+                with self.lock:
+                    if self.session is not session or session.token != token or session.state != "mapping":
+                        self.artifact_server.unregister(http_token, delete=True)
+                        continue
+                    session.fragment_cache[fragment_id] = {
+                        "payload": payload, "token": http_token, "attempts": 1,
+                        "last_sent": self.clock(),
+                    }
+                    while len(session.fragment_cache) > self.config["max_unacked_preview_fragments"]:
+                        old_id = sorted(session.fragment_cache)[0]
+                        old = session.fragment_cache.pop(old_id)
+                        self.artifact_server.unregister(old["token"], delete=True)
+                        self._log_warn("discarded unacknowledged preview fragment %d", old_id)
+                self._send_session_message(session, "cloud_fragment_ready", payload)
+            except (ArtifactError, OSError, ProcessingError, ProtocolError, ValueError) as exc:
+                self._log_error("preview PCD generation failed: %s", exc)
+            finally:
+                self.preview_queue.task_done()
 
     def _watchdog(self, unused_event=None):
         now = self.clock()
@@ -522,6 +849,12 @@ class RosMapStreamNode(object):
                     self.state = "standby"
                     session = None
             if session is not None and session.state == "mapping":
+                for entry in session.fragment_cache.values():
+                    if (entry["attempts"] < 3 and now - entry["last_sent"] >= 1.0):
+                        entry["attempts"] += 1
+                        entry["last_sent"] = now
+                        self._send_session_message(
+                            session, "cloud_fragment_ready", entry["payload"])
                 if session.window_started_at is not None and (
                         now - session.window_started_at >= self.config["sample_window_seconds"]):
                     flush = (session, session.token)
@@ -552,12 +885,38 @@ class RosMapStreamNode(object):
         self._send_session_message(session, "session_status", {
             "state": "error", "reason": reason, "error_code": error_code})
         self._unregister(session)
+        self._cleanup_fragments(session)
         with self.lock:
             if self.session is session:
                 self.session = None
                 self.state = "standby"
 
-    def _send_prepare_rejection(self, command, destination, error_code, reason):
+    def _run_command(self, name, arguments, timeout):
+        started = self.clock()
+        self._log_info("mapping integration start name=%s timeout=%.1fs", name, timeout)
+        try:
+            output = self.command_runner.run(arguments, timeout=timeout)
+        except Exception as exc:
+            self._log_error(
+                "mapping integration failed name=%s elapsed=%.3fs error=%s",
+                name, self.clock() - started, exc)
+            raise
+        self._log_info(
+            "mapping integration completed name=%s elapsed=%.3fs output=%s",
+            name, self.clock() - started, output or "<empty>")
+        return output
+
+    def _log_command(self, direction, message_type, command):
+        payload = command.get("payload", {})
+        self._log_info(
+            "mapping %s type=%s map=%s session=%s request=%s restart_active=%s",
+            direction, message_type, command.get("map_id", "")[:8],
+            command.get("session_id", "")[:8],
+            str(payload.get("request_id", ""))[:8],
+            bool(payload.get("restart_active", False)))
+
+    def _send_prepare_rejection(self, command, destination, error_code, reason,
+                                previous_state="", active_session_id=""):
         checks = []
         for name in command["payload"].get("required_inputs", ["pointcloud"]):
             checks.append({"name": name, "available": False, "reason": reason})
@@ -568,6 +927,10 @@ class RosMapStreamNode(object):
             "capability_version": self.config["capability_version"],
             "error_code": error_code, "reason": reason,
         }
+        if previous_state:
+            payload["previous_state"] = previous_state
+        if active_session_id:
+            payload["active_session_id"] = active_session_id
         identity = {"map_id": command["map_id"], "session_id": command["session_id"]}
         self._cache_response(command, "prepare_result", payload, destination)
         self._send(identity, destination, "prepare_result", payload)
@@ -611,8 +974,17 @@ class RosMapStreamNode(object):
             datagram = encode_envelope(
                 self.config, identity, message_type, sequence, payload)
             self.socket.sendto(datagram, destination)
+            if message_type != "session_heartbeat":
+                detail = payload.get("state") or payload.get("command") or ""
+                accepted = payload.get("accepted")
+                if accepted is not None:
+                    detail = "%s accepted=%s" % (detail, accepted)
+                self._log_info(
+                    "mapping TX type=%s session=%s sequence=%d destination=%s:%d detail=%s",
+                    message_type, identity["session_id"][:8], sequence,
+                    destination[0], destination[1], detail or "none")
         except (AttributeError, OSError, ProtocolError) as exc:
-            self.rospy.logerr("mapping UDP send failed type=%s: %s", message_type, exc)
+            self._log_error("mapping UDP send failed type=%s: %s", message_type, exc)
 
     @staticmethod
     def _unregister(session):
@@ -623,6 +995,16 @@ class RosMapStreamNode(object):
                 pass
         session.subscribers = []
         session.pose_buffer.clear()
+        session.pending_clouds = []
+
+    def _cleanup_fragments(self, session):
+        with self.lock:
+            entries = list(session.fragment_cache.values())
+            session.fragment_cache.clear()
+        if self.artifact_server is None:
+            return
+        for entry in entries:
+            self.artifact_server.unregister(entry["token"], delete=True)
 
     def close(self):
         if not self.running.is_set() and self.socket is None:
@@ -630,10 +1012,20 @@ class RosMapStreamNode(object):
         self.running.clear()
         with self.lock:
             session = self.session
+            stop_fast_lio = session is not None and session.state in ("starting", "mapping")
             if session is not None:
                 session.token = uuid.uuid4().hex
         if session is not None:
             self._unregister(session)
+            self._cleanup_fragments(session)
+        if stop_fast_lio:
+            try:
+                commands = build_integration_commands(self.config, session.paths.values)
+                self._run_command(
+                    "abort_on_shutdown", commands["abort_fast_lio"],
+                    timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+            except Exception as exc:
+                self._log_warn("FAST_LIO shutdown cleanup failed: %s", exc)
         with self.lock:
             self.session = None
             self.state = "standby"
@@ -651,11 +1043,14 @@ class RosMapStreamNode(object):
             if self.control_thread is not threading.current_thread():
                 self.control_thread.join(timeout=2.0)
         self.control_thread = None
+        if self.preview_thread is not None and self.preview_thread.is_alive():
+            self.preview_thread.join(timeout=2.0)
+        self.preview_thread = None
         if self.generation_thread is not None and self.generation_thread.is_alive():
             self.generation_thread.join(timeout=2.0)
         if self.artifact_server is not None:
             self.artifact_server.close()
-        self.rospy.loginfo("epgeneral_map_stream stopped")
+        self._log_info("epgeneral_map_stream stopped")
 
 
 def run():
@@ -672,7 +1067,9 @@ def run():
         "~device_config_file", device_package_path + "/config/device.yaml")
     try:
         config = load_config(mapping_path, device_path)
-        node = RosMapStreamNode(rospy, config)
+        node = RosMapStreamNode(
+            rospy, config,
+            log_path=os.path.expanduser("~/.ros/ccs_edge_dev/log/map_stream.log"))
         node.start()
     except (ConfigError, OSError, ArtifactError) as exc:
         rospy.logfatal("epgeneral_map_stream startup failed: %s", exc)

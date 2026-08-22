@@ -191,6 +191,7 @@ class TaskEditorPage(QWidget):
         self.layer_combo = QComboBox()
         self.layer_combo.addItem("点云选点", "pointcloud")
         self.layer_combo.addItem("栅格选点", "grid")
+        self.layer_combo.currentIndexChanged.connect(self._selection_layer_changed)
         self.pick_toggle = QPushButton("开始选点")
         self.pick_toggle.setCheckable(True)
         self.pick_toggle.toggled.connect(self._pick_toggled)
@@ -377,6 +378,9 @@ class TaskEditorPage(QWidget):
     def _pick_toggled(self, enabled: bool) -> None:
         self.viewer.set_interaction_mode("pick" if enabled else "browse")
         self.pick_toggle.setText("结束选点" if enabled else "开始选点")
+
+    def _selection_layer_changed(self) -> None:
+        self.viewer.set_layer_mode(str(self.layer_combo.currentData()))
 
     def _add_picked_point(self, x: float, y: float) -> None:
         subtask = self._current()

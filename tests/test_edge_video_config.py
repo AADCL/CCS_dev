@@ -51,7 +51,8 @@ class EdgeVideoConfigTests(unittest.TestCase):
         self.assertNotIn("wait-for-connection=false", source)
         self.assertIn('g_signal_lookup("caller-connecting"', source)
         self.assertIn('srt://" + host + ":"', source)
-        self.assertIn('host == "0.0.0.0"', source)
+        self.assertNotIn("host.clear()", source)
+        self.assertIn('host.find(\':\') != std::string::npos', source)
         self.assertIn('static_cast<long long>(srt_latency_ms_) * 1000LL', source)
         self.assertIn('std::fprintf(stderr, "epgeneral_video_srt startup failed:', source)
         operational = "\n".join(

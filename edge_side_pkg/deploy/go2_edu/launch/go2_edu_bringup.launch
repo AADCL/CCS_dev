@@ -1,5 +1,6 @@
 <launch>
   <arg name="profile_dir" default="$(dirname)/../config" />
+  <arg name="ground_station_ip" default="192.168.50.101" />
   <arg name="enable_task_control" default="false" />
   <include file="$(find epqrd_go2_bridge)/launch/epqrd_go2_bridge.launch">
     <arg name="config_file" value="$(arg profile_dir)/go2.yaml" />
@@ -12,7 +13,7 @@
   <include file="$(find epgeneral_udp_telemetry)/launch/epgeneral_udp_telemetry.launch">
     <arg name="telemetry_config_file" value="$(arg profile_dir)/udp_telemetry.yaml" />
     <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
-    <arg name="destination_host" value="192.168.151.100" />
+    <arg name="destination_host" value="$(arg ground_station_ip)" />
     <arg name="link_status_topic" value="/qrd/QRD_001/link/udp_tx" />
     <arg name="diagnostics_topic" value="/qrd/QRD_001/diagnostics" />
   </include>

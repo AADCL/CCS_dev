@@ -101,8 +101,7 @@ class VideoSrtNode {
 
   std::string listenerUri() const {
     std::string host = bind_address_;
-    if (host == "0.0.0.0" || host == "::") host.clear();
-    if (host.find(':') != std::string::npos && !host.empty()) host = "[" + host + "]";
+    if (host.find(':') != std::string::npos) host = "[" + host + "]";
     return "srt://" + host + ":" + std::to_string(srt_port_) +
            "?mode=listener&transtype=live&latency=" +
            std::to_string(static_cast<long long>(srt_latency_ms_) * 1000LL);

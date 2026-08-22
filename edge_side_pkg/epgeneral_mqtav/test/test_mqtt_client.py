@@ -84,6 +84,7 @@ class MqttTests(unittest.TestCase):
         topic, payload, qos, retain = self.client.will or ("", "", 0, False)
         self.assertEqual(topic, "mqtav/UAV_001/presence")
         self.assertEqual(json.loads(payload)["status"], "offline")
+        self.assertTrue(json.loads(payload)["session_id"])
         self.assertEqual(qos, 1)
         self.assertTrue(retain)
 
@@ -98,6 +99,8 @@ class MqttTests(unittest.TestCase):
             "mqtav/UAV_001/status",
         ])
         self.assertEqual(json.loads(self.client.published[-1][1])["message_type"], "status")
+        sessions = {json.loads(item[1])["session_id"] for item in self.client.published}
+        self.assertEqual(len(sessions), 1)
         self.assertTrue(any("heartbeat_sent" in message for _level, message in self.logger.events))
 
     def test_disconnected_publisher_drops_stale_status(self):

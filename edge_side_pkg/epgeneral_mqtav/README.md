@@ -1,8 +1,8 @@
 # epgeneral_mqtav
 
-<!-- epgeneral_mqtav_VERSION: 0.3.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.3.1 -->
 
-当前版本：`v0.3.0`
+当前版本：`v0.3.1`
 
 `epgeneral_mqtav` 是运行在端侧计算机上的 ROS1 功能包。它订阅 ROS 健康状态并通过 MQTT 向地面站上报在线状态、设备链路、电量、模式和任务状态。为兼容既有地面站协议，MQTT topic 根和客户端 ID 前缀继续使用 `mqtav`。
 
@@ -10,6 +10,7 @@
 
 - 设备 ID 构成 MQTT 客户端 ID：`mqtav-<device_id>`；设备 IP 随每条消息上报。
 - 节点以 QoS 1 每秒发布一条 `heartbeat` 和一条 `status`。MQTT 自动以 1 至 60 秒指数退避重连，断线期间不缓存旧遥测。
+- 每次节点启动生成新的 `session_id`，同一启动周期的 presence、heartbeat 和 status 共用该值；地面站据此安全重置 sequence 窗口。
 - 连接后发布 retained `online` presence；MQTT Last Will 为 retained `offline` presence。正常退出也会主动发布 `offline`。
 - 状态来自 `/mavros/state` 的 `connected`、`armed`、`system_status`、`mode`，以及 `/mavros/battery` 的 `percentage`、`voltage`、`current`。电量百分比统一为 0 到 100 的数值。
 - `ros.state.mapping` 可将上述四个健康字段映射到任意 ROS 消息字段；值为 `null` 时上报不可用。未配置 mapping 时继续使用 MAVROS 同名字段。
@@ -30,6 +31,7 @@
   "schema_version": "1.0",
   "message_type": "status",
   "timestamp": "2026-07-31T09:30:00.000Z",
+  "session_id": "a4d3...",
   "sequence": 42,
   "device": {"id": "UAV_001", "ip": "192.168.151.250"},
   "health": {

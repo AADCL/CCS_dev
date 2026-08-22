@@ -68,6 +68,8 @@ class MqttDeviceSource(SimulatedDeviceSource):
         }
         self._trackers = {device.device_id: HeartbeatTracker() for device in self._devices}
         self._sequences: dict[tuple[str, str], int] = {}
+        self._sessions: dict[str, str] = {}
+        self._retired_sessions: dict[str, set[str]] = {}
         self.module_status_message = "MQTT 监测模块正在启动"
         self.module_healthy = False
         self._watchdog = QTimer(self)
@@ -125,6 +127,13 @@ class MqttDeviceSource(SimulatedDeviceSource):
         self._sequences = {
             key: value for key, value in self._sequences.items() if key[0].casefold() not in folded
         }
+        self._sessions = {
+            key: value for key, value in self._sessions.items() if key.casefold() not in folded
+        }
+        self._retired_sessions = {
+            key: value for key, value in self._retired_sessions.items()
+            if key.casefold() not in folded
+        }
 
     def logs(self, device_id: str) -> list[DeviceLogEntry]:
         return list(self._logs.get(device_id, ()))
@@ -143,6 +152,14 @@ class MqttDeviceSource(SimulatedDeviceSource):
             key: value for key, value in self._sequences.items()
             if key[0].casefold() != old_folded
         }
+        self._sessions = {
+            key: value for key, value in self._sessions.items()
+            if key.casefold() != old_folded
+        }
+        self._retired_sessions = {
+            key: value for key, value in self._retired_sessions.items()
+            if key.casefold() != old_folded
+        }
 
     @Slot(str, bytes)
     def process_message(self, topic: str, payload: bytes) -> None:
@@ -160,12 +177,17 @@ class MqttDeviceSource(SimulatedDeviceSource):
             return
         if event.ip_address != device.ip_address:
             self._append_log(device.device_id, DeviceLogLevel.WARNING, f"消息 IP {event.ip_address} 与配置 IP {device.ip_address} 不一致")
+        if not self._update_session(device.device_id, event):
+            return
         if event.sequence is not None:
-            key = (event.device_id, event.message_type)
+            key = (device.device_id, event.message_type)
             previous = self._sequences.get(key)
-            if previous is not None and event.sequence <= previous:
-                self._append_log(event.device_id, DeviceLogLevel.WARNING, f"丢弃乱序 {event.message_type} 帧 sequence={event.sequence}")
-                self.devices_updated.emit(self.snapshots())
+            if previous is not None and event.sequence == previous:
+                # QoS 1 permits duplicate delivery. It is idempotent and not a
+                # protocol ordering fault, so ignore it without flooding logs.
+                return
+            if previous is not None and event.sequence < previous:
+                self._append_log(device.device_id, DeviceLogLevel.WARNING, f"丢弃乱序 {event.message_type} 帧 sequence={event.sequence}")
                 return
             self._sequences[key] = event.sequence
         if isinstance(event, MqttPresenceEvent):
@@ -174,6 +196,37 @@ class MqttDeviceSource(SimulatedDeviceSource):
             self._handle_heartbeat(device, event)
         elif isinstance(event, MqttStatusEvent):
             self._handle_status(device, event)
+
+    def _update_session(self, device_id: str, event: MqttEvent) -> bool:
+        session_id = event.session_id
+        previous = self._sessions.get(device_id)
+        if session_id is not None:
+            if previous == session_id:
+                return True
+            retired = self._retired_sessions.setdefault(device_id, set())
+            if session_id in retired:
+                return False
+            if previous is not None:
+                retired.add(previous)
+                if len(retired) > 16:
+                    retired.pop()
+            self._clear_device_sequences(device_id)
+            self._sessions[device_id] = session_id
+            if previous is not None:
+                self._append_log(device_id, DeviceLogLevel.INFO, "MQTT 端侧进程已重启，序列窗口已重置")
+            return True
+        if isinstance(event, MqttPresenceEvent) and event.status == "online":
+            # Compatibility with edge packages predating session_id. A new online
+            # presence is the only safe boundary at which their counters may reset.
+            self._clear_device_sequences(device_id)
+        return True
+
+    def _clear_device_sequences(self, device_id: str) -> None:
+        folded = device_id.casefold()
+        self._sequences = {
+            key: value for key, value in self._sequences.items()
+            if key[0].casefold() != folded
+        }
 
     def _handle_presence(self, device: DeviceSnapshot, event: MqttPresenceEvent) -> None:
         tracker = self._trackers[device.device_id]

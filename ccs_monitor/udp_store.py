@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Callable
 
@@ -32,6 +32,7 @@ class UdpHeartbeatTracker:
     last_heartbeat_monotonic: float | None = None
     warned: bool = False
     errored: bool = False
+    retired_session_ids: set[str] = field(default_factory=set)
 
 
 class UdpTelemetryStore(QObject):
@@ -46,6 +47,7 @@ class UdpTelemetryStore(QObject):
         config: UdpTelemetryConfig,
         known_device: Callable[[str], bool],
         log_sink: Callable[[str, DeviceLogLevel, str], None] | None = None,
+        canonical_device_id: Callable[[str], str | None] | None = None,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], datetime] = utc_now,
         start_watchdog: bool = True,
@@ -56,6 +58,7 @@ class UdpTelemetryStore(QObject):
         self.protocol = UdpTelemetryProtocol(config)
         self._known_device = known_device
         self._log_sink = log_sink
+        self._canonical_device_id = canonical_device_id
         self._clock = clock
         self._wall_clock = wall_clock
         self._snapshots: dict[str, DeviceTelemetrySnapshot] = {}
@@ -96,13 +99,32 @@ class UdpTelemetryStore(QObject):
         if not self._known_device(event.device_id):
             self._warn(f"忽略未登记 UDP 设备：{event.device_id}")
             return
-        tracker = self._trackers.setdefault(event.device_id, UdpHeartbeatTracker())
+        canonical_id = (
+            self._canonical_device_id(event.device_id)
+            if self._canonical_device_id is not None else event.device_id
+        )
+        if not canonical_id:
+            self._warn(f"无法解析 UDP 设备 ID：{event.device_id}")
+            return
+        event = replace(event, device_id=canonical_id)
+        tracker = self._trackers.setdefault(canonical_id, UdpHeartbeatTracker())
         if tracker.session_id != event.session_id:
-            self._clear_device_sequences(event.device_id)
+            if event.session_id in tracker.retired_session_ids:
+                self._warn(
+                    f"丢弃旧会话 UDP 帧：{canonical_id} session={event.session_id}"
+                )
+                return
+            if tracker.session_id is not None:
+                tracker.retired_session_ids.add(tracker.session_id)
+                if len(tracker.retired_session_ids) > 16:
+                    tracker.retired_session_ids.pop()
+            self._clear_device_sequences(canonical_id)
             tracker.session_id = event.session_id
         key = (event.device_id, event.session_id, event.message_type, event.level)
         previous = self._sequences.get(key)
-        if previous is not None and event.sequence <= previous:
+        if previous is not None and event.sequence == previous:
+            return
+        if previous is not None and event.sequence < previous:
             self._warn(f"丢弃乱序 UDP 帧：{event.device_id} {event.message_type} sequence={event.sequence}")
             return
         self._sequences[key] = event.sequence
@@ -256,7 +278,11 @@ class UdpTelemetryStore(QObject):
             self.telemetry_updated.emit(device_id, updated)
 
     def _clear_device_sequences(self, device_id: str) -> None:
-        self._sequences = {key: value for key, value in self._sequences.items() if key[0] != device_id}
+        folded = device_id.casefold()
+        self._sequences = {
+            key: value for key, value in self._sequences.items()
+            if key[0].casefold() != folded
+        }
 
     def remove_device(self, device_id: str) -> None:
         folded = device_id.casefold()

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 from PySide6.QtCore import QEvent, QSettings, QTimer, Signal, Qt, QObject
-from PySide6.QtGui import QColor, QMouseEvent
+from PySide6.QtGui import QColor, QFontDatabase, QMouseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QButtonGroup,
@@ -155,6 +155,50 @@ def calculate_turntable_pan(
     center = np.asarray(start_center, dtype=np.float64)
     result = center + translated
     return float(result[0]), float(result[1]), float(result[2])
+
+
+def unproject_screen_to_plane(
+    transform: object,
+    x: float,
+    y: float,
+    plane_z: float = 0.0,
+) -> tuple[float, float] | None:
+    """Convert canvas coordinates to a horizontal map plane."""
+
+    def cartesian(value: object) -> np.ndarray | None:
+        mapped = np.asarray(value, dtype=np.float64).reshape(-1)
+        if mapped.size < 3 or not np.isfinite(mapped).all():
+            return None
+        if mapped.size >= 4:
+            w = mapped[3]
+            if abs(w) <= 1e-12:
+                return None
+            mapped = mapped[:3] / w
+        else:
+            mapped = mapped[:3]
+        return mapped if np.isfinite(mapped).all() else None
+
+    near = cartesian(transform.imap((x, y, 0.0, 1.0)))
+    far = cartesian(transform.imap((x, y, 1.0, 1.0)))
+    if near is None or far is None:
+        return None
+    direction = far - near
+    if abs(direction[2]) <= 1e-12:
+        return None
+    distance = (float(plane_z) - near[2]) / direction[2]
+    if distance < 0.0:
+        return None
+    intersection = near + distance * direction
+    if not np.isfinite(intersection).all():
+        return None
+    return float(intersection[0]), float(intersection[1])
+
+
+def pick_mode_zoom_distance(distance: float, wheel_delta: int) -> float:
+    if not wheel_delta:
+        return float(distance)
+    factor = 0.85 if wheel_delta > 0 else 1.0 / 0.85
+    return float(np.clip(float(distance) * factor, 0.1, 1_000_000.0))
 
 
 class MiddlePanTurntableCameraMixin:
@@ -1424,9 +1468,12 @@ class PointCloudViewer(QWidget):
             extent = max(bounds.width, bounds.height, bounds.depth, 1.0)
         elif self.current_map.pgm is not None:
             pgm = self.current_map.pgm
+            local_x = pgm.width_m / 2
+            local_y = pgm.height_m / 2
+            cosine, sine = math.cos(pgm.origin_yaw), math.sin(pgm.origin_yaw)
             center = (
-                pgm.origin_x + pgm.width_m / 2,
-                pgm.origin_y + pgm.height_m / 2,
+                pgm.origin_x + cosine * local_x - sine * local_y,
+                pgm.origin_y + sine * local_x + cosine * local_y,
                 0.0,
             )
             extent = max(pgm.width_m, pgm.height_m, 1.0)
@@ -1453,6 +1500,16 @@ class PointCloudViewer(QWidget):
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         native = getattr(self._canvas, "native", None)
+        if (
+            watched is native
+            and self.interaction_mode == "pick"
+            and event.type() == QEvent.Type.Wheel
+            and self._camera is not None
+        ):
+            self._camera.distance = pick_mode_zoom_distance(
+                self._camera.distance, event.angleDelta().y())
+            self._camera.view_changed()
+            return True
         if (
             watched is native
             and self.interaction_mode == "pick"
@@ -1579,35 +1636,42 @@ class PointCloudViewer(QWidget):
         if self._view is not None and self._camera is not None:
             try:
                 transform = self._view.scene.transform
-                near = np.asarray(transform.imap((x, y, 0.0, 1.0)), dtype=np.float64)[:3]
-                far = np.asarray(transform.imap((x, y, 1.0, 1.0)), dtype=np.float64)[:3]
-                direction = far - near
-                if np.isfinite((near, far)).all() and abs(direction[2]) > 1e-9:
-                    distance = -near[2] / direction[2]
-                    intersection = near + distance * direction
-                    if np.isfinite(intersection).all():
-                        return float(intersection[0]), float(intersection[1])
+                point = unproject_screen_to_plane(transform, x, y)
+                if point is not None:
+                    return point if self._contains_map_point(*point) else None
             except Exception:
-                pass
+                return None
+        return None
+
+    def _contains_map_point(self, x: float, y: float) -> bool:
+        if self.current_map is None:
+            return False
+        if self.layer_mode == "grid" and self.current_map.pgm is not None:
+            pgm = self.current_map.pgm
+            dx, dy = x - pgm.origin_x, y - pgm.origin_y
+            cosine, sine = math.cos(pgm.origin_yaw), math.sin(pgm.origin_yaw)
+            local_x = cosine * dx + sine * dy
+            local_y = -sine * dx + cosine * dy
+            epsilon = max(pgm.resolution * 1e-6, 1e-9)
+            return (
+                -epsilon <= local_x <= pgm.width_m + epsilon
+                and -epsilon <= local_y <= pgm.height_m + epsilon
+            )
         if self.current_map.bounds is not None:
             bounds = self.current_map.bounds
-            min_x, max_x = bounds.min_x, bounds.max_x
-            min_y, max_y = bounds.min_y, bounds.max_y
-        elif self.current_map.pgm is not None:
+            epsilon = max(bounds.width, bounds.height, 1.0) * 1e-9
+            return (
+                bounds.min_x - epsilon <= x <= bounds.max_x + epsilon
+                and bounds.min_y - epsilon <= y <= bounds.max_y + epsilon
+            )
+        if self.current_map.pgm is not None:
             pgm = self.current_map.pgm
-            corners = []
+            dx, dy = x - pgm.origin_x, y - pgm.origin_y
             cosine, sine = math.cos(pgm.origin_yaw), math.sin(pgm.origin_yaw)
-            for local_x, local_y in ((0, 0), (pgm.width_m, 0), (0, pgm.height_m), (pgm.width_m, pgm.height_m)):
-                corners.append((pgm.origin_x + cosine * local_x - sine * local_y,
-                                pgm.origin_y + sine * local_x + cosine * local_y))
-            min_x, max_x = min(item[0] for item in corners), max(item[0] for item in corners)
-            min_y, max_y = min(item[1] for item in corners), max(item[1] for item in corners)
-        else:
-            return None
-        return (
-            min_x + min(1.0, max(0.0, x / width)) * (max_x - min_x),
-            max_y - min(1.0, max(0.0, y / height)) * (max_y - min_y),
-        )
+            local_x = cosine * dx + sine * dy
+            local_y = -sine * dx + cosine * dy
+            return 0.0 <= local_x <= pgm.width_m and 0.0 <= local_y <= pgm.height_m
+        return False
 
     def set_task_paths(self, paths: dict[str, list[tuple[float, float, float]]]) -> None:
         if self._view is None:
@@ -1798,7 +1862,7 @@ class MapDetailPage(QWidget):
         self.mapping_button = QPushButton("重新建图")
         self.mapping_button.setObjectName("primaryButton")
         self.mapping_button.clicked.connect(self.mapping_requested)
-        self.cancel_mapping_button = QPushButton("取消任务")
+        self.cancel_mapping_button = QPushButton("强制结束")
         self.cancel_mapping_button.setObjectName("dangerButton")
         self.cancel_mapping_button.clicked.connect(self.mapping_cancel_requested)
         self.cancel_mapping_button.setVisible(False)
@@ -1814,17 +1878,31 @@ class MapDetailPage(QWidget):
         root.addWidget(self.info)
         self.mapping_status = QFrame()
         self.mapping_status.setObjectName("mappingStatus")
-        status_layout = QHBoxLayout(self.mapping_status)
-        status_layout.setContentsMargins(12, 8, 12, 8)
+        status_layout = QVBoxLayout(self.mapping_status)
+        status_layout.setContentsMargins(10, 7, 10, 8)
+        status_layout.setSpacing(6)
+        status_summary = QHBoxLayout()
+        status_summary.setSpacing(10)
         self.mapping_state = QLabel("实时建图未启动")
         self.mapping_state.setObjectName("statusPill")
         self.mapping_metrics = QLabel("完整帧 0  ·  丢帧 0  ·  接收点 0  ·  融合点 0")
         self.mapping_metrics.setObjectName("muted")
-        status_layout.addWidget(self.mapping_state)
+        status_summary.addWidget(self.mapping_state)
         self.mapping_elapsed = QLabel("时长 00:00")
         self.mapping_elapsed.setObjectName("muted")
-        status_layout.addWidget(self.mapping_elapsed)
-        status_layout.addWidget(self.mapping_metrics, 1)
+        status_summary.addWidget(self.mapping_elapsed)
+        status_summary.addWidget(self.mapping_metrics, 1)
+        status_layout.addLayout(status_summary)
+        self.mapping_log = QPlainTextEdit()
+        self.mapping_log.setObjectName("mappingProtocolLog")
+        self.mapping_log.setReadOnly(True)
+        self.mapping_log.setUndoRedoEnabled(False)
+        self.mapping_log.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.mapping_log.setMaximumBlockCount(200)
+        self.mapping_log.setFixedHeight(112)
+        self.mapping_log.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self.mapping_log.setVisible(False)
+        status_layout.addWidget(self.mapping_log)
         self.mapping_status.setVisible(False)
         root.addWidget(self.mapping_status)
         self.readiness_details = QLabel("")
@@ -1888,6 +1966,7 @@ class MapDetailPage(QWidget):
 
     def update_mapping(self, snapshot: MapBuildingSessionSnapshot) -> None:
         self.mapping_status.setVisible(True)
+        self.mapping_log.setVisible(False)
         active = snapshot.state in {"negotiating", "mapping", "warning", "degraded"}
         self.mapping_button.setText("结束建图" if active else "重新建图")
         self.mapping_button.setEnabled(snapshot.state != "saving")
@@ -1907,6 +1986,17 @@ class MapDetailPage(QWidget):
     def update_remote_mapping(self, snapshot: RemoteMappingSnapshot) -> None:
         self.mapping_status.setVisible(True)
         self.mapping_state.setText(snapshot.message)
+        log_lines = []
+        for entry in snapshot.log_entries:
+            stamp = entry.timestamp.astimezone().strftime("%H:%M:%S.%f")[:-3]
+            log_lines.append(
+                f"[{stamp}] {entry.direction:<5} {entry.event:<18} {entry.summary}"
+            )
+        self.mapping_log.setPlainText("\n".join(log_lines))
+        self.mapping_log.setVisible(bool(log_lines))
+        if log_lines:
+            scrollbar = self.mapping_log.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
         last_data = (
             snapshot.last_data_at.astimezone().strftime("%H:%M:%S")
             if snapshot.last_data_at else "--"
@@ -1921,9 +2011,15 @@ class MapDetailPage(QWidget):
             f"最后数据 {last_data}{progress}"
         )
         checks = []
+        check_labels = {
+            "pointcloud": "Livox 点云", "imu": "Livox IMU",
+            "pose": "位姿", "artifact_storage": "成果存储",
+            "map_generation": "地图生成",
+        }
         for item in snapshot.readiness_checks:
             state = "可用" if item.available else "不可用"
-            checks.append(f"{item.name} {state}{'：' + item.reason if item.reason else ''}")
+            name = check_labels.get(item.name, item.name)
+            checks.append(f"{name} {state}{'：' + item.reason if item.reason else ''}")
         summary = "  ·  ".join(checks)
         if snapshot.sample_window_seconds is not None:
             summary += ("  ·  " if summary else "") + (
@@ -1939,12 +2035,16 @@ class MapDetailPage(QWidget):
             "warning": "结束建图", "stopping": "正在结束",
             "generating": "正在生成", "downloading": "正在下载",
             "validating": "正在校验", "failed": "重新协商",
-            "cancelled": "重新建图", "completed": "重新建图",
+            "cancelled": "重新建图", "aborted": "重新建图", "completed": "重新建图",
         }
         self.mapping_button.setText(labels.get(snapshot.state, "重新建图"))
-        self.mapping_button.setEnabled(snapshot.state in {"ready", "mapping", "warning", "failed"})
-        self.cancel_mapping_button.setVisible(snapshot.state not in {"completed", "cancelled"})
-        self.cancel_mapping_button.setEnabled(snapshot.state not in {"downloading", "validating"})
+        self.mapping_button.setEnabled(
+            snapshot.state in {"ready", "mapping", "warning", "failed", "aborted"}
+        )
+        self.cancel_mapping_button.setVisible(snapshot.state in {
+            "ready", "starting", "mapping", "warning", "failed", "aborting"
+        })
+        self.cancel_mapping_button.setEnabled(snapshot.state != "aborting")
         self._started_at = snapshot.started_at
         self._refresh_elapsed()
         if snapshot.navigation_locked:
@@ -2742,7 +2842,24 @@ class MapPage(QWidget):
             self.detail_page.update_remote_mapping(snapshot)
 
     def _cancel_remote_mapping(self) -> None:
-        if self.mapping_service is not None:
+        if self.mapping_service is None:
+            return
+        remote = self.mapping_service.current_remote_snapshot
+        if remote is not None:
+            answer = QMessageBox.question(
+                self, "强制结束建图",
+                "将立即停止端侧 FAST_LIO 并丢弃本次实时建图数据，不生成 PCD/PGM 成果。是否继续？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                self.mapping_service.abort_remote_mapping()
+            except RuntimeError as exc:
+                QMessageBox.warning(self, "强制结束建图", str(exc))
+                return
+        else:
             self.mapping_service.cancel_remote_mapping()
         self._remote_trail.clear()
         self.detail_page.viewer.clear_live_points()

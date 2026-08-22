@@ -316,6 +316,8 @@ class _PendingFrame:
     map_from_body: dict[str, float]
     body_from_sensor: dict[str, float]
     chunks: dict[int, bytes] = field(default_factory=dict)
+    last_retransmit_at: float = 0.0
+    retransmit_attempts: int = 0
 
 
 class CloudFrameAssembler:
@@ -323,12 +325,15 @@ class CloudFrameAssembler:
         self.config = config
         self.clock = clock
         self._frames: dict[int, _PendingFrame] = {}
+        self._closed_frames: set[int] = set()
 
     def push(self, envelope: MapBuildingEnvelope) -> tuple[np.ndarray, tuple[Any, ...]] | None:
         if envelope.message_type != "cloud_chunk":
             raise MapBuildingProtocolError("仅 cloud_chunk 可进入帧重组器")
         payload = envelope.payload
         frame_id = int(payload["frame_id"])
+        if frame_id in self._closed_frames:
+            return None
         metadata = (
             int(payload["point_count"]), int(payload["frame_crc32"]),
             int(payload["sample_stamp_ns"]), int(payload["chunk_count"]),
@@ -349,6 +354,7 @@ class CloudFrameAssembler:
             return None
         compressed = b"".join(pending.chunks[index] for index in range(pending.chunk_count))
         self._frames.pop(frame_id, None)
+        self._remember_closed(frame_id)
         if zlib.crc32(compressed) & 0xFFFFFFFF != pending.crc32:
             raise MapBuildingProtocolError("点云帧 CRC32 校验失败")
         expected_bytes = pending.point_count * 12
@@ -378,7 +384,31 @@ class CloudFrameAssembler:
         expired = [frame_id for frame_id, frame in self._frames.items() if frame.created_at < threshold]
         for frame_id in expired:
             self._frames.pop(frame_id, None)
+            self._remember_closed(frame_id)
         return len(expired)
+
+    def _remember_closed(self, frame_id: int) -> None:
+        self._closed_frames.add(frame_id)
+        if len(self._closed_frames) > 256:
+            floor = max(self._closed_frames) - 128
+            self._closed_frames = {item for item in self._closed_frames if item >= floor}
+
+    def retransmit_requests(self) -> list[tuple[int, list[int], int]]:
+        now = self.clock()
+        requests = []
+        for frame_id, frame in self._frames.items():
+            age = now - frame.created_at
+            since_last = now - frame.last_retransmit_at
+            if (age < self.config.retransmit_delay_seconds
+                    or frame.retransmit_attempts >= self.config.retransmit_max_attempts
+                    or (frame.last_retransmit_at and since_last < self.config.retransmit_delay_seconds)):
+                continue
+            missing = [index for index in range(frame.chunk_count) if index not in frame.chunks]
+            if missing:
+                frame.retransmit_attempts += 1
+                frame.last_retransmit_at = now
+                requests.append((frame_id, missing, frame.retransmit_attempts))
+        return requests
 
 
 class VoxelMapAccumulator:

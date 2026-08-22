@@ -23,6 +23,7 @@ class FakeReceiver(QObject):
     frame_ready = Signal(QImage)
     state_changed = Signal(str)
     error_occurred = Signal(str)
+    diagnostic = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -92,7 +93,9 @@ class SrtVideoTests(unittest.TestCase):
         config = SrtVideoConfig(output_width=2, output_height=1)
         receiver = SrtFfmpegReceiver(config)
         images = []
+        states = []
         receiver.frame_ready.connect(images.append)
+        receiver.state_changed.connect(states.append)
         first = bytes((255, 0, 0, 255, 0, 255, 0, 255))
         second = bytes((0, 0, 255, 255, 255, 255, 255, 255))
         receiver.feed_rawvideo(first[:3])
@@ -100,6 +103,7 @@ class SrtVideoTests(unittest.TestCase):
         receiver.feed_rawvideo(first[3:] + second)
         self.assertEqual(len(images), 1)
         self.assertEqual(images[0].pixelColor(0, 0).blue(), 255)
+        self.assertEqual(states.count("playing"), 1)
 
     def test_widget_uses_device_endpoint_and_stops_on_change(self):
         fake = FakeReceiver()
@@ -114,6 +118,18 @@ class SrtVideoTests(unittest.TestCase):
         widget.set_device(DeviceSnapshot("B", "Two", "UGV", ip_address="192.168.1.11"))
         self.assertGreater(fake.stop_count, before)
         self.assertFalse(widget.stream_switch.isChecked())
+        widget.close()
+
+    def test_playing_state_keeps_video_canvas_visible_and_logs_diagnostics(self):
+        fake = FakeReceiver()
+        widget = SrtVideoWidget(fake)
+        events = []
+        widget.stream_event.connect(lambda state, message: events.append((state, message)))
+        widget._show_frame(QImage(2, 2, QImage.Format.Format_RGBA8888))
+        fake.state_changed.emit("playing")
+        self.assertIs(widget.video_stack.currentWidget(), widget.video_output)
+        fake.diagnostic.emit("decoder warning")
+        self.assertEqual(events[-1][0], "diagnostic")
         widget.close()
 
     def test_config_rejects_absolute_ffmpeg_path_and_resolves_relative_path(self):
@@ -192,6 +208,18 @@ class SrtVideoTests(unittest.TestCase):
         receiver._retry_timer.start()
         receiver.stop()
         self.assertFalse(receiver._retry_timer.isActive())
+
+    def test_stream_retry_resets_first_frame_state(self):
+        receiver = SrtFfmpegReceiver(SrtVideoConfig())
+        receiver._requested = True
+        receiver._endpoint = SrtEndpoint("127.0.0.1", 9000)
+        receiver._playing = True
+        receiver._first_frame_timed_out = True
+        receiver._start_stream_process()
+        self.assertFalse(receiver._playing)
+        self.assertFalse(receiver._first_frame_timed_out)
+        self.assertTrue(receiver._first_frame_timer.isActive())
+        receiver.stop()
 
 
 if __name__ == "__main__":

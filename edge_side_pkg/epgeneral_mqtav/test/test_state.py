@@ -24,6 +24,8 @@ class StateTests(unittest.TestCase):
         self.assertEqual(payload["health"]["battery"]["percentage"], 76.5)
         self.assertEqual(payload["health"]["mission_status"], "executing")
         self.assertEqual(health.payload("heartbeat")["sequence"], payload["sequence"] + 1)
+        self.assertEqual(health.payload("heartbeat")["session_id"], payload["session_id"])
+        self.assertEqual(health.presence_payload("online")["session_id"], payload["session_id"])
 
     def test_missing_mavros_values_remain_unknown(self):
         health = HealthState(DeviceConfig("UAV-001", "192.168.20.17"))
