@@ -98,8 +98,9 @@ class MapBuildingV2ProtocolTests(unittest.TestCase):
             "map-1", "UAV-1", "session-1", "prepare_result", 1, 1,
             {"request_id": "request-1", "accepted": True,
              "checks": [{"name": "pointcloud", "available": True}],
-             "sample_window_seconds": 0.2, "frame_id": "map",
-             "capability_version": "0.1.0"},
+             "sample_window_seconds": 1.0, "frame_id": "lio_odom",
+             "capability_version": "0.6.0", "preview_transport": "pcd_fragment_http",
+             "fragment_interval_seconds": 1.0},
         )
         self.assertEqual(self.protocol.decode(self.protocol.encode(envelope)), envelope)
         invalid = replace(envelope, payload={**envelope.payload, "accepted": False})
@@ -200,12 +201,16 @@ class CoordinatorTests(unittest.TestCase):
             )
             session_id = coordinator.prepare(definition, device, "127.0.0.1", 14562)
             request = coordinator.protocol.decode(sent[-1][0])
+            self.assertEqual(
+                request.payload["required_inputs"],
+                ["pointcloud", "imu", "artifact_storage", "map_generation"],
+            )
             rejected = MapBuildingEnvelope(
                 definition.map_id, device.device_id, session_id, "prepare_result", 1, 1,
                 {"request_id": request.payload["request_id"], "accepted": False,
                  "checks": [{"name": "pointcloud", "available": False,
                              "reason": "topic unavailable"}],
-                 "sample_window_seconds": 0.2, "frame_id": "map",
+                 "sample_window_seconds": 0.2, "frame_id": "lio_odom",
                  "capability_version": "0.1.0", "error_code": "POINTCLOUD_MISSING",
                  "reason": "pointcloud unavailable"},
             )
@@ -213,17 +218,84 @@ class CoordinatorTests(unittest.TestCase):
             self.assertEqual(coordinator.snapshot.state, "failed")
             coordinator.retry_prepare("127.0.0.1", 14562)
             request = coordinator.protocol.decode(sent[-1][0])
+            self.assertTrue(request.payload["restart_active"])
             accepted = replace(
                 rejected, sequence=2,
                 payload={"request_id": request.payload["request_id"], "accepted": True,
                          "checks": [{"name": "pointcloud", "available": True}],
-                         "sample_window_seconds": 0.2, "frame_id": "map",
-                         "capability_version": "0.1.0"},
+                         "sample_window_seconds": 0.2, "frame_id": "lio_odom",
+                         "capability_version": "0.1.0", "restarted": True,
+                         "previous_state": "mapping", "active_session_id": session_id},
             )
             coordinator.handle(accepted, "127.0.0.1")
             self.assertEqual(coordinator.snapshot.state, "ready")
+            self.assertTrue(any(item.event == "recovery"
+                                for item in coordinator.snapshot.log_entries))
             coordinator.begin()
             self.assertEqual(coordinator.snapshot.state, "starting")
+
+    def test_start_waits_for_deadline_and_accepts_late_ack(self):
+        config = load_map_building_config()
+        now = [10.0]
+        sent = []
+        with tempfile.TemporaryDirectory() as directory:
+            repository = MapRepository(Path(directory) / "maps")
+            definition = repository.create(
+                "Remote", (MapCreatorDevice("UAV-1", "Device", "UAV"),))
+            device = DeviceSnapshot("UAV-1", "Device", "UAV", ip_address="127.0.0.1")
+            coordinator = RemoteMappingCoordinator(
+                config, repository, lambda raw, ip: sent.append((raw, ip)),
+                clock=lambda: now[0])
+            session_id = coordinator.prepare(definition, device, "127.0.0.1", 14562)
+            prepare = coordinator.protocol.decode(sent[-1][0])
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id, "prepare_result", 1, 1,
+                {"request_id": prepare.payload["request_id"], "accepted": True,
+                 "checks": [{"name": "pointcloud", "available": True}],
+                 "sample_window_seconds": 0.2, "frame_id": "lio_odom",
+                 "capability_version": "0.4.0"}), "127.0.0.1")
+            coordinator.begin()
+            for unused in range(config.command_max_attempts + 2):
+                now[0] += config.command_retry_seconds
+                coordinator.tick("127.0.0.1", 14562)
+            self.assertEqual(coordinator.snapshot.state, "starting")
+            start = coordinator.protocol.decode(sent[-1][0])
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id, "command_ack", 2, 2,
+                {"request_id": start.payload["request_id"], "command": "start_mapping",
+                 "accepted": True}), "127.0.0.1")
+            self.assertEqual(coordinator.snapshot.state, "mapping")
+
+    def test_protocol_log_is_bounded_to_200_entries(self):
+        config = load_map_building_config()
+        with tempfile.TemporaryDirectory() as directory:
+            repository = MapRepository(Path(directory) / "maps")
+            definition = repository.create(
+                "Remote", (MapCreatorDevice("UAV-1", "Device", "UAV"),))
+            device = DeviceSnapshot("UAV-1", "Device", "UAV", ip_address="127.0.0.1")
+            coordinator = RemoteMappingCoordinator(config, repository, lambda raw, ip: None)
+            coordinator.prepare(definition, device, "127.0.0.1", 14562)
+            for index in range(205):
+                coordinator._log(coordinator.session, "LOCAL", "test", str(index))
+            self.assertEqual(len(coordinator.snapshot.log_entries), 200)
+            self.assertEqual(coordinator.snapshot.log_entries[-1].summary, "204")
+
+    def test_processed_fragment_deduplication_cache_is_bounded(self):
+        config = load_map_building_config()
+        with tempfile.TemporaryDirectory() as directory:
+            repository = MapRepository(Path(directory) / "maps")
+            definition = repository.create(
+                "Remote", (MapCreatorDevice("UAV-1", "Device", "UAV"),))
+            device = DeviceSnapshot("UAV-1", "Device", "UAV", ip_address="127.0.0.1")
+            coordinator = RemoteMappingCoordinator(config, repository, lambda raw, ip: None)
+            coordinator.prepare(definition, device, "127.0.0.1", 14562)
+            maximum = max(64, config.max_pending_preview_fragments * 16)
+            for fragment_id in range(maximum + 10):
+                coordinator._remember_processed_fragment(coordinator.session, fragment_id)
+            self.assertEqual(len(coordinator.session.processed_fragments), maximum)
+            self.assertNotIn(0, coordinator.session.processed_fragments)
+            self.assertIn(maximum + 9, coordinator.session.processed_fragments)
+            coordinator.shutdown()
 
 
 if __name__ == "__main__":

@@ -1,8 +1,13 @@
 # epgeneral_mqtav 开发日志
 
-<!-- epgeneral_mqtav_VERSION: 0.3.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.3.1 -->
 
-当前版本：`v0.3.0`
+当前版本：`v0.3.1`
+
+## v0.3.1 - 2026-08-21
+
+- `HealthState` 在构造时生成 UUID session，所有 MQTT 消息携带该会话值，sequence 继续使用线程安全的单调计数器。
+- 指控平台按设备、消息类型和当前 session 校验顺序；端侧进程重启不会与上一启动周期的计数器冲突。
 
 ## v0.3.0 - 2026-07-31
 

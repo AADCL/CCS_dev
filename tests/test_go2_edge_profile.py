@@ -8,7 +8,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "edge_side_pkg" / "EPQRD_go2_bridge"
-PROFILE = ROOT / "edge_side_pkg" / "deploy" / "go2_edu" / "config"
+DEPLOYMENT = ROOT / "edge_side_pkg" / "deploy" / "go2_edu"
+PROFILE = DEPLOYMENT / "config"
 
 
 class Go2EdgeProfileTests(unittest.TestCase):
@@ -38,6 +39,30 @@ class Go2EdgeProfileTests(unittest.TestCase):
         telemetry = yaml.safe_load((PROFILE / "udp_telemetry.yaml").read_text(encoding="utf-8"))
         self.assertEqual(mqtt["mqtt"]["topics"]["status"], "mqtav/{device_id}/status")
         self.assertEqual(telemetry["protocol_id"], "ccs-udp-telemetry-v1")
+
+    def test_bringup_uses_profile_configs_and_configurable_ground_station(self):
+        launch = ElementTree.parse(DEPLOYMENT / "launch" / "go2_edu_bringup.launch").getroot()
+        args = {item.attrib["name"]: item.attrib.get("default") for item in launch.findall("arg")}
+        self.assertEqual(args["ground_station_ip"], "192.168.50.101")
+        includes = "\n".join(ElementTree.tostring(item, encoding="unicode") for item in launch.findall("include"))
+        self.assertIn("udp_telemetry.yaml", includes)
+        self.assertIn("device.yaml", includes)
+        self.assertIn("$(arg ground_station_ip)", includes)
+        self.assertNotIn("192.168.151.100", includes)
+
+    def test_start_script_passes_profile_configs_to_every_service(self):
+        script = (DEPLOYMENT / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
+        self.assertIn('PROFILE_CONFIG_DIR="${CCS_EDGE_PROFILE_CONFIG_DIR:-}"', script)
+        self.assertIn('PROFILE_CONFIG_DIR="${WORKSPACE}/config/go2_edu"', script)
+        for name in ("go2.yaml", "epgeneral_mqtav.yaml", "udp_telemetry.yaml", "device.yaml"):
+            self.assertIn('${PROFILE_CONFIG_DIR}/' + name, script)
+        self.assertIn('destination_host:="${GROUND_STATION_IP}"', script)
+
+    def test_profile_mqtt_and_udp_target_the_same_ground_station(self):
+        mqtt = yaml.safe_load((PROFILE / "epgeneral_mqtav.yaml").read_text(encoding="utf-8"))
+        launch = ElementTree.parse(DEPLOYMENT / "launch" / "go2_edu_bringup.launch").getroot()
+        ground_station = next(item for item in launch.findall("arg") if item.attrib["name"] == "ground_station_ip")
+        self.assertEqual(mqtt["mqtt"]["ground_station_ip"], ground_station.attrib["default"])
 
     def test_source_contains_read_only_dds_topics_and_standard_ros_publishers(self):
         source = (PACKAGE / "src" / "go2_bridge_node.cpp").read_text(encoding="utf-8")

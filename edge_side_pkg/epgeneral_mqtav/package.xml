@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>epgeneral_mqtav</name>
-  <version>0.3.0</version>
+  <version>0.3.1</version>
   <description>ROS1 MAVROS health telemetry uplink for an MQTT ground station.</description>
   <maintainer email="maintainer@example.com">epgeneral_mqtav Maintainer</maintainer>
   <license>MIT</license>

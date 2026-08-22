@@ -86,6 +86,9 @@ def main() -> int:
             udp_config,
             source.has_device_id,
             source.append_external_log,
+            canonical_device_id=lambda device_id: (
+                snapshot.device_id if (snapshot := source.device(device_id)) is not None else None
+            ),
         )
         udp_runtime = UdpMonitoringRuntime(udp_config, udp_store)
     except UdpConfigError as exc:

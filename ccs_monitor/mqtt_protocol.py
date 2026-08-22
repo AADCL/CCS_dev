@@ -18,6 +18,7 @@ class MqttEnvelope:
     device_id: str
     ip_address: str
     sequence: int | None = None
+    session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ class MqttMessageParser:
             timestamp=timestamp,
             device_id=device_id,
             ip_address=ip_address,
+            session_id=self._optional_session_id(data.get("session_id")),
         )
         if message_type == "presence":
             status = self._required_string(data, "status")
@@ -123,6 +125,14 @@ class MqttMessageParser:
         value = data.get(name)
         if not isinstance(value, str) or not value:
             raise MqttProtocolError(f"{name} 必须是非空字符串")
+        return value
+
+    @staticmethod
+    def _optional_session_id(value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip() or len(value) > 128:
+            raise MqttProtocolError("session_id 必须是长度不超过 128 的非空字符串")
         return value
 
     @staticmethod

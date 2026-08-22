@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import numpy as np
 
 from epgeneral_map_stream.processing import (
-    PoseBuffer, PoseSample, aggregate_window, preprocess_points, transform_from_pose,
+    PoseBuffer, PoseSample, aggregate_window, map_points_to_sensor,
+    preprocess_points, transform_from_pose,
 )
 
 
@@ -25,6 +26,7 @@ class ProcessingTests(unittest.TestCase):
         buffer.add(PoseSample(200, {"x": 2}))
         self.assertEqual(buffer.closest(180, 30).transform["x"], 2)
         self.assertIsNone(buffer.closest(300, 30))
+        self.assertEqual(buffer.newest_stamp(), 200)
 
     def test_pose_quaternion_is_normalized(self):
         message = SimpleNamespace(
@@ -46,3 +48,12 @@ class ProcessingTests(unittest.TestCase):
         ], identity, 0.01, 10)
         np.testing.assert_allclose(points, [[0.0, 0.0, 0.0]])
         self.assertEqual(pose["x"], 1.0)
+
+    def test_map_frame_cloud_is_converted_to_sensor_frame(self):
+        pose = {"x": 10.0, "y": 0.0, "z": 0.0, "qx": 0.0, "qy": 0.0,
+                "qz": 0.0, "qw": 1.0}
+        extrinsic = {"x": 1.0, "y": 0.0, "z": 0.0, "qx": 0.0, "qy": 0.0,
+                     "qz": 0.0, "qw": 1.0}
+        points = map_points_to_sensor(
+            np.asarray([[12.0, 0.0, 0.0]], dtype=np.float32), pose, extrinsic)
+        np.testing.assert_allclose(points, [[1.0, 0.0, 0.0]])

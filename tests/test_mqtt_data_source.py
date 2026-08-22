@@ -39,7 +39,7 @@ class MqttDeviceSourceTests(unittest.TestCase):
     def tearDown(self):
         self.directory.cleanup()
 
-    def message(self, kind, sequence=None, health=None, device_id=None, ip=None):
+    def message(self, kind, sequence=None, health=None, device_id=None, ip=None, session_id=None):
         device_id = device_id or self.device_id
         body = {
             "schema_version": "1.0",
@@ -49,6 +49,10 @@ class MqttDeviceSourceTests(unittest.TestCase):
         }
         if sequence is not None:
             body["sequence"] = sequence
+        if session_id is not None:
+            body["session_id"] = session_id
+        if kind == "presence":
+            body["status"] = "online"
         if health is not None:
             body["health"] = health
         self.source.process_message(f"mqtav/{device_id}/{kind}", json.dumps(body).encode())
@@ -100,6 +104,37 @@ class MqttDeviceSourceTests(unittest.TestCase):
         self.message("status", 9, stale)
         self.assertEqual(self.source.device(self.device_id).flight_mode, "AUTO.LOITER")
         self.assertEqual(self.source.logs(self.device_id)[-1].level, DeviceLogLevel.WARNING)
+
+    def test_new_edge_session_accepts_reset_heartbeat_and_status_sequences(self):
+        health = {
+            "fcu_connected": True, "armed": False, "system_status": 3,
+            "flight_mode": "AUTO", "battery": {"percentage": 50},
+            "mission_status": "standby",
+        }
+        self.message("heartbeat", 50, session_id="boot-a")
+        self.message("status", 51, health, session_id="boot-a")
+        self.message("heartbeat", 1, session_id="boot-b")
+        self.message("status", 2, dict(health, flight_mode="MANUAL"), session_id="boot-b")
+        device = self.source.device(self.device_id)
+        self.assertEqual(device.connection_status, ConnectionStatus.ONLINE)
+        self.assertEqual(device.flight_mode, "MANUAL")
+        self.assertFalse(any(
+            "乱序" in entry.message for entry in self.source.logs(self.device_id)
+        ))
+        self.message("status", 52, dict(health, flight_mode="STALE"), session_id="boot-a")
+        self.assertEqual(self.source.device(self.device_id).flight_mode, "MANUAL")
+
+    def test_legacy_online_presence_resets_sequence_window(self):
+        self.message("heartbeat", 20)
+        self.message("presence")
+        self.message("heartbeat", 1)
+        self.assertEqual(self.source.device(self.device_id).connection_status, ConnectionStatus.ONLINE)
+
+    def test_qos_duplicate_is_ignored_without_out_of_order_warning(self):
+        self.message("heartbeat", 1, session_id="boot-a")
+        before = len(self.source.logs(self.device_id))
+        self.message("heartbeat", 1, session_id="boot-a")
+        self.assertEqual(len(self.source.logs(self.device_id)), before)
 
     def test_unknown_device_is_ignored_and_log_buffer_is_bounded(self):
         warnings = []

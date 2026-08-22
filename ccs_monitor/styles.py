@@ -268,7 +268,10 @@ def _replace_style_colors(style: str, palette: ThemePalette) -> str:
         "#17453b": palette.primary_soft,
         "#20564b": palette.selected_background,
         "#24564d": palette.selected_background,
+        "#24584c": palette.selected_background,
         "#205849": palette.primary_strong,
+        "#c7d2dc": palette.text,
+        "#091017": palette.input_background,
         "#e4a653": palette.warning,
         "#e8b35e": palette.warning,
         "#f0bd70": palette.warning,
@@ -969,6 +972,14 @@ QFrame#mappingStatus {
     background: #0e1720;
     border: 1px solid #263747;
     border-radius: 5px;
+}
+QPlainTextEdit#mappingProtocolLog {
+    color: #c7d2dc;
+    background: #091017;
+    border: 1px solid #223442;
+    border-radius: 3px;
+    padding: 5px 7px;
+    selection-background-color: #24584c;
 }
 QListWidget#sideList {
     background: transparent;

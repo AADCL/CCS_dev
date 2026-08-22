@@ -178,6 +178,7 @@ class MapBuildingService(QObject):
         udp_socket = None
         try:
             udp_socket = self.socket_factory(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.config.receive_buffer_bytes)
             udp_socket.bind((self.config.bind_host, self.config.data_port))
             udp_socket.settimeout(0.1)
         except OSError as exc:
@@ -241,6 +242,9 @@ class MapBuildingService(QObject):
 
     def stop_remote_mapping(self, reason: str = "用户结束建图") -> None:
         self.remote.stop_mapping(reason)
+
+    def abort_remote_mapping(self, reason: str = "用户强制结束建图") -> None:
+        self.remote.abort_mapping(reason)
 
     def cancel_remote_mapping(self, reason: str = "用户取消建图任务") -> None:
         self.remote.cancel(reason)

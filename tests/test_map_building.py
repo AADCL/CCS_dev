@@ -2,6 +2,7 @@ import importlib.util
 import tempfile
 import unittest
 import zlib
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -80,6 +81,26 @@ class MapBuildingCoreTests(unittest.TestCase):
         broken = self.envelope({**chunk.payload, "frame_crc32": 1})
         with self.assertRaises(MapBuildingProtocolError):
             assembler.push(broken)
+
+    def test_missing_chunks_are_requested_and_closed_frames_ignore_late_duplicates(self):
+        now = [10.0]
+        config = replace(
+            self.config, retransmit_delay_seconds=0.25, retransmit_max_attempts=2,
+            frame_timeout_seconds=2.0,
+        )
+        assembler = CloudFrameAssembler(config, clock=lambda: now[0])
+        chunks = self.chunks([(1, 2, 3), (4, 5, 6)], chunk_size=5)
+        assembler.push(chunks[0])
+        now[0] += 0.3
+        requests = assembler.retransmit_requests()
+        self.assertEqual(requests[0][0], 7)
+        self.assertEqual(requests[0][2], 1)
+        self.assertNotIn(0, requests[0][1])
+        result = None
+        for chunk in chunks[1:]:
+            result = assembler.push(chunk)
+        self.assertIsNotNone(result)
+        self.assertIsNone(assembler.push(chunks[0]))
 
     def test_pose_and_extrinsic_are_composed(self):
         body = {**self.identity, "x": 10.0}

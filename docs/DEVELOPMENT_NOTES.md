@@ -1,16 +1,52 @@
 # 开发笔记
 
+## v0.18.1
+
+- v2 实时预览不再在 UDP 接收线程解压并逐点更新 500 万项 Python 体素字典。端侧每秒原子生成二进制 PCD，平台后台下载并用 NumPy 向量化体素去重，预览固定上限 30 万点、下载队列上限 4。
+- `cloud_fragment_ready` 描述符绑定 map/device/session、分片号、时间范围、点数、frame、URL、字节数、SHA-256 和到期时间；成功解析和合并后才发送 `cloud_fragment_ack`。
+- FAST_LIO 启动前记录固定源 PCD 的 size/mtime/inode/SHA-256，停止后要求 mtime 不早于 session 且指纹变化，未更新时终止成果事务。
+- SRT 首帧先显示画布再进入 playing，playing 只发送一次；FFmpeg stderr 有界并进入设备日志，无首帧时按 7 秒超时重试。
+- 选点模式继续拦截左键创建任务点，但单独处理滚轮以调整俯视相机距离。
+
+## v0.18.0
+
+- Windows UDP 接收缓冲增至 4 MiB，并通过 `request_cloud_chunks` 对压缩点云帧执行缺片补发；完整帧仍须通过分片齐全、CRC32、zlib 解压长度和有限坐标校验。
+- 建图活性分别检查完整点云和端侧心跳：10 秒无完整帧进入警告，只有 30 秒无完整帧且心跳也超过 5 秒中断才失败。
+- `abort_mapping` 使用无成果清理流程停止 FAST_LIO、注销 ROS 订阅并清空缓存，禁止在成果生成阶段强制中断。
+
+## v0.17.0
+
+### 遥控建图会话恢复与调试
+
+- `RemoteMappingCoordinator` 按命令使用独立截止时间：prepare 10 秒，start 45 秒，活动会话恢复 45 秒。UDP 重试预算耗尽不再提前结束等待，截止时间内的晚到 ACK 仍可完成命令。
+- start 首先接收 `session_status=starting`，端侧在 FAST_LIO 注册点云与里程计就绪后才返回成功 ACK；失败返回 `COMMAND_FAILED` 和子进程或话题探测原因。
+- 重新协商在原 session 上发送 `restart_active=true`。端侧对 ready/starting/mapping/error 注销订阅、清空缓存、停止 FAST_LIO、删除 PID 和会话临时成果，再重新执行 prepare；stopping/generating/serving 不可强制中断。
+- `prepare_result` 可选返回 `restarted`、`previous_state`、`active_session_id`，旧 v2 对端可忽略这些字段。恢复路径不运行正常 stop，不生成 PCD/PGM/YAML。
+- UI 日志按时间展示 TX/RX/LOCAL、命令、重试、短 session ID、ACK 和错误；每个 session 上限 200 条，点云按窗口限频汇总，重新协商保留日志。
+- 建图实时阶段以 `lio_odom` 显示和校验，成果 ZIP 完整下载并提交后才使用 `map`。`/livox/imu` readiness 只验证类型和一条新数据，不检查 payload 完整性。
+- `epgeneral_map_stream` v0.4.1 对 FAST_LIO 点云/里程计分别到达的回调增加最多 3 帧的待匹配队列。匹配仍使用 50 ms header 时间窗，不用上一帧约 100 ms 的旧位姿掩盖竞态；真正丢帧记录原因与时间差。
+
+## v0.16.1
+
+### 遥测序列代际
+
+- `epgeneral_mqtav` v0.3.1 每次启动生成 UUID `session_id`，同一进程的 presence、heartbeat、status 共用该值。指控平台按规范设备 ID、session 和消息类型维护 sequence；新 session 原子退役旧 session。
+- MQTT schema 仍为 1.0，`session_id` 为可选字段。旧端侧通过 retained online presence 重置序列窗口；QoS 1 同 sequence 重复投递幂等忽略。
+- `UdpTelemetryStore` 将报文 ID 解析为设备配置中的规范 ID，并保留最近退役 session，避免延迟数据把 tracker 切回旧进程。页面读取、信号和日志始终使用规范 ID。
+- Go2 EDU 的两条官方启动路径必须显式传入同一 profile。bringup 通过 `ground_station_ip` 参数设置 UDP 目标；一键脚本向 bridge、MQTT、UDP 和 SRT launch 传入 profile 文件，并在启动前验证文件存在，避免静默回退到通用 UAV 配置。
+- `PointCloudViewer` 的画布选点使用 VisPy 完整投影矩阵逆变换。逆投影结果必须从齐次坐标除以 `w` 后再与 `z=0` 平面求交；PCD 使用点云 XY bounds，PGM 使用 origin/yaw/分辨率定义的旋转 footprint 拒绝图外选点。任务图层下拉框同步切换查看器图层。
+
 ## v0.16.0
 
 ### 单机遥控建图
 
 - `RemoteMappingCoordinator` 与 v1 `MapBuildingService` 共享 UDP 14562 socket，但使用独立 `ccs-map-stream-v2` schema 2 解析与状态；v2 失败不回退 v1。
-- 准备阶段由端侧统一检查点云、位姿、成果存储和地图生成能力，平台仅在逐项通过且 frame 匹配后开放开始按钮。
+- 准备阶段由端侧统一检查 Livox 点云、Livox IMU、成果存储和地图生成能力，平台仅在逐项通过且 frame 匹配后开放开始按钮。
 - 实时 `cloud_chunk` 仅用于预览。停止 ACK 后必须等待端侧 `artifact_status=ready`，最终真值只来自下载的 PCD+PGM+YAML。
 - HTTP 下载限制 URL 主机与设备 IP 一致、禁止重定向，并执行 Range 续传、ZIP 路径/符号链接/压缩比/未声明文件校验。
 - 地图仓储在同一事务中替换 `map.pcd`、`map.pgm`、`map.yaml` 和 `map.json`；失败恢复旧图层并保留下载检查点。
-- 端侧 `epgeneral_map_stream` v0.2.0 使用 v2 schema 2；采样窗口将多帧点云重投影到最后一帧传感器坐标，停止后由无 shell 命令钩子触发外部成果生成。
-- 端侧成果服务验证 PCD/PGM/YAML、生成 manifest 和 SHA-256，并在 TCP 14600 提供短期令牌 Range 下载；默认 SLAM 命令为占位符，真实设备部署时必须替换。
+- 端侧 `epgeneral_map_stream` v0.3.0 使用 v2 schema 2 和配置 schema 3；start 先启动 FAST_LIO 并验证注册点云/里程计，stop 后依次停止 FAST_LIO、生成 PGM/YAML、校验和打包。
+- 三个 Bash 包装器只接受参数数组，负责 source 工作空间、roslaunch、进程组/PID 与超时；默认 FAST_LIO/PGM 配置是占位符，真实设备部署时必须替换。
 
 ### 共享地图显示
 
@@ -203,8 +239,8 @@
 
 ### 验证边界
 
-- 历史 Windows localhost 测试覆盖 v1 start/ACK/cloud/stop/ACK；当前端侧 `epgeneral_map_stream` v0.2.0 已通过 v2 协议、处理、成果、HTTP Range 与 UDP 契约测试，真实 ROS Noetic 雷达/里程计/SLAM 钩子联调仍需在目标设备执行。
-- 端侧 `epgeneral_map_stream` 从 v0.1.0 升级为 v0.2.0；其余端侧 ROS 包版本不变。
+- 历史 Windows localhost 测试覆盖 v1 start/ACK/cloud/stop/ACK；当前端侧 `epgeneral_map_stream` v0.3.0 已通过 v2 协议、处理、成果、HTTP Range 与 UDP 契约测试，真实 ROS Noetic Livox/FAST_LIO/PGM 联调仍需在目标设备执行。
+- 端侧 `epgeneral_map_stream` 从 v0.2.0 升级为 v0.3.0；其余端侧 ROS 包版本不变。
 
 ## v0.7.1
 

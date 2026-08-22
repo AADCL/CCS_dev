@@ -1,44 +1,65 @@
 # epgeneral_map_stream
 
-<!-- epgeneral_map_stream_VERSION: 0.2.0 -->
+<!-- epgeneral_map_stream_VERSION: 0.6.0 -->
 
-版本：`v0.2.0`。
+版本：`v0.6.0`。
 
 `epgeneral_map_stream` 是 ROS Noetic/Python 3 端侧遥控建图包，使用独立的
 `ccs-map-stream-v2`。节点监听平台 UDP 14561，向协商得到的平台 UDP 14562
-发送准备结果、ACK、状态和实时点云；最终 PCD、PGM 与 ROS `map.yaml` 打包后，
+发送准备结果、ACK、状态和 PCD 分片描述符；实时预览 PCD 与最终成果均通过
+TCP 14600 提供带令牌的 HTTP 下载。最终 PCD、PGM 与 ROS `map.yaml` 打包后，
 通过带短期令牌且支持 HTTP Range 的 TCP 14600 服务提供下载。
 
 v2 不自动回退 v1。实时点云仅用于平台预览，最终地图以成果 ZIP 为准。
 
 ## 流程
 
-1. `prepare_mapping` 检查配置话题的类型和新鲜数据、frame、成果目录空间以及
-   外部 start/stop 适配器，逐项返回 `prepare_result`。
-2. `start_mapping` 创建 ROS 订阅并执行 start 适配器。每个采样窗口把同步点云
-   重投影到最后一帧传感器坐标系，经距离过滤和体素降采样后使用
-   XYZ float32 little-endian、zlib、CRC32 和 1400 字节 MessagePack 分片上传。
-3. `stop_mapping` 立即停止订阅并返回 ACK，后台执行 stop 适配器，等待 PCD、
-   PGM、YAML 文件稳定，验证并生成带 manifest 和 SHA-256 的 ZIP。
+1. `prepare_mapping` 检查原始 `/livox/lidar`、`/livox/imu` 的类型、新鲜数据、
+   LiDAR frame、成果目录空间以及 FAST_LIO/PGM 集成，逐项返回结果；IMU 只要求有新数据。
+   使用 `restart_active=true` 重新协商时，ready/starting/mapping/error 会话会通过
+   `abort_fast_lio.sh` 丢弃实时数据后重新准备；成果生成和服务阶段不可中断。
+2. `start_mapping` 协商 `preview_transport=pcd_fragment_http` 和默认 1 秒分片周期，立即发送
+   `session_status=starting`，再执行 `start_fast_lio.sh`。输出就绪后，有界后台队列把同步点云
+   转换到 `lio_odom`，原子写入不可变二进制 XYZ PCD，并用 `cloud_fragment_ready` 发布
+   URL、大小和 SHA-256。平台校验并显示后发送 `cloud_fragment_ack`，端侧删除临时文件。
+   两路 FAST_LIO 输出按 header 时间戳匹配；点云短暂先到时最多缓存 3 帧等待位姿，
+   只有位姿时间越过 50 ms 同步窗口或队列溢出才丢帧。
+3. `stop_mapping` 立即停止订阅并返回 ACK；后台通过 `stop_fast_lio.sh` 停止
+   FAST_LIO，将本 session 新生成的 `artifacts.generated_pcd_path` 快照到会话目录，
+   再由 `generate_pgm.sh` 归档既有公开地图、原子更新 `artifacts.source_pcd_path`
+   并生成 PGM/YAML。固定输出 PCD 必须在本 session 启动后发生指纹变化，否则作为旧成果拒绝；
+   PGM 失败时恢复原公开 PCD、PGM 和 YAML。
 4. 节点发送 `artifact_status=ready`。ZIP 在令牌过期前可重复完整下载或 Range
    续传，同时控制服务已经可以接受下一次准备协商。
 
-## 配置外部建图程序
+## 配置 FAST_LIO 与 PGM 生成器
 
-必须先修改 `config/mapping.yaml` 中的设备话题、frame、静态外参、工作目录和
-命令适配器。仓库中的 `/usr/local/bin/ccs-mapping-start` 与
-`ccs-mapping-stop` 是安全占位名称，不提供真实 SLAM 实现；未安装时 prepare 的
-`map_generation` 检查会明确失败。
+必须按设备修改 `config/mapping.yaml` 中的话题、frame、静态外参、工作目录和
+`integrations.fast_lio`、`integrations.pgm`。prepare 的 `map_generation`
+会检查 setup、ROS 包、launch 和 FAST_LIO 固定输出目录，失败时不会进入 start。
 
-命令以参数数组直接执行，绝不经 shell。允许的模板变量为：
+Python 节点仅以参数数组调用仓库提供的四个 Bash 包装器，不执行 shell 字符串：
+
+```text
+scripts/start_fast_lio.sh
+scripts/stop_fast_lio.sh
+scripts/abort_fast_lio.sh
+scripts/generate_pgm.sh
+```
+
+包装器负责 source 指定工作空间、调用 roslaunch、管理 FAST_LIO 进程组/PID 和
+限制运行时间。launch 参数允许的模板变量为：
 
 ```text
 {map_id} {device_id} {session_id} {session_dir}
 {pcd_path} {pgm_path} {yaml_path}
 ```
 
-start/stop 命令必须快速返回。stop 命令只负责触发生成，随后由节点等待以下
-会话文件：
+FAST_LIO start 必须在启动超时内产生输出。Go2 MID360 profile 使用本包的
+`fast_lio_mapping.launch` 加载 `go2_bringup` 参数并启用退出保存；其 setup 必须是
+同时 overlay 导航工作区的 edge workspace。固定输出写入 `artifacts.generated_pcd_path`，
+验证为当前 session 后才发布到 `artifacts.source_pcd_path`。PGM launch 以前台退出码表示完成。
+会话文件为：
 
 ```text
 <workspace_root>/<session_id>/map.pcd
@@ -71,9 +92,13 @@ roslaunch epgeneral_map_stream epgeneral_map_stream.launch
 
 ```bash
 rostopic type /livox/lidar
-rostopic type /Odometry
+rostopic type /livox/imu
+rostopic type /lio/cloud_registered_body
+rostopic type /lio/odometry
 rostopic hz /livox/lidar
-rostopic hz /Odometry
+rostopic hz /livox/imu
+rostopic hz /lio/cloud_registered_body
+rostopic hz /lio/odometry
 ss -lntup | grep -E '14561|14600'
 PYTHONPATH=src python3 -m unittest discover -s test -v
 python3 scripts/check_version.py

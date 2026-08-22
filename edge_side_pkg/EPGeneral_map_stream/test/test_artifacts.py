@@ -9,19 +9,29 @@ import zipfile
 
 import yaml
 
-from ccs_monitor.map_building_config import load_map_building_config
-from ccs_monitor.map_building_v2 import ArtifactPackageValidator
+try:
+    from ccs_monitor.map_building_config import load_map_building_config
+    from ccs_monitor.map_building_v2 import ArtifactPackageValidator
+except ModuleNotFoundError:
+    load_map_building_config = None
+    ArtifactPackageValidator = None
 
 from epgeneral_map_stream.artifacts import (
-    ArtifactError, ArtifactHttpServer, SessionPaths, build_archive,
+    ArtifactError, ArtifactHttpServer, SessionPaths, build_archive, file_fingerprint,
+    require_fresh_file,
     validate_artifacts, wait_for_stable_artifacts,
 )
 from epgeneral_map_stream.config import load_config
 
+try:
+    from .test_paths import device_config_path
+except ImportError:
+    from test_paths import device_config_path
+
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAPPING = os.path.join(PACKAGE, "config", "mapping.yaml")
-DEVICE = os.path.join(os.path.dirname(PACKAGE), "epgeneral_device_config", "config", "device.yaml")
+DEVICE = device_config_path(PACKAGE)
 
 
 def write_outputs(paths):
@@ -38,6 +48,17 @@ def write_outputs(paths):
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_source_pcd_must_change_after_session_start(self):
+        source = os.path.join(self.temp.name, "source.pcd")
+        with io.open(source, "wb") as stream:
+            stream.write(b"old")
+        baseline = file_fingerprint(source)
+        with self.assertRaisesRegex(ArtifactError, "not regenerated"):
+            require_fresh_file(source, baseline, baseline["mtime_ns"])
+        with io.open(source, "wb") as stream:
+            stream.write(b"new mapping data")
+        current = require_fresh_file(source, baseline, baseline["mtime_ns"])
+        self.assertNotEqual(current["sha256"], baseline["sha256"])
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -51,6 +72,7 @@ class ArtifactTests(unittest.TestCase):
         self.paths = SessionPaths(self.config, self.identity)
         self.paths.prepare(1)
 
+    @unittest.skipIf(ArtifactPackageValidator is None, "ground package is unavailable")
     def test_stable_files_build_exact_manifest_archive(self):
         write_outputs(self.paths)
         wait_for_stable_artifacts(self.paths, self.config)

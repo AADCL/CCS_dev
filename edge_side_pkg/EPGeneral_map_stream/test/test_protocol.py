@@ -7,10 +7,15 @@ import msgpack
 from epgeneral_map_stream.config import load_config
 from epgeneral_map_stream.protocol import ProtocolError, decode_command, encode_cloud_chunks, encode_envelope
 
+try:
+    from .test_paths import device_config_path
+except ImportError:
+    from test_paths import device_config_path
+
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAPPING = os.path.join(PACKAGE, "config", "mapping.yaml")
-DEVICE = os.path.join(os.path.dirname(PACKAGE), "epgeneral_device_config", "config", "device.yaml")
+DEVICE = device_config_path(PACKAGE)
 
 
 class ProtocolTests(unittest.TestCase):
@@ -28,6 +33,13 @@ class ProtocolTests(unittest.TestCase):
         decoded = decode_command(encoded, self.config)
         self.assertEqual(decoded["payload"], self.prepare_payload)
         self.assertEqual(decoded["schema_version"], 2)
+
+    def test_prepare_command_accepts_restart_active(self):
+        payload = dict(self.prepare_payload, restart_active=True)
+        encoded = encode_envelope(
+            self.config, self.identity, "prepare_mapping", 1, payload)
+        decoded = decode_command(encoded, self.config)
+        self.assertTrue(decoded["payload"]["restart_active"])
 
     def test_wrong_protocol_is_rejected(self):
         encoded = encode_envelope(self.config, self.identity, "prepare_mapping", 0, self.prepare_payload)

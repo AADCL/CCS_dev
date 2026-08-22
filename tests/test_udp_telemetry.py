@@ -133,6 +133,35 @@ class UdpStoreTests(unittest.TestCase):
         self.send("telemetry", 0, payload, 2, session="boot-b")
         self.assertEqual(self.store.telemetry("UAV_001").pointcloud.estimated_hz, 10.0)
 
+    def test_retired_session_cannot_replace_current_session(self):
+        payload = {"global_pose": {
+            "valid": True, "x": 1.0, "y": 2.0, "z": 3.0,
+            "roll": 0.0, "pitch": 0.0, "yaw": 0.0,
+            "sample_age_seconds": 0.0,
+        }}
+        self.send("telemetry", 10, payload, 1, session="boot-a")
+        self.send("telemetry", 0, payload, 1, session="boot-b")
+        self.send("telemetry", 11, payload, 1, session="boot-a")
+        self.assertEqual(self.store._trackers["UAV_001"].session_id, "boot-b")
+
+    def test_canonical_device_id_makes_case_variant_telemetry_visible(self):
+        store = UdpTelemetryStore(
+            self.config,
+            lambda device_id: device_id.casefold() == "uav_001".casefold(),
+            canonical_device_id=lambda _device_id: "UAV_001",
+            start_watchdog=False,
+        )
+        event = UdpEnvelope("uav_001", "boot-a", "telemetry", 0, 1, 1, {
+            "global_pose": {
+                "valid": True, "x": 4.0, "y": 5.0, "z": 6.0,
+                "roll": 0.0, "pitch": 0.0, "yaw": 0.0,
+                "sample_age_seconds": 0.0,
+            },
+        })
+        store.process_datagram(self.protocol.encode(event))
+        self.assertEqual(store.telemetry("UAV_001").global_pose.x, 4.0)
+        self.assertNotIn("uav_001", store._snapshots)
+
     def test_text_status_mapping(self):
         payload = {
             "mapping_mode": {

@@ -3,6 +3,7 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 from threading import Lock
+import uuid
 
 
 def utc_timestamp():
@@ -27,6 +28,7 @@ class HealthState(object):
         self._device = device
         self._lock = Lock()
         self._sequence = 0
+        self._session_id = uuid.uuid4().hex
         self._health = {
             "fcu_connected": None,
             "armed": None,
@@ -74,6 +76,7 @@ class HealthState(object):
                 "message_type": message_type,
                 "timestamp": utc_timestamp(),
                 "sequence": self._sequence,
+                "session_id": self._session_id,
                 "device": {"id": self._device.device_id, "ip": self._device.ip_address},
                 "health": deepcopy(self._health),
             }
@@ -83,6 +86,7 @@ class HealthState(object):
             "schema_version": "1.0",
             "message_type": "presence",
             "timestamp": utc_timestamp(),
+            "session_id": self._session_id,
             "device": {"id": self._device.device_id, "ip": self._device.ip_address},
             "status": status,
         }

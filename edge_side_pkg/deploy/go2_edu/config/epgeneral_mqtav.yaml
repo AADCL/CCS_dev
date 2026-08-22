@@ -1,5 +1,5 @@
 mqtt:
-  ground_station_ip: "192.168.151.100"
+  ground_station_ip: "192.168.50.101"
   port: 1883
   client_id_prefix: "mqtav-"
   qos: 1

@@ -15,6 +15,7 @@ STATUS = {
     "message_type": "status",
     "timestamp": "2026-07-31T09:30:00.000Z",
     "sequence": 42,
+    "session_id": "boot-a",
     "device": {"id": "UAV-001", "ip": "192.168.20.17"},
     "health": {
         "fcu_connected": True,
@@ -37,12 +38,14 @@ class MqttProtocolTests(unittest.TestCase):
         self.assertEqual(event.flight_mode, "AUTO.MISSION")
         self.assertEqual(event.battery_percentage, 76.5)
         self.assertEqual(event.system_status, 3)
+        self.assertEqual(event.session_id, "boot-a")
 
     def test_parses_presence_and_heartbeat(self):
         common = {
             "schema_version": "1.0",
             "timestamp": "2026-07-31T09:30:00Z",
             "device": {"id": "UAV-001", "ip": "192.168.20.17"},
+            "session_id": "boot-a",
         }
         presence = self.parser.parse(
             "mqtav/UAV-001/presence",
@@ -54,6 +57,7 @@ class MqttProtocolTests(unittest.TestCase):
         )
         self.assertIsInstance(presence, MqttPresenceEvent)
         self.assertIsInstance(heartbeat, MqttHeartbeatEvent)
+        self.assertEqual(presence.session_id, "boot-a")
 
     def test_rejects_malformed_mismatched_and_invalid_values(self):
         cases = [

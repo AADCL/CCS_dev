@@ -72,6 +72,12 @@ class PoseBuffer(object):
                 return None
             return selected
 
+    def newest_stamp(self):
+        with self._lock:
+            if not self._items:
+                return None
+            return self._items[-1].stamp_ns
+
     def clear(self):
         with self._lock:
             self._items.clear()
@@ -161,3 +167,28 @@ def aggregate_window(scans, body_from_sensor, voxel_size_m, max_points):
         selected = np.linspace(0, len(combined) - 1, max_points, dtype=np.int64)
         combined = combined[selected]
     return np.ascontiguousarray(combined, dtype="<f4"), reference_pose
+
+
+def map_points_to_sensor(points, map_from_body, body_from_sensor):
+    array = np.asarray(points, dtype=np.float64)
+    if array.ndim != 2 or array.shape[1] != 3:
+        raise ProcessingError("point cloud must be an Nx3 array")
+    map_from_sensor = np.dot(
+        transform_matrix(map_from_body), transform_matrix(body_from_sensor))
+    sensor_from_map = np.linalg.inv(map_from_sensor)
+    converted = np.dot(array, sensor_from_map[:3, :3].T) + sensor_from_map[:3, 3]
+    if not np.isfinite(converted).all():
+        raise ProcessingError("registered cloud conversion produced non-finite points")
+    return np.ascontiguousarray(converted, dtype="<f4")
+
+
+def sensor_points_to_map(points, map_from_body, body_from_sensor):
+    array = np.asarray(points, dtype=np.float64)
+    if array.ndim != 2 or array.shape[1] != 3:
+        raise ProcessingError("point cloud must be an Nx3 array")
+    map_from_sensor = np.dot(
+        transform_matrix(map_from_body), transform_matrix(body_from_sensor))
+    converted = np.dot(array, map_from_sensor[:3, :3].T) + map_from_sensor[:3, 3]
+    if not np.isfinite(converted).all():
+        raise ProcessingError("preview cloud conversion produced non-finite points")
+    return np.ascontiguousarray(converted, dtype="<f4")
