@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Callable
@@ -64,6 +65,9 @@ class UdpTelemetryStore(QObject):
         self._snapshots: dict[str, DeviceTelemetrySnapshot] = {}
         self._trackers: dict[str, UdpHeartbeatTracker] = {}
         self._sequences: dict[tuple[str, str, str, int | None], int] = {}
+        self._warning_counts: Counter[str] = Counter()
+        self._warning_last_emitted: dict[str, float] = {}
+        self._warning_interval_seconds = 5.0
         self.module_message = "UDP 遥测模块尚未启动"
         self.module_healthy = False
         self._module_failed = False
@@ -94,24 +98,29 @@ class UdpTelemetryStore(QObject):
         try:
             event = self.protocol.decode(datagram)
         except UdpProtocolError as exc:
-            self._warn(f"UDP 数据报已丢弃（{peer_host}:{peer_port}）：{exc}")
+            category = self._protocol_warning_category(str(exc))
+            self._warn(
+                f"UDP 数据报已丢弃（{peer_host}:{peer_port}）：{exc}",
+                "protocol:%s" % category,
+            )
             return
         if not self._known_device(event.device_id):
-            self._warn(f"忽略未登记 UDP 设备：{event.device_id}")
+            self._warn(f"忽略未登记 UDP 设备：{event.device_id}", "unknown_device")
             return
         canonical_id = (
             self._canonical_device_id(event.device_id)
             if self._canonical_device_id is not None else event.device_id
         )
         if not canonical_id:
-            self._warn(f"无法解析 UDP 设备 ID：{event.device_id}")
+            self._warn(f"无法解析 UDP 设备 ID：{event.device_id}", "unresolved_device")
             return
         event = replace(event, device_id=canonical_id)
         tracker = self._trackers.setdefault(canonical_id, UdpHeartbeatTracker())
         if tracker.session_id != event.session_id:
             if event.session_id in tracker.retired_session_ids:
                 self._warn(
-                    f"丢弃旧会话 UDP 帧：{canonical_id} session={event.session_id}"
+                    f"丢弃旧会话 UDP 帧：{canonical_id} session={event.session_id}",
+                    "retired_session",
                 )
                 return
             if tracker.session_id is not None:
@@ -125,7 +134,10 @@ class UdpTelemetryStore(QObject):
         if previous is not None and event.sequence == previous:
             return
         if previous is not None and event.sequence < previous:
-            self._warn(f"丢弃乱序 UDP 帧：{event.device_id} {event.message_type} sequence={event.sequence}")
+            self._warn(
+                f"丢弃乱序 UDP 帧：{event.device_id} {event.message_type} sequence={event.sequence}",
+                "out_of_order",
+            )
             return
         self._sequences[key] = event.sequence
         if event.message_type == "heartbeat":
@@ -301,9 +313,31 @@ class UdpTelemetryStore(QObject):
             self._log_sink(device_id, level, message)
         self.log_recorded.emit(device_id)
 
-    def _warn(self, message: str) -> None:
-        LOGGER.warning(message)
-        self.protocol_warning.emit(message)
+    def warning_counts(self) -> dict[str, int]:
+        return dict(self._warning_counts)
+
+    def _warn(self, message: str, category: str = "other") -> None:
+        self._warning_counts[category] += 1
+        now = self._clock()
+        last_emitted = self._warning_last_emitted.get(category)
+        if last_emitted is not None and now - last_emitted < self._warning_interval_seconds:
+            return
+        self._warning_last_emitted[category] = now
+        annotated = f"{message}（{category} 累计 {self._warning_counts[category]}）"
+        LOGGER.warning(annotated)
+        self.protocol_warning.emit(annotated)
+
+    @staticmethod
+    def _protocol_warning_category(message: str) -> str:
+        if "描述哈希" in message:
+            return "descriptor_hash"
+        if "非有限数值" in message:
+            return "non_finite"
+        if "大小限制" in message:
+            return "oversize"
+        if "MessagePack" in message:
+            return "decode"
+        return "invalid_payload"
 
     @staticmethod
     def _pose(value: dict[str, object]) -> PoseTelemetry | None:

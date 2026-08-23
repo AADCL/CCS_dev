@@ -12,7 +12,8 @@ from epgeneral_map_stream import __version__
 
 
 def main():
-    manifest = ElementTree.parse(os.path.join(PACKAGE_ROOT, "package.xml")).getroot().findtext("version")
+    package_xml = os.path.join(PACKAGE_ROOT, "package.xml")
+    manifest = ElementTree.parse(package_xml).getroot().findtext("version")
     failures = []
     if manifest != __version__:
         failures.append("Python version %s does not match package.xml %s" % (__version__, manifest))

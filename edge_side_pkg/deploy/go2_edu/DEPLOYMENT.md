@@ -1,6 +1,6 @@
 # Go2 EDU 端侧监控套件部署指南
 
-本 profile 面向 Ubuntu 20.04、ROS Noetic、Go2 EDU 和 Unitree SDK2。必装包为 `epgeneral_device_config`、`epqrd_go2_bridge`、`epgeneral_mqtav`、`epgeneral_udp_telemetry`；任务状态接入时再安装 `epgeneral_task_control` 和设备运动适配器。遥控建图另需安装 `epgeneral_map_stream` v0.6.0、FAST_LIO 和 PGM 生成包。TCP 14600 同时服务实时 PCD 分片和最终 ZIP；必须保证工作目录及 FAST_LIO 固定 PCD 输出目录可写。v0.18.1 已于 2026-08-22 在 `QRD_001` 完成部署、构建和实际建图链路验证。
+本 profile 面向 Ubuntu 20.04、ROS Noetic、Go2 EDU 和 Unitree SDK2。必装包为 `epgeneral_device_config`、`epqrd_go2_bridge`、`epgeneral_mqtav`、`epgeneral_udp_telemetry`；任务状态接入时再安装 `epgeneral_task_control` 和设备运动适配器。遥控建图另需安装 `epgeneral_map_stream` v0.7.2、FAST_LIO 和 PGM 生成包。TCP 14600 同时服务实时 PCD 分片和最终 ZIP；必须保证工作目录及 FAST_LIO 固定 PCD 输出目录可写。v0.7.2 已于 2026-08-23 在 `QRD_001` 完成 Noetic 重建和 FAST_LIO 优先启动联调；`epqrd_go2_bridge` v0.2.0 同日完成部署、13 个消息生成、C++ 构建和 12 个新增话题真机验收，实测 LowState 约 89.7 Hz、SportModeState 约 45.6 Hz，`link/sdk=true`；指控平台保持 v0.18.2。
 
 ## 1. 安装 SDK 与 ROS 依赖
 
@@ -19,9 +19,11 @@ make -j2 && sudo make install
 
 本 profile 已按 SDK2 commit `ce14ddccbc29fe6b54ad736c89f01849f0093834` 核对接口。SDK2 使用 BSD-3-Clause 许可证；升级前应在 Go2 EDU 上重新完成构建和实机验证。本仓库不复制 SDK2 源码。
 
+`epqrd_go2_bridge` v0.2.0 完整发布 LowState 和 SportModeState。完整 ROS 话题清单、消息字段和订阅示例见 `EPQRD_go2_bridge/docs/ROS_TOPIC_INTERFACES.md`；profile 默认分别以 100 Hz 和 50 Hz 发布两类完整状态。
+
 ## 2. 配置设备和网络
 
-修改本目录 `config/` 下的 `device.yaml`、`go2.yaml`、`epgeneral_mqtav.yaml` 和 `udp_telemetry.yaml`。`device.id` 与话题中的 `QRD_001` 必须保持一致；如修改 ID，应同步修改所有 prefixed 话题。将 `network_interface` 设为连接 Go2 内网的真实接口，例如 `eth0`。官方 bringup 和启动脚本会直接传入本目录配置，不再读取各功能包的通用默认配置。
+修改本目录 `config/` 下的 `device.yaml`、`go2.yaml`、`epgeneral_mqtav.yaml` 和 `udp_telemetry.yaml`。`device.id` 与话题中的 `QRD_001` 必须保持一致；如修改 ID，应同步修改所有 prefixed 话题。当前 `QRD_001` 的 Go2 内网为 `eth1`（`192.168.123.199/24`）；换机部署时必须用 `ip -br address` 核对 `network_interface`。官方 bringup 和启动脚本会直接传入本目录配置，不再读取各功能包的通用默认配置。
 
 ```bash
 ip -br address
@@ -74,6 +76,9 @@ rostopic hz /qrd/QRD_001/imu
 rostopic hz /qrd/QRD_001/odometry
 rostopic echo -n 1 /qrd/QRD_001/battery
 rostopic echo -n 1 /qrd/QRD_001/diagnostics
+rostopic hz /qrd/QRD_001/low_state/motors
+rostopic hz /qrd/QRD_001/sport_mode/kinematics
+rostopic echo -n 1 /qrd/QRD_001/sport_mode/status
 rostopic echo -n 1 /qrd/QRD_001/link/udp_tx
 sudo tcpdump -ni any udp port 14560
 ```

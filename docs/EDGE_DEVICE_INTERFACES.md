@@ -1,8 +1,8 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.18.1`，更新日期：2026-08-22。
+文档版本：`v0.18.2`，更新日期：2026-08-23。
 
-指控平台 v0.18.1 与端侧 `epgeneral_map_stream` v0.6.0 使用 `ccs-map-stream-v2` 单机遥控建图、HTTP PCD 增量预览、活动会话恢复、源成果新鲜度校验和无成果强制结束。MQTT schema 1.0、SRT、UDP 遥测信封、v1 后端和任务协议保持兼容；v2 端侧不自动回退 v1。
+指控平台 v0.18.2 配套 `epgeneral_udp_telemetry` v0.2.2，并与端侧 `epgeneral_map_stream` v0.7.2 使用 `ccs-map-stream-v2` 单机遥控建图。MQTT schema 1.0、SRT、UDP 遥测信封、descriptor hash、v1 后端和任务协议保持兼容；v2 端侧不自动回退 v1。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -11,11 +11,11 @@
 | 通道 | 方向 | 地址/端口 | 协议版本 | 当前端侧实现 |
 | --- | --- | --- | --- | --- |
 | MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | epgeneral_mqtav v0.3.1 |
-| UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.2.1 |
+| UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.2.2 |
 | SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.0 |
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | 保留后端 |
-| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.6.0 |
+| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.7.2 |
 | UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 | UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 
@@ -27,7 +27,7 @@
 
 ### Go2 EDU ROS 状态桥接
 
-`epqrd_go2_bridge` v0.1.0 从 Unitree SDK2 `rt/lowstate` 和 `rt/sportmodestate` 读取只读状态。默认发布 `/qrd/QRD_001/battery`、`imu`、`odometry`、`robot_mode`、`link/sdk`、`heartbeat` 和 `diagnostics`。`epgeneral_mqtav` 将 SDK 链路新鲜度映射为既有 `fcu_connected` 字段，不增加 MQTT schema 字段；`epgeneral_udp_telemetry` 从 prefixed Odometry 和 Imu 继续生成 `ccs-udp-telemetry-v1` 数据。
+`epqrd_go2_bridge` v0.2.0 从 Unitree SDK2 `rt/lowstate` 和 `rt/sportmodestate` 读取只读状态。除原有 `/qrd/QRD_001/battery`、`imu`、`odometry`、`robot_mode`、`link/sdk`、`heartbeat` 和 `diagnostics` 外，新增 `low_state/*` 与 `sport_mode/*` 十二个强类型语义话题，完整覆盖两个 SDK 状态的全部字段。字段、类型、数组顺序及订阅示例见包内 `docs/ROS_TOPIC_INTERFACES.md`。`epgeneral_mqtav` 将 SDK 链路新鲜度映射为既有 `fcu_connected` 字段，不增加 MQTT schema 字段；`epgeneral_udp_telemetry` 从 prefixed Odometry 和 Imu 继续生成 `ccs-udp-telemetry-v1` 数据。
 
 `/qrd/QRD_001/link/udp_tx` 仅表示本机 UDP socket 最近一次发送成功。端到端 UDP 在线状态仍由地面站的 heartbeat 接收超时判断。任务协调包在 `/qrd/QRD_001/task_status` 发布 latched `std_msgs/String`，供 MQTT mission 状态订阅。
 
@@ -106,11 +106,11 @@ heartbeat 为 1 Hz，`level=None` 且 payload 为空。合法心跳使 UDP 链�
 
 | name | type | level | payload |
 | --- | --- | --- | --- |
-| `global_pose` | pose | 1 | `valid,x,y,z,roll,pitch,yaw,sample_stamp_ns,data_age_seconds` |
+| `global_pose` | pose | 1 | `valid,x,y,z,roll,pitch,yaw,sample_age_seconds` |
 | `vision_pose` | pose | 1 | 同 pose |
-| `imu` | imu | 1 | `valid,roll,pitch,yaw,angular_velocity_x/y/z,linear_acceleration_x/y/z,sample_stamp_ns,data_age_seconds` |
-| `livox_pointcloud` | pointcloud_status | 2 | `valid,status,last_received_at_ns,data_age_seconds,estimated_rate_hz` |
-| `livox_driver` | availability | 3 | `valid,status,last_received_at_ns,data_age_seconds` |
+| `imu` | imu | 1 | `valid,roll,pitch,yaw,angular_velocity_x/y/z,linear_acceleration_x/y/z,sample_age_seconds` |
+| `livox_pointcloud` | pointcloud_status | 2 | `valid,status,estimated_hz,sample_age_seconds` |
+| `livox_driver` | availability | 3 | `valid,status,sample_age_seconds` |
 | `fastlio2` | availability | 3 | 同 availability |
 | `pgm_mapping` | availability | 3 | 同 availability |
 | `octomap_mapping` | availability | 3 | 同 availability |
@@ -118,6 +118,20 @@ heartbeat 为 1 Hz，`level=None` 且 payload 为空。合法心跳使 UDP 链�
 | `mapping_mode` | text_status | 3 | availability 字段加 `value`，最长 128 字符 |
 
 `status` 只允许 `available`、`unavailable`、`unknown`。所有浮点数必须有限。点云内容禁止放入 14560，只发送接收元数据。配置对应关系：地面站 `config/udp_telemetry.json` 定义公共名称/类型/等级；端侧 `epgeneral_udp_telemetry/config/telemetry.yaml` 额外定义 ROS topic、message type、字段路径和超时。公共 descriptor 不一致将导致哈希拒收。
+
+端侧在 Pose/IMU 进入平滑窗口前拒绝非有限数值、非数值字段和无效四元数。单个 descriptor 失败时只发送该项 `valid=false`，同一 Level 1 报文的其他有效项继续发送；地面站仍对最终报文执行严格有限数值校验。
+
+`/epgeneral_udp_telemetry/diagnostics` 保留 `epgeneral_udp_telemetry/udp_tx` 状态，增加各等级的发送数、失败数、字节数和下一序列；每个 descriptor 另发布 `epgeneral_udp_telemetry/source/<name>`，包含 topic、message type、level、`received_count`、`accepted_count`、`rejected_count`、`last_sample_age_seconds` 和 `last_rejection_reason`。`sendto` 成功只证明本机 socket 调用成功，端到端在线仍以地面站 heartbeat 为准。
+
+联调时依次检查：
+
+```bash
+rostopic hz /mavros/local_position/pose
+rostopic echo /epgeneral_udp_telemetry/diagnostics
+sudo tcpdump -ni any udp port 14560
+```
+
+若 ROS 话题有数据但详情页仍为 `--`，先确认对应 source 的 `accepted_count` 是否增长、`last_rejection_reason` 是否报告非法数值或映射错误，再检查地面站日志中的 descriptor hash、非有限数值、未知设备、旧 session 和乱序累计告警。
 
 ## SRT 视频
 
@@ -133,11 +147,11 @@ IPv6 地址使用方括号。地面站先执行 `ffmpeg -hide_banner -protocols`
 
 端侧和地面站的延迟配置均以毫秒保存；SRT URL 的 `latency` 查询参数使用微秒，因此地面站乘以 1000。端侧应开放 UDP 9000，并通过 `gst-inspect-1.0 srtsink` 检查插件。系统 FFmpeg 必须由用户安装且带 libsrt。
 
-## UDP 14561/14562 单机遥控建图 v2（指控平台 v0.18.1）
+## UDP 14561/14562 单机遥控建图 v2（指控平台 v0.18.2）
 
-v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.6.0` 协调 Livox、FAST_LIO 和 PGM 生成器；最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
+v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.7.2` 协调 Livox、FAST_LIO、坐标转换链和 PGM 生成器；最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
 
-v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sent_at_ns/payload`。v0.18.1 新增 `cloud_fragment_ready` 和 `cloud_fragment_ack`：UDP 只承载控制、状态与轻量描述符，PCD 内容通过 TCP 14600 下载。端侧未收到 ACK 时最多重发描述符 3 次，未确认文件和后台队列均有硬上限。
+v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sent_at_ns/payload`。v0.18.2 使用 `cloud_fragment_ready` 和 `cloud_fragment_ack`：UDP 只承载控制、状态与轻量描述符，PCD 内容通过 TCP 14600 下载。端侧未收到 ACK 时最多重发描述符 3 次，未确认文件和后台队列均有硬上限。
 
 `prepare_mapping` 下发 `request_id`、`return_host`、`return_port` 及 `required_inputs=[pointcloud,imu,artifact_storage,map_generation]`。重新协商额外携带 `restart_active=true`。`pointcloud` 检查原始 `/livox/lidar` 的类型、新鲜度、frame 和字段；`imu` 只检查 `/livox/imu` 类型并等待一条新数据，不校验消息字段完整性。端侧必须返回：
 
@@ -147,7 +161,7 @@ v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sen
   "checks": [{"name": "pointcloud", "available": True, "reason": ""}],
   "sample_window_seconds": 1.0,
   "frame_id": "lio_odom",
-  "capability_version": "0.6.0",
+  "capability_version": "0.7.2",
   "preview_transport": "pcd_fragment_http",
   "fragment_interval_seconds": 1.0,
   "restarted": False, "previous_state": "", "active_session_id": "",
@@ -179,7 +193,7 @@ FAST_LIO 点云和里程计按 header 时间戳在 50 ms 窗口内匹配。点�
 
 指控平台只允许 URL 主机等于设备 IP 的明文 HTTP，禁止重定向，并使用 Range 续传。端侧默认在 TCP 14600 提供固定路径 `/mapping/result.zip?token=<短期令牌>`，令牌有效期默认 15 分钟。ZIP 必须且只能包含 `manifest.json` 及清单声明的一个 PCD、一个 PGM、一个 ROS YAML。清单 schema 1 包含 `map_id/device_id/session_id/frame_id/generated_at`，以及 `files.pcd/pgm/yaml` 的 `path/byte_count/sha256`。路径穿越、符号链接、重复或未声明文件、异常压缩比和任何校验不匹配均会拒绝整个成果。
 
-端侧配置 schema 3 的 `integrations.fast_lio` 与 `integrations.pgm` 指定 setup.bash、ROS 包、launch、参数及独立超时。Python 节点以参数数组调用 `start_fast_lio.sh`、`stop_fast_lio.sh`、`abort_fast_lio.sh` 和 `generate_pgm.sh`，禁止 shell 展开；允许模板字段为 `map_id`、`device_id`、`session_id`、`session_dir`、`pcd_path`、`pgm_path`、`yaml_path`。stop ACK 后依次停止 FAST_LIO 并确认 PCD、运行 PGM launch 并确认 PGM/YAML、等待文件稳定、校验和打包。默认集成值是部署占位符，prepare 会拒绝未配置环境。
+端侧配置 schema 4 的 `integrations.mapping_prerequisites` 指定 Go2 MID360 setup、外参 YAML、wrapper launch 和启动超时；`integrations.fast_lio` 与 `integrations.pgm` 继续指定建图与成果生成。开始建图时先启动 FAST_LIO 并等待 `/laserMapping` 注册，再依次声明 TF manager、pose adapter、cloud_to_base、cloud_world_to_odom，并等待四个转换节点全部注册。全部组件共享一个受控进程组，stop/abort/Ctrl+C 会统一清理。
 
 端侧必须将命令接收、request/session ID、状态转换、FAST_LIO 启停、源 PCD 基线与最终指纹、PCD 分片发布/确认/背压、子进程输出和错误同时写入 ROS 日志与 `~/.ros/ccs_edge_dev/log/map_stream.log`。指控端每个 session 保留最近 200 条 TX/RX/LOCAL 日志。
 
@@ -385,7 +399,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 - stop 后停止发送，释放 ROS subscriber、位姿缓存和会话资源；控制 socket 保持监听以接受下一次 start，进程退出时再关闭。
 - 在 localhost/局域网测试乱序、重复、缺片、CRC 错误、点云/位姿超时、重复命令和干净退出。
 
-当前结论：v1 作为历史后端保留；v0.18.1 地面站与端侧 `epgeneral_map_stream` v0.6.0 的 PCD 分片协议已通过纯 Python、localhost UDP/HTTP 契约测试。按要求尚未部署或联调端侧设备。
+当前结论：v1 作为历史后端保留；v0.18.2 地面站与端侧 `epgeneral_map_stream` v0.7.2 的 PCD 分片协议已通过纯 Python、localhost UDP/HTTP 契约测试。v0.7.2 已部署到 Go2 端侧，并完成 FAST_LIO 优先启动与坐标转换链联调。
 
 ## UDP 地图任务控制接口（ccs-task-control-v1）
 

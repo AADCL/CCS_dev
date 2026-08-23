@@ -1,8 +1,8 @@
 # epgeneral_map_stream
 
-<!-- epgeneral_map_stream_VERSION: 0.6.0 -->
+<!-- epgeneral_map_stream_VERSION: 0.7.2 -->
 
-版本：`v0.6.0`。
+版本：`v0.7.2`。
 
 `epgeneral_map_stream` 是 ROS Noetic/Python 3 端侧遥控建图包，使用独立的
 `ccs-map-stream-v2`。节点监听平台 UDP 14561，向协商得到的平台 UDP 14562
@@ -19,7 +19,9 @@ v2 不自动回退 v1。实时点云仅用于平台预览，最终地图以成�
    使用 `restart_active=true` 重新协商时，ready/starting/mapping/error 会话会通过
    `abort_fast_lio.sh` 丢弃实时数据后重新准备；成果生成和服务阶段不可中断。
 2. `start_mapping` 协商 `preview_transport=pcd_fragment_http` 和默认 1 秒分片周期，立即发送
-   `session_status=starting`，再执行 `start_fast_lio.sh`。输出就绪后，有界后台队列把同步点云
+   `session_status=starting`，再执行 `start_fast_lio.sh`。脚本先校验设备外参，启动并等待
+   FAST_LIO `/laserMapping`，然后启动 TF manager、位姿适配器和两路点云坐标适配器。
+   输出就绪后，有界后台队列把同步点云
    转换到 `lio_odom`，原子写入不可变二进制 XYZ PCD，并用 `cloud_fragment_ready` 发布
    URL、大小和 SHA-256。平台校验并显示后发送 `cloud_fragment_ack`，端侧删除临时文件。
    两路 FAST_LIO 输出按 header 时间戳匹配；点云短暂先到时最多缓存 3 帧等待位姿，
@@ -35,7 +37,10 @@ v2 不自动回退 v1。实时点云仅用于平台预览，最终地图以成�
 ## 配置 FAST_LIO 与 PGM 生成器
 
 必须按设备修改 `config/mapping.yaml` 中的话题、frame、静态外参、工作目录和
-`integrations.fast_lio`、`integrations.pgm`。prepare 的 `map_generation`
+`integrations.mapping_prerequisites`、`integrations.fast_lio`、`integrations.pgm`。
+Go2 EDU 默认读取 `~/go2_mid360_nav/calibration/go2_edu_02/extrinsics.yaml`，并通过
+`mapping_prerequisites.launch` 的 `extrinsics_file` 参数映射到下游 launch 的 `extrinsics`。
+prepare 的 `map_generation`
 会检查 setup、ROS 包、launch 和 FAST_LIO 固定输出目录，失败时不会进入 start。
 
 Python 节点仅以参数数组调用仓库提供的四个 Bash 包装器，不执行 shell 字符串：
@@ -47,8 +52,8 @@ scripts/abort_fast_lio.sh
 scripts/generate_pgm.sh
 ```
 
-包装器负责 source 指定工作空间、调用 roslaunch、管理 FAST_LIO 进程组/PID 和
-限制运行时间。launch 参数允许的模板变量为：
+包装器负责 source 指定工作空间、调用 roslaunch、管理整条建图启动链的进程组/PID 和
+限制运行时间。任何必需坐标转换节点退出都会关闭整组进程。launch 参数允许的模板变量为：
 
 ```text
 {map_id} {device_id} {session_id} {session_dir}

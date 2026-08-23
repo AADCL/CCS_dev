@@ -41,19 +41,19 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：参考设备每秒发布 heartbeat/status；地面站可区分 MQTT 在线、warning、offline/error；设备 IP 不一致只产生告警，不自动改写地面站配置。
 
-## 4. `epgeneral_udp_telemetry` v0.2.1
+## 4. `epgeneral_udp_telemetry` v0.2.2
 
-**当前状态**：动态 ROS 字段、Pose/IMU 平滑、20/5/1 Hz、描述哈希和纯 Python 测试已实现；ROS 动态订阅尚未在 Noetic 目标设备验证。
+**当前状态**：动态 ROS 字段、Pose/IMU 平滑、非法样本隔离、逐来源 diagnostics、20/5/1 Hz、描述哈希和纯 Python/localhost 测试已实现；ROS 动态订阅尚未在 Noetic 目标设备验证。
 
 **Alpha 任务**：
 
 1. 在 Noetic 验证 `roslib.message.get_message_class`、`rospy.AnyMsg`、Pose/IMU/普通 ROS 字段路径。
 2. 使用模拟发布器验证全局位姿、视觉位姿、IMU、点云状态、地图状态和 mapping mode。
-3. 验证窗口均值、四元数半球归一化、低频最近值复用、数据年龄和 unknown 状态。
+3. 验证窗口均值、四元数半球归一化、`NaN/Inf` 与零范数四元数隔离、低频最近值复用、数据年龄和 unknown 状态。
 4. 验证 descriptor hash 与地面站配置一致；不一致时地面站拒收并给出可诊断错误。
 5. 验证 UDP 14560 发送目标、session 重启、sequence 单调性和 16 KiB 上限。
 
-**验收**：20/5/1 Hz 输出与配置一致；输入话题中断后状态变为 unavailable/unknown；端侧重启不会被地面站旧序列状态误判。
+**验收**：20/5/1 Hz 输出与配置一致；单项坏样本不阻断同等级其他数据；diagnostics 能区分未收到、有效和拒绝；输入话题中断后状态变为 unavailable/unknown；端侧重启不会被地面站旧序列状态误判。
 
 ## 5. `epgeneral_map_stream` v0.3.0
 

@@ -221,6 +221,21 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(payload["checks"]), 4)
         self.assertEqual(self.node.state, "standby")
 
+    def test_prepare_command_failure_is_compact_enough_for_udp(self):
+        def fail_check(unused_commands):
+            raise ArtifactError("integration preflight failed: " + "x" * 5000)
+
+        self.runner.check = fail_check
+        self.prepare()
+        self.assertTrue(self.node.socket.sent)
+        datagram = self.node.socket.sent[-1][0]
+        self.assertLessEqual(len(datagram), self.config["max_datagram_bytes"])
+        payload = msgpack.unpackb(datagram, raw=False)["payload"]
+        self.assertFalse(payload["accepted"])
+        self.assertLessEqual(len(payload["reason"]), 192)
+        failed = next(item for item in payload["checks"] if item["name"] == "map_generation")
+        self.assertLessEqual(len(failed["reason"]), 96)
+
     def test_start_requires_prepare_and_input_timeout_cleans_session(self):
         self.start()
         self.assertFalse(self.messages()[-1]["payload"]["accepted"])

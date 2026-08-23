@@ -1,6 +1,6 @@
 # epqrd_go2_bridge
 
-<!-- epqrd_go2_bridge_VERSION: 0.1.0 -->
+<!-- epqrd_go2_bridge_VERSION: 0.2.0 -->
 
 `epqrd_go2_bridge` is a read-only Unitree SDK2 bridge for Go2 EDU on Ubuntu 20.04 and ROS Noetic. It does not send motion commands.
 
@@ -23,6 +23,10 @@ Configure the DDS network interface in `config/go2.yaml`, then run:
 roslaunch epqrd_go2_bridge epqrd_go2_bridge.launch
 rostopic hz /qrd/QRD_001/imu
 rostopic echo /qrd/QRD_001/link/sdk
+rostopic hz /qrd/QRD_001/low_state/motors
+rostopic echo -n 1 /qrd/QRD_001/sport_mode/status
 ```
 
-The package subscribes to SDK2 `rt/lowstate` and `rt/sportmodestate`. The published odometry is local robot odometry, not a globally referenced map pose. Unitree SDK2 remains an external BSD-3-Clause dependency and is not vendored by this repository.
+The package subscribes to SDK2 `rt/lowstate` and `rt/sportmodestate`. Version 0.2.0 publishes every field from both states through prefixed, strongly typed ROS topics while retaining the original standard topics. See `docs/ROS_TOPIC_INTERFACES.md` for the complete interface and subscriber examples.
+
+The published odometry is local robot odometry, not a globally referenced map pose. Unitree SDK2 remains an external BSD-3-Clause dependency and is not vendored by this repository.

@@ -133,6 +133,42 @@ class UdpStoreTests(unittest.TestCase):
         self.send("telemetry", 0, payload, 2, session="boot-b")
         self.assertEqual(self.store.telemetry("UAV_001").pointcloud.estimated_hz, 10.0)
 
+    def test_complete_level_one_payload_updates_all_detail_telemetry(self):
+        pose = {
+            "valid": True, "x": 1.0, "y": 2.0, "z": 3.0,
+            "roll": 4.0, "pitch": 5.0, "yaw": 6.0, "sample_age_seconds": 0.01,
+        }
+        imu = {
+            "valid": True, "roll": 7.0, "pitch": 8.0, "yaw": 9.0,
+            "angular_velocity_x": 0.1, "angular_velocity_y": 0.2, "angular_velocity_z": 0.3,
+            "linear_acceleration_x": 1.0, "linear_acceleration_y": 2.0,
+            "linear_acceleration_z": 9.8, "sample_age_seconds": 0.01,
+        }
+        self.send("telemetry", 1, {
+            "global_pose": pose,
+            "vision_pose": dict(pose, x=10.0),
+            "imu": imu,
+        }, 1)
+        snapshot = self.store.telemetry("UAV_001")
+        self.assertEqual(snapshot.global_pose.x, 1.0)
+        self.assertEqual(snapshot.vision_pose.x, 10.0)
+        self.assertEqual(snapshot.imu.linear_acceleration_z, 9.8)
+
+    def test_invalid_descriptor_marker_does_not_clear_other_level_one_values(self):
+        pose = {
+            "valid": True, "x": 2.0, "y": 3.0, "z": 4.0,
+            "roll": 0.0, "pitch": 0.0, "yaw": 0.0, "sample_age_seconds": 0.0,
+        }
+        self.send("telemetry", 1, {
+            "global_pose": pose,
+            "vision_pose": {"valid": False, "sample_age_seconds": None},
+            "imu": {"valid": False, "sample_age_seconds": None},
+        }, 1)
+        snapshot = self.store.telemetry("UAV_001")
+        self.assertEqual(snapshot.global_pose.x, 2.0)
+        self.assertIsNone(snapshot.vision_pose)
+        self.assertIsNone(snapshot.imu)
+
     def test_retired_session_cannot_replace_current_session(self):
         payload = {"global_pose": {
             "valid": True, "x": 1.0, "y": 2.0, "z": 3.0,
@@ -181,6 +217,19 @@ class UdpStoreTests(unittest.TestCase):
         self.store.process_datagram(self.protocol.encode(event))
         self.assertEqual(self.store.telemetry("UNKNOWN").udp_link_status, UdpLinkStatus.UNKNOWN)
 
+    def test_protocol_warnings_are_counted_by_reason_and_rate_limited(self):
+        warnings = []
+        self.store.protocol_warning.connect(warnings.append)
+        invalid = b"not-messagepack"
+        self.store.process_datagram(invalid, "127.0.0.1", 10000)
+        self.store.process_datagram(invalid, "127.0.0.1", 10000)
+        self.assertEqual(self.store.warning_counts()["protocol:decode"], 2)
+        self.assertEqual(len(warnings), 1)
+        self.now[0] += 5.1
+        self.store.process_datagram(invalid, "127.0.0.1", 10000)
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("累计 3", warnings[-1])
+
 
 class UdpRuntimeIntegrationTests(unittest.TestCase):
     @classmethod
@@ -212,6 +261,49 @@ class UdpRuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(store.telemetry("UAV_001").udp_link_status, UdpLinkStatus.ONLINE)
         runtime.stop()
         self.assertFalse(runtime.receiver.isRunning())
+
+    def test_sustained_level_one_updates_are_consumed_at_twenty_hz(self):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        config = replace(load_udp_config(ROOT / "config" / "udp_telemetry.json"), bind_host="127.0.0.1", port=port)
+        store = UdpTelemetryStore(config, lambda value: value == "UAV_001", start_watchdog=False)
+        runtime = UdpMonitoringRuntime(config, store)
+        runtime.start()
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        protocol = UdpTelemetryProtocol(config)
+        try:
+            deadline = time.monotonic() + 2.0
+            while not store.module_healthy and time.monotonic() < deadline:
+                self.app.processEvents()
+                time.sleep(0.01)
+            for sequence in range(10):
+                pose = {
+                    "valid": True, "x": float(sequence), "y": 2.0, "z": 3.0,
+                    "roll": 0.0, "pitch": 0.0, "yaw": 0.0, "sample_age_seconds": 0.0,
+                }
+                imu = {
+                    "valid": True, "roll": 0.0, "pitch": 0.0, "yaw": 0.0,
+                    "angular_velocity_x": 0.1, "angular_velocity_y": 0.2, "angular_velocity_z": 0.3,
+                    "linear_acceleration_x": 1.0, "linear_acceleration_y": 2.0,
+                    "linear_acceleration_z": 9.8, "sample_age_seconds": 0.0,
+                }
+                event = UdpEnvelope(
+                    "UAV_001", "20hz", "telemetry", sequence, sequence, 1,
+                    {"global_pose": pose, "vision_pose": dict(pose, x=float(sequence + 100)), "imu": imu},
+                )
+                sender.sendto(protocol.encode(event), ("127.0.0.1", port))
+                end = time.monotonic() + 0.05
+                while time.monotonic() < end:
+                    self.app.processEvents()
+                    time.sleep(0.005)
+            self.assertEqual(store.telemetry("UAV_001").global_pose.x, 9.0)
+            self.assertEqual(store.telemetry("UAV_001").vision_pose.x, 109.0)
+            self.assertAlmostEqual(store.telemetry("UAV_001").imu.linear_acceleration_z, 9.8)
+        finally:
+            sender.close()
+            runtime.stop()
 
 
 if __name__ == "__main__":

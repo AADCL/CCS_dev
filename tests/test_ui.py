@@ -266,6 +266,23 @@ class UiTests(unittest.TestCase):
         page._on_telemetry_updated("ugv-042", replacement)
         self.assertIs(detail.pending_telemetry, replacement)
 
+    def test_detail_page_timer_renders_latest_high_frequency_snapshot(self):
+        page = self.window.devices_page
+        page.show_detail("UGV-042")
+        detail = page.detail_page
+        for index in range(20):
+            detail.set_telemetry(DeviceTelemetrySnapshot(
+                device_id="UGV-042",
+                udp_link_status=UdpLinkStatus.ONLINE,
+                global_pose=PoseTelemetry(index, 2, 3, 4, 5, 6),
+                vision_pose=PoseTelemetry(index + 100, 8, 9, 10, 11, 12),
+                imu=ImuTelemetry(index, 2, 3, 0.1, 0.2, 0.3, 9.1, 9.2, 9.3),
+            ))
+        detail._render_telemetry()
+        self.assertEqual(detail.global_pose_values["X"].text(), "19.000 m")
+        self.assertEqual(detail.vision_pose_values["X"].text(), "119.000 m")
+        self.assertEqual(detail.imu_values["Roll"].text(), "19.000°")
+
     def test_status_card_editor_selection_and_device_binding(self):
         dialog = StatusCardEditorDialog(("fastlio2",), self.window)
         self.assertTrue(dialog.checkboxes["fastlio2"].isChecked())

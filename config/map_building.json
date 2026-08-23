@@ -27,7 +27,7 @@
     "prepare_command_timeout_seconds": 10.0,
     "start_command_timeout_seconds": 45.0,
     "recovery_command_timeout_seconds": 45.0,
-    "frame_timeout_seconds": 5.0,
+    "frame_timeout_seconds": 10.0,
     "warning_timeout_seconds": 10.0,
     "error_timeout_seconds": 30.0,
     "heartbeat_timeout_seconds": 5.0,

@@ -16,10 +16,12 @@ class Go2EdgeProfileTests(unittest.TestCase):
     def test_package_identity_and_external_sdk_dependency(self):
         package = ElementTree.parse(PACKAGE / "package.xml").getroot()
         self.assertEqual(package.findtext("name"), "epqrd_go2_bridge")
-        self.assertEqual(package.findtext("version"), "0.1.0")
+        self.assertEqual(package.findtext("version"), "0.2.0")
         cmake = (PACKAGE / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn("find_package(unitree_sdk2 REQUIRED)", cmake)
         self.assertIn("CMAKE_CXX_STANDARD 14", cmake)
+        self.assertIn("generate_messages", cmake)
+        self.assertIn("message_runtime", cmake)
 
     def test_device_and_prefixed_topics_are_consistent(self):
         device = yaml.safe_load((PROFILE / "device.yaml").read_text(encoding="utf-8"))["device"]
@@ -29,6 +31,8 @@ class Go2EdgeProfileTests(unittest.TestCase):
         self.assertEqual(device["id"], "QRD_001")
         self.assertRegex(device["id"], r"^[A-Za-z][A-Za-z0-9_]*$")
         self.assertEqual(bridge["topic_prefix"], "/qrd")
+        self.assertEqual(bridge["rates"]["low_state_hz"], 100.0)
+        self.assertEqual(bridge["rates"]["sport_mode_hz"], 50.0)
         self.assertEqual(mqtt["ros"]["state"]["topic"], "/qrd/QRD_001/link/sdk")
         sources = {item["name"]: item["source"]["topic"] for item in telemetry["descriptors"]}
         self.assertEqual(sources["global_pose"], "/qrd/QRD_001/odometry")
@@ -71,6 +75,24 @@ class Go2EdgeProfileTests(unittest.TestCase):
         self.assertNotIn("ChannelPublisher", source)
         for message_type in ("BatteryState", "Imu", "Odometry", "DiagnosticArray"):
             self.assertIn(message_type, source)
+
+    def test_all_sdk_state_groups_have_prefixed_publishers_and_documentation(self):
+        source = (PACKAGE / "src" / "go2_bridge_node.cpp").read_text(encoding="utf-8")
+        guide = (PACKAGE / "docs" / "ROS_TOPIC_INTERFACES.md").read_text(encoding="utf-8")
+        topics = (
+            "low_state/info", "low_state/imu", "low_state/motors", "low_state/bms",
+            "low_state/foot_force", "low_state/wireless_remote", "sport_mode/status",
+            "sport_mode/imu", "sport_mode/kinematics", "sport_mode/obstacle_ranges",
+            "sport_mode/feet", "sport_mode/path",
+        )
+        for topic in topics:
+            self.assertIn('namespace_ + "/' + topic + '"', source)
+            self.assertIn("/qrd/QRD_001/" + topic, guide)
+
+        messages = {path.name for path in (PACKAGE / "msg").glob("*.msg")}
+        self.assertEqual(len(messages), 13)
+        self.assertIn("MotorStateArray.msg", messages)
+        self.assertIn("PathPointArray.msg", messages)
 
 
 if __name__ == "__main__":

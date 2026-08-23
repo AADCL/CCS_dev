@@ -1,5 +1,27 @@
 # 开发笔记
 
+## epgeneral_map_stream v0.7.2
+
+- `start_fast_lio.sh` 先启动 FAST_LIO 并等待 `/laserMapping`，然后拉起统一坐标转换 launch 并等待四个转换节点。
+- 外层启动截止时间覆盖两个串行就绪阶段，子进程仍由同一 supervisor 和进程组管理。
+
+## epgeneral_map_stream v0.7.1
+
+- 将 1.5 秒传感器消息探测与 ROS launch 集成预检拆分，端侧集成预检独立使用 8 秒上限。
+- 协商失败原因写入 UDP 前限长，完整命令和异常继续写入 `map_stream.log`，避免 `prepare_result` 超过 1400 字节。
+
+## epgeneral_map_stream v0.7.0
+
+- 配置 schema 4 新增 `integrations.mapping_prerequisites`，固定使用 Go2 MID360 工作空间 setup 和设备外参 YAML。
+- 包内 `mapping_prerequisites.launch` 将统一参数 `extrinsics_file` 映射到 `go2_tf_manager`、`go2_pose_adapter` 的 `extrinsics`，并启动两路 cloud frame adapter。
+- `start_fast_lio.sh` 通过 supervisor 等待四个转换节点注册后再启动 FAST_LIO；所有进程共享 PGID，任何必需子进程退出都会触发整组清理。
+
+## v0.18.2
+
+- `TelemetrySampler` 在高频样本进入窗口前校验全部数值和四元数范数；非法来源独立降级为 `valid=false`，其余 Level 1 descriptor 保持发送。
+- 端侧 diagnostics 保留 `udp_tx` 并增加逐来源统计；地面站拒收告警按原因累计且 5 秒限频，避免坏报文以 20 Hz 淹没日志。
+- 设备详情仍只缓存最新 UDP 快照并按 50 ms 绘制，高频信号不直接触发布局或逐帧重绘。
+
 ## v0.18.1
 
 - v2 实时预览不再在 UDP 接收线程解压并逐点更新 500 万项 Python 体素字典。端侧每秒原子生成二进制 PCD，平台后台下载并用 NumPy 向量化体素去重，预览固定上限 30 万点、下载队列上限 4。

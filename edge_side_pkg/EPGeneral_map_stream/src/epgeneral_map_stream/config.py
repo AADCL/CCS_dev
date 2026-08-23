@@ -141,8 +141,8 @@ def _topic(parent, name, expected_type=None, with_frame=True):
 def load_config(mapping_path, device_path):
     mapping = _read_yaml(mapping_path)
     device_config = _read_yaml(device_path)
-    if mapping.get("schema_version") != 3:
-        raise ConfigError("mapping schema_version must be 3")
+    if mapping.get("schema_version") != 4:
+        raise ConfigError("mapping schema_version must be 4")
     if device_config.get("schema_version") != 1:
         raise ConfigError("device schema_version must be 1")
     device = _mapping(device_config, "device")
@@ -156,6 +156,9 @@ def load_config(mapping_path, device_path):
     stream = _mapping(ros, "stream", "ros.stream")
     frames = _mapping(ros, "frames", "ros.frames")
     integrations = _mapping(mapping, "integrations")
+    prerequisites = _mapping(
+        integrations, "mapping_prerequisites",
+        "integrations.mapping_prerequisites")
     fast_lio = _mapping(integrations, "fast_lio", "integrations.fast_lio")
     pgm = _mapping(integrations, "pgm", "integrations.pgm")
     sync = _mapping(mapping, "sync")
@@ -208,9 +211,9 @@ def load_config(mapping_path, device_path):
     script_root = os.path.join(package_root, "scripts")
 
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "protocol_id": protocol_id,
-        "capability_version": "0.6.0",
+        "capability_version": "0.7.2",
         "device_id": device_id,
         "device_ip": device_ip,
         "bind_host": _ip(network.get("bind_host"), "network.bind_host", True),
@@ -245,6 +248,18 @@ def load_config(mapping_path, device_path):
         "sensor_frame": _text(frames, "sensor", "ros.frames.sensor"),
         "body_from_sensor": _transform(
             ros.get("body_from_sensor"), "ros.body_from_sensor"),
+        "prerequisite_setup_file": os.path.abspath(os.path.expanduser(
+            _text(prerequisites, "setup_file",
+                  "integrations.mapping_prerequisites.setup_file"))),
+        "prerequisite_launch_file": _text(
+            prerequisites, "launch_file",
+            "integrations.mapping_prerequisites.launch_file"),
+        "extrinsics_file": os.path.abspath(os.path.expanduser(
+            _text(prerequisites, "extrinsics_file",
+                  "integrations.mapping_prerequisites.extrinsics_file"))),
+        "prerequisite_startup_timeout_seconds": _positive_number(
+            prerequisites.get("startup_timeout_seconds"),
+            "integrations.mapping_prerequisites.startup_timeout_seconds"),
         "fast_lio_setup_file": os.path.abspath(os.path.expanduser(
             _text(fast_lio, "setup_file", "integrations.fast_lio.setup_file"))),
         "fast_lio_package": _text(
@@ -291,6 +306,9 @@ def load_config(mapping_path, device_path):
         "prepare_probe_timeout_seconds": _positive_number(
             timeouts.get("prepare_probe_timeout_seconds"),
             "timeouts.prepare_probe_timeout_seconds"),
+        "integration_check_timeout_seconds": _positive_number(
+            timeouts.get("integration_check_timeout_seconds"),
+            "timeouts.integration_check_timeout_seconds"),
         "ready_timeout_seconds": _positive_number(
             timeouts.get("ready_timeout_seconds"), "timeouts.ready_timeout_seconds"),
         "input_timeout_seconds": _positive_number(
@@ -368,7 +386,10 @@ def build_integration_commands(config, values):
     pgm_args = [item.format(**context) for item in config["pgm_launch_args"]]
     return {
         "check_fast_lio": [
-            config["start_fast_lio_script"], "--check", config["fast_lio_setup_file"],
+            config["start_fast_lio_script"], "--check",
+            config["prerequisite_setup_file"], config["extrinsics_file"],
+            config["fast_lio_setup_file"],
+            "epgeneral_map_stream", config["prerequisite_launch_file"],
             config["fast_lio_package"], config["fast_lio_launch_file"],
             config["generated_pcd_path"],
         ],
@@ -378,7 +399,11 @@ def build_integration_commands(config, values):
             config["source_pcd_path"],
         ],
         "start_fast_lio": [
-            config["start_fast_lio_script"], config["fast_lio_setup_file"],
+            config["start_fast_lio_script"],
+            config["prerequisite_setup_file"], config["extrinsics_file"],
+            str(config["prerequisite_startup_timeout_seconds"]),
+            config["fast_lio_setup_file"],
+            "epgeneral_map_stream", config["prerequisite_launch_file"],
             config["fast_lio_package"], config["fast_lio_launch_file"],
             context["fast_lio_pid_path"], context["fast_lio_log_path"],
             config["generated_pcd_path"],

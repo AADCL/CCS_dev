@@ -276,8 +276,9 @@ class RosMapStreamNode(object):
             session.identity["session_id"][:8], restarted, previous_state or "none")
         checks = self._readiness_checks(payload["required_inputs"], session)
         accepted = all(item["available"] for item in checks)
-        reason = "; ".join(item["reason"] for item in checks
-                           if not item["available"] and item["reason"])
+        reason = self._reason_summary(
+            "; ".join(item["reason"] for item in checks
+                      if not item["available"] and item["reason"]), 192)
         error_code = ""
         if not accepted:
             first = next(item for item in checks if not item["available"])
@@ -384,8 +385,9 @@ class RosMapStreamNode(object):
                     "artifact_storage": "ARTIFACT_STORAGE_UNAVAILABLE",
                     "map_generation": "MAP_GENERATION_UNAVAILABLE",
                 }.get(name, "UNSUPPORTED_INPUT")
+            wire_reason = self._reason_summary(reason, 96)
             checks.append({"name": name, "available": available,
-                           "reason": reason, "error_code": code})
+                           "reason": wire_reason, "error_code": code})
             log_method = self._log_info if available else self._log_warn
             log_method(
                 "mapping readiness check=%s available=%s reason=%s",
@@ -917,15 +919,17 @@ class RosMapStreamNode(object):
 
     def _send_prepare_rejection(self, command, destination, error_code, reason,
                                 previous_state="", active_session_id=""):
+        wire_reason = self._reason_summary(reason, 192)
+        check_reason = self._reason_summary(reason, 96)
         checks = []
         for name in command["payload"].get("required_inputs", ["pointcloud"]):
-            checks.append({"name": name, "available": False, "reason": reason})
+            checks.append({"name": name, "available": False, "reason": check_reason})
         payload = {
             "request_id": command["payload"]["request_id"], "accepted": False,
             "checks": checks, "sample_window_seconds": self.config["sample_window_seconds"],
             "frame_id": self.config["map_frame"],
             "capability_version": self.config["capability_version"],
-            "error_code": error_code, "reason": reason,
+            "error_code": error_code, "reason": wire_reason,
         }
         if previous_state:
             payload["previous_state"] = previous_state
@@ -936,11 +940,18 @@ class RosMapStreamNode(object):
         self._send(identity, destination, "prepare_result", payload)
 
     @staticmethod
+    def _reason_summary(reason, maximum=192):
+        text = " ".join(str(reason or "").split())
+        if len(text) <= maximum:
+            return text
+        return text[:maximum - 3] + "..."
+
+    @staticmethod
     def _ack_payload(command, accepted, reason="", error_code=""):
         return {
             "request_id": command["payload"]["request_id"],
             "command": command["message_type"], "accepted": bool(accepted),
-            "reason": reason, "error_code": error_code,
+            "reason": RosMapStreamNode._reason_summary(reason), "error_code": error_code,
         }
 
     def _reject(self, command, reason, error_code, destination):

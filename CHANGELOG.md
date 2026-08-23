@@ -2,6 +2,47 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## 端侧 epqrd_go2_bridge v0.2.0 - 2026-08-23
+
+- 完整转发 Unitree SDK2 `rt/lowstate` 和 `rt/sportmodestate` 的全部字段，新增十二个 prefixed 强类型 ROS 话题。
+- 增加 LowState 100 Hz、SportModeState 50 Hz 可配置限频，并保留 v0.1.0 的标准 ROS 兼容话题。
+- 新增完整 ROS 话题接口、字段来源和订阅说明，配套 Go2 profile 同步升级。
+- 已在 `QRD_001` 完成 Noetic 构建和 12 个新增话题真机验收，并将 Go2 DDS 网卡修正为 `eth1`。
+
+## 端侧 epgeneral_map_stream v0.7.2 - 2026-08-23
+
+- 建图流程调整为先启动并确认 FAST_LIO `/laserMapping`，再启动 TF manager、位姿适配器和两路点云坐标转换。
+- 两阶段启动继续使用统一受控进程组，stop、abort、Ctrl+C 和成果保存行为保持不变。
+
+## 端侧 epgeneral_map_stream v0.7.1 - 2026-08-23
+
+- 修复坐标转换前置链加入后，建图协商仍以 1.5 秒运行 ROS 集成预检并误判超时的问题。
+- 对 `prepare_result` 的错误摘要限长，避免预检异常文本导致 UDP 失败响应超过 1400 字节。
+
+## 端侧 epgeneral_map_stream v0.7.0 - 2026-08-23
+
+- 建图配置升级为 schema 4；新增外参文件、坐标转换 prerequisites launch 和就绪超时。
+- v0.7.0 最初先启动 TF manager、位姿适配器和两路点云坐标适配器，后续 v0.7.2 已将顺序调整为 FAST_LIO 优先。
+- 整条建图链统一纳入一个进程组，正常停止、强制结束和异常回滚均清理全部新增节点。
+
+## v0.18.2 - 2026-08-22
+
+### 新增
+
+- `epgeneral_udp_telemetry` diagnostics 增加逐 ROS 来源的 topic、消息类型、接收/有效/拒绝计数和样本年龄，以及 Level 1/2/3 发送计数、字节数、失败数和序列。
+- 端侧启动日志输出设备、session、目标地址、descriptor hash、分级频率和逐项订阅映射，并每 30 秒限频汇总来源统计。
+- 增加端侧非法样本隔离、完整 Level 1 契约、localhost 20 Hz 接收及详情页最新快照绘制回归测试。
+
+### 调整
+
+- 指控平台升级至 `v0.18.2`，`epgeneral_udp_telemetry` 升级至 `v0.2.2`；`ccs-udp-telemetry-v1` wire schema 和 descriptor hash 保持兼容。
+- 地面站按拒收原因累计并限频输出 UDP 协议告警，区分描述哈希、非有限数值、超长报文、解码、未知设备、旧会话和乱序。
+
+### 修复
+
+- 端侧 Pose/IMU 在进入平滑窗口前拒绝 `NaN/Inf` 和无效四元数；单个 descriptor 映射、平均或快照失败只将该项标记为无效，不再导致整组 Level 1 位姿与 IMU 被地面站拒收。
+- 修正 UDP 接口文档中与实现不一致的数据年龄字段名，统一为 `sample_age_seconds`。
+
 ## v0.18.1 - 2026-08-22
 
 - 修复 SRT 首帧到达后播放状态页覆盖真实视频画面的问题；播放状态仅触发一次，并增加首帧超时和 FFmpeg 诊断日志。

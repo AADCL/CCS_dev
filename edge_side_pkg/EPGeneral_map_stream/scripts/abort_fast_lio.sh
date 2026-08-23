@@ -23,6 +23,7 @@ if kill -0 "${FAST_LIO_PID}" 2>/dev/null; then
   FAST_LIO_PGID=$(ps -o pgid= -p "${FAST_LIO_PID}" | tr -d '[:space:]')
   [[ "${FAST_LIO_PGID}" == "${FAST_LIO_PID}" ]] \
     || fail "PID is not a managed FAST_LIO process-group leader"
+  : >"${PID_FILE}.stopping"
   kill -INT -- "-${FAST_LIO_PID}" 2>/dev/null || kill -INT "${FAST_LIO_PID}" 2>/dev/null || true
 fi
 
@@ -45,5 +46,5 @@ while kill -0 "${FAST_LIO_PID}" 2>/dev/null; do
   sleep 0.2
 done
 kill -0 "${FAST_LIO_PID}" 2>/dev/null && fail "FAST_LIO did not stop"
-rm -f "${PID_FILE}"
+rm -f "${PID_FILE}" "${PID_FILE}.ready" "${PID_FILE}.stopping"
 printf 'FAST_LIO aborted without generating mapping artifacts\n'

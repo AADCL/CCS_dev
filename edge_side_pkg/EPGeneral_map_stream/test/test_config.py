@@ -34,18 +34,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config["device_id"], expected_device["id"])
         self.assertEqual(config["device_ip"], expected_device["ip"])
         self.assertEqual(config["protocol_id"], "ccs-map-stream-v2")
-        self.assertEqual(config["schema_version"], 3)
-        self.assertEqual(config["capability_version"], "0.6.0")
+        self.assertEqual(config["schema_version"], 4)
+        self.assertEqual(config["capability_version"], "0.7.2")
         self.assertEqual(config["input_cloud_topic"], "/livox/lidar")
         self.assertEqual(config["input_imu_topic"], "/livox/imu")
         self.assertEqual(config["input_cloud_message_type"], "livox_ros_driver2/CustomMsg")
-        self.assertEqual(config["cloud_topic"], "/lio/cloud_registered_body")
+        self.assertIn(config["cloud_topic"], (
+            "/lio/cloud_registered_body", "/lio/cloud_registered"))
         self.assertEqual(config["pose_topic"], "/lio/odometry")
         self.assertEqual(config["cloud_message_type"], "sensor_msgs/PointCloud2")
         self.assertEqual(config["control_port"], 14561)
         self.assertEqual(config["http_port"], 14600)
         self.assertAlmostEqual(config["sample_window_seconds"], 1.0)
+        self.assertAlmostEqual(config["prepare_probe_timeout_seconds"], 1.5)
+        self.assertAlmostEqual(config["integration_check_timeout_seconds"], 8.0)
         self.assertAlmostEqual(config["body_from_sensor"]["qw"], 1.0)
+        self.assertEqual(
+            config["extrinsics_file"],
+            "/home/nvidia/go2_mid360_nav/calibration/go2_edu_02/extrinsics.yaml")
+        self.assertEqual(config["prerequisite_launch_file"], "mapping_prerequisites.launch")
 
     def test_unsupported_lidar_input_is_rejected(self):
         path = self._modified_mapping("livox_ros_driver2/CustomMsg", "std_msgs/String")
@@ -79,15 +86,29 @@ class ConfigTests(unittest.TestCase):
         }
         commands = build_integration_commands(config, values)
         self.assertIn("--check", commands["check_fast_lio"])
-        self.assertEqual(commands["start_fast_lio"][4],
+        self.assertEqual(commands["start_fast_lio"][9],
                          os.path.abspath(config["fast_lio_pid_template"].format(**values)))
-        self.assertEqual(commands["start_fast_lio"][5],
+        self.assertEqual(commands["start_fast_lio"][10],
                          os.path.abspath(config["fast_lio_log_template"].format(**values)))
-        self.assertEqual(len(commands["start_fast_lio"]), 7)
-        self.assertEqual(commands["start_fast_lio"][6], config["generated_pcd_path"])
+        self.assertEqual(len(commands["start_fast_lio"]), 12)
+        self.assertEqual(commands["start_fast_lio"][11], config["generated_pcd_path"])
+        self.assertEqual(commands["start_fast_lio"][1], config["prerequisite_setup_file"])
+        self.assertEqual(commands["start_fast_lio"][2], config["extrinsics_file"])
+        self.assertIn("mapping_prerequisites.launch", commands["check_fast_lio"])
         self.assertEqual(commands["stop_fast_lio"][3], config["generated_pcd_path"])
         self.assertEqual(commands["stop_fast_lio"][4], values["pcd_path"])
         self.assertEqual(commands["check_pgm"][-1], config["source_pcd_path"])
         self.assertIn(config["source_yaml_path"], commands["generate_pgm"])
         self.assertIn("config:=/home/nvidia/go2_mid360_nav/catkin_ws/src/go2_map_tools/config/corridor_nav.yaml",
                       commands["generate_pgm"])
+
+    def test_schema_three_is_rejected(self):
+        path = self._modified_mapping("schema_version: 4", "schema_version: 3")
+        with self.assertRaisesRegex(ConfigError, "schema_version must be 4"):
+            load_config(path, DEVICE)
+
+    def test_prerequisite_config_is_required(self):
+        path = self._modified_mapping(
+            "  mapping_prerequisites:\n", "  missing_mapping_prerequisites:\n")
+        with self.assertRaisesRegex(ConfigError, "mapping_prerequisites"):
+            load_config(path, DEVICE)
