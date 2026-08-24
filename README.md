@@ -1,12 +1,12 @@
 # 多异构智能体指挥与控制系统
 
-当前指控平台版本：**v0.18.1**
+当前指控平台版本：**v0.18.3**
 
-端侧包版本：epgeneral_mqtav **v0.3.1**、epgeneral_udp_telemetry **v0.2.1**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.6.0**、epgeneral_task_control **v0.1.0**
+端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.3.1**、epgeneral_udp_telemetry **v0.2.2**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.9.1**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
-- Go2 EDU：`EPQRD_go2_bridge` 基于 Unitree SDK2 发布 prefixed ROS 电池、IMU、里程计、SDK 心跳和诊断信息；部署 profile 位于 `edge_side_pkg/deploy/go2_edu/`。
+- Go2 EDU：`EPQRD_go2_bridge` v0.2.0 完整转发 Unitree SDK2 LowState/SportModeState，并保留 prefixed ROS 电池、IMU、里程计、SDK 心跳和诊断接口；部署 profile 位于 `edge_side_pkg/deploy/go2_edu/`。
 
 本仓库包含基于 PySide6 的多异构智能体指挥与控制地面站，以及部署到 ROS 端侧设备的配套功能包。系统面向可信局域网中的无人机、无人车、移动机器人和无人船。
 
@@ -36,8 +36,8 @@ CCS_dev/
 │   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
 │   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.1
 │   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
-│   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.1
-│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.6.0
+│   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.2
+│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.9.1
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
 │   ├── epgeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
@@ -80,7 +80,7 @@ CCS_dev/
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
-v0.18.1 配套端侧 `epgeneral_map_stream` v0.6.0 将实时预览改为每秒生成不可变二进制 PCD 分片，由平台通过 TCP 14600 后台下载、校验并增量显示；UDP 14562 只承载状态、分片描述符和 ACK。最终 PCD/PGM/YAML 仍以 session 绑定的成果 ZIP 为准，固定源 PCD 未由本 session 更新时会拒绝打包。
+v0.18.3 配套端侧 `epgeneral_map_stream` v0.9.1；建图启动时拉起 map accumulator，停止建图再调用保存并校验新 PCD，随后停止建图进程并生成最终成果。
 
 ## 部署方法
 
@@ -333,7 +333,7 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 ### PGM 下载提示端侧版本不支持
 
-当前真实端侧 `epgeneral_map_stream` 尚未实现 PGM 文件服务。地面站请求 `request_pgm_artifact` 后若未收到 ACK，会显示版本不支持或超时。真实设备联调前需按 `docs/EDGE_DEVICE_INTERFACES.md` 实现 manifest、zlib 分片、补传和校验，并确保 UDP 14561/14562 可达。
+当前端侧 `epgeneral_map_stream` v0.9.1 已实现 `odom` 坐标实时 PCD 分片、map accumulator 随建图链启动和主动保存、最终 PCD/PGM/YAML 成果 ZIP 和短期令牌 HTTP 服务。
 
 ### 融合算法无法导入或执行失败
 
@@ -354,6 +354,9 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 ## 版本记录
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
+
+**v0.18.3 · 2026-08-24**
+<small>实时建图点云由 lio_odom 实际转换至 odom 显示，并记录源帧、目标帧和所用 TF。</small>
 
 **v0.18.0 · 2026-08-22**
 <small>延长遥控建图命令截止时间，支持无成果清理活动会话并重新协商，新增端到端命令日志面板。</small>

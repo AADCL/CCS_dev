@@ -12,6 +12,8 @@ rates:
   imu_hz: 100.0
   odometry_hz: 50.0
   battery_hz: 1.0
+  low_state_hz: 100.0
+  sport_mode_hz: 50.0
 timeouts:
   low_state_seconds: 0.5
   sport_mode_seconds: 0.5

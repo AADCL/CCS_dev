@@ -106,12 +106,16 @@ class Runner(object):
 
     def run(self, arguments, timeout=None):
         name = os.path.basename(arguments[0])
-        if name == "stop_fast_lio.sh":
-            for path in (arguments[3], arguments[4]):
-                with io.open(path, "w", encoding="ascii") as stream:
-                    stream.write("FIELDS x y z\nPOINTS 1\nDATA ascii\n1 0 0\n")
+        if name == "save_map.sh":
+            with io.open(arguments[3], "w", encoding="ascii") as stream:
+                stream.write("FIELDS x y z\nPOINTS 1\nDATA ascii\n1 0 0\n")
             fresh_ns = time.time_ns() + 1_000_000_000
             os.utime(arguments[3], ns=(fresh_ns, fresh_ns))
+        elif name == "stop_fast_lio.sh":
+            with io.open(arguments[3], "r", encoding="ascii") as source:
+                content = source.read()
+            with io.open(arguments[4], "w", encoding="ascii") as stream:
+                stream.write(content)
         elif name == "generate_pgm.sh":
             with io.open(arguments[5], "wb") as stream:
                 stream.write(b"P5\n1 1\n255\n\x00")
@@ -123,6 +127,12 @@ class Runner(object):
                 }, stream)
 
 
+class TransformLookup(object):
+    def lookup(self, unused_target, unused_source, unused_stamp_ns):
+        return {"x": 0.0, "y": 0.0, "z": 0.0,
+                "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
+
+
 class UdpIntegrationTests(unittest.TestCase):
     def test_real_udp_v2_prepare_start_stop_and_ready(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -131,7 +141,7 @@ class UdpIntegrationTests(unittest.TestCase):
                 bind_host="127.0.0.1", ground_station_ip="127.0.0.1",
                 device_ip="127.0.0.1", control_port=free_port(), http_bind_host="127.0.0.1",
                 http_port=0, workspace_root=directory, min_free_bytes=1,
-                generated_pcd_path=os.path.join(directory, "generated.pcd"),
+                accumulator_pcd_path=os.path.join(directory, "accumulator.pcd"),
                 source_pcd_path=os.path.join(directory, "source.pcd"),
                 artifact_poll_seconds=0.001, artifact_stable_polls=2,
                 artifact_generation_timeout_seconds=1.0,
@@ -145,7 +155,7 @@ class UdpIntegrationTests(unittest.TestCase):
             config["data_port"] = ground.getsockname()[1]
             node = RosMapStreamNode(
                 FakeRospy(config), config, message_resolver=lambda unused: object,
-                command_runner=Runner())
+                command_runner=Runner(), transform_lookup=TransformLookup())
             node.start()
             self.addCleanup(node.close)
             identity = {"map_id": "map-udp", "session_id": "d" * 32}

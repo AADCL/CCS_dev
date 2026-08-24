@@ -2,6 +2,7 @@ import ipaddress
 import io
 import math
 import os
+import re
 import string
 
 import yaml
@@ -141,8 +142,8 @@ def _topic(parent, name, expected_type=None, with_frame=True):
 def load_config(mapping_path, device_path):
     mapping = _read_yaml(mapping_path)
     device_config = _read_yaml(device_path)
-    if mapping.get("schema_version") != 3:
-        raise ConfigError("mapping schema_version must be 3")
+    if mapping.get("schema_version") != 6:
+        raise ConfigError("mapping schema_version must be 6")
     if device_config.get("schema_version") != 1:
         raise ConfigError("device schema_version must be 1")
     device = _mapping(device_config, "device")
@@ -156,7 +157,12 @@ def load_config(mapping_path, device_path):
     stream = _mapping(ros, "stream", "ros.stream")
     frames = _mapping(ros, "frames", "ros.frames")
     integrations = _mapping(mapping, "integrations")
+    prerequisites = _mapping(
+        integrations, "mapping_prerequisites",
+        "integrations.mapping_prerequisites")
     fast_lio = _mapping(integrations, "fast_lio", "integrations.fast_lio")
+    map_accumulator = _mapping(
+        integrations, "map_accumulator", "integrations.map_accumulator")
     pgm = _mapping(integrations, "pgm", "integrations.pgm")
     sync = _mapping(mapping, "sync")
     preprocess = _mapping(mapping, "preprocess")
@@ -193,6 +199,24 @@ def load_config(mapping_path, device_path):
         raise ConfigError("sync.tolerance_seconds must not exceed 1 second")
     pose_buffer_size = _positive_integer(
         sync.get("pose_buffer_size"), "sync.pose_buffer_size", 2, 10000)
+    preview_transform_timeout = _positive_number(
+        sync.get("preview_transform_timeout_seconds"),
+        "sync.preview_transform_timeout_seconds")
+    if preview_transform_timeout > 5.0:
+        raise ConfigError("sync.preview_transform_timeout_seconds must not exceed 5 seconds")
+    map_frame = _text(frames, "map", "ros.frames.map")
+    preview_frame = _text(frames, "preview", "ros.frames.preview")
+    if map_frame == preview_frame:
+        raise ConfigError("ros.frames.map and ros.frames.preview must be different")
+    map_accumulator_service = _text(
+        map_accumulator, "service", "integrations.map_accumulator.service")
+    if re.match(r"^/[A-Za-z0-9_/]+$", map_accumulator_service) is None:
+        raise ConfigError("integrations.map_accumulator.service must be an absolute ROS service")
+    map_save_timeout = _positive_number(
+        map_accumulator.get("save_timeout_seconds"),
+        "integrations.map_accumulator.save_timeout_seconds")
+    if map_save_timeout > 600.0:
+        raise ConfigError("integrations.map_accumulator.save_timeout_seconds must not exceed 600 seconds")
     max_points = _positive_integer(limits.get("max_frame_points"), "limits.max_frame_points")
     max_window_points = _positive_integer(
         limits.get("max_window_points"), "limits.max_window_points")
@@ -208,9 +232,9 @@ def load_config(mapping_path, device_path):
     script_root = os.path.join(package_root, "scripts")
 
     return {
-        "schema_version": 3,
+        "schema_version": 6,
         "protocol_id": protocol_id,
-        "capability_version": "0.6.0",
+        "capability_version": "0.9.1",
         "device_id": device_id,
         "device_ip": device_ip,
         "bind_host": _ip(network.get("bind_host"), "network.bind_host", True),
@@ -240,11 +264,24 @@ def load_config(mapping_path, device_path):
             pose_data, "position_path", "ros.stream.pose.position_path"),
         "pose_orientation_path": _text(
             pose_data, "orientation_path", "ros.stream.pose.orientation_path"),
-        "map_frame": _text(frames, "map", "ros.frames.map"),
+        "map_frame": map_frame,
+        "preview_frame": preview_frame,
         "body_frame": _text(frames, "body", "ros.frames.body"),
         "sensor_frame": _text(frames, "sensor", "ros.frames.sensor"),
         "body_from_sensor": _transform(
             ros.get("body_from_sensor"), "ros.body_from_sensor"),
+        "prerequisite_setup_file": os.path.abspath(os.path.expanduser(
+            _text(prerequisites, "setup_file",
+                  "integrations.mapping_prerequisites.setup_file"))),
+        "prerequisite_launch_file": _text(
+            prerequisites, "launch_file",
+            "integrations.mapping_prerequisites.launch_file"),
+        "extrinsics_file": os.path.abspath(os.path.expanduser(
+            _text(prerequisites, "extrinsics_file",
+                  "integrations.mapping_prerequisites.extrinsics_file"))),
+        "prerequisite_startup_timeout_seconds": _positive_number(
+            prerequisites.get("startup_timeout_seconds"),
+            "integrations.mapping_prerequisites.startup_timeout_seconds"),
         "fast_lio_setup_file": os.path.abspath(os.path.expanduser(
             _text(fast_lio, "setup_file", "integrations.fast_lio.setup_file"))),
         "fast_lio_package": _text(
@@ -263,6 +300,11 @@ def load_config(mapping_path, device_path):
             fast_lio.get("pid_path"), "integrations.fast_lio.pid_path", True),
         "fast_lio_log_template": _template(
             fast_lio.get("log_path"), "integrations.fast_lio.log_path", True),
+        "map_accumulator_setup_file": os.path.abspath(os.path.expanduser(
+            _text(map_accumulator, "setup_file",
+                  "integrations.map_accumulator.setup_file"))),
+        "map_accumulator_service": map_accumulator_service,
+        "map_accumulator_save_timeout_seconds": map_save_timeout,
         "pgm_setup_file": os.path.abspath(os.path.expanduser(
             _text(pgm, "setup_file", "integrations.pgm.setup_file"))),
         "pgm_package": _text(pgm, "package", "integrations.pgm.package"),
@@ -277,9 +319,11 @@ def load_config(mapping_path, device_path):
         "start_fast_lio_script": os.path.join(script_root, "start_fast_lio.sh"),
         "stop_fast_lio_script": os.path.join(script_root, "stop_fast_lio.sh"),
         "abort_fast_lio_script": os.path.join(script_root, "abort_fast_lio.sh"),
+        "save_map_script": os.path.join(script_root, "save_map.sh"),
         "generate_pgm_script": os.path.join(script_root, "generate_pgm.sh"),
         "sync_tolerance_seconds": tolerance,
         "pose_buffer_size": pose_buffer_size,
+        "preview_transform_timeout_seconds": preview_transform_timeout,
         "sample_window_seconds": _positive_number(
             preprocess.get("sample_window_seconds"), "preprocess.sample_window_seconds"),
         "preview_transport": _text(
@@ -291,6 +335,9 @@ def load_config(mapping_path, device_path):
         "prepare_probe_timeout_seconds": _positive_number(
             timeouts.get("prepare_probe_timeout_seconds"),
             "timeouts.prepare_probe_timeout_seconds"),
+        "integration_check_timeout_seconds": _positive_number(
+            timeouts.get("integration_check_timeout_seconds"),
+            "timeouts.integration_check_timeout_seconds"),
         "ready_timeout_seconds": _positive_number(
             timeouts.get("ready_timeout_seconds"), "timeouts.ready_timeout_seconds"),
         "input_timeout_seconds": _positive_number(
@@ -325,8 +372,9 @@ def load_config(mapping_path, device_path):
             limits.get("max_unacked_preview_fragments"),
             "limits.max_unacked_preview_fragments", 1, 256),
         "workspace_root": workspace_root,
-        "generated_pcd_path": os.path.abspath(os.path.expanduser(
-            _text(artifacts, "generated_pcd_path", "artifacts.generated_pcd_path"))),
+        "accumulator_pcd_path": os.path.abspath(os.path.expanduser(
+            _text(artifacts, "accumulator_pcd_path",
+                  "artifacts.accumulator_pcd_path"))),
         "source_pcd_path": os.path.abspath(os.path.expanduser(
             _text(artifacts, "source_pcd_path", "artifacts.source_pcd_path"))),
         "source_pgm_path": os.path.abspath(os.path.expanduser(
@@ -368,9 +416,16 @@ def build_integration_commands(config, values):
     pgm_args = [item.format(**context) for item in config["pgm_launch_args"]]
     return {
         "check_fast_lio": [
-            config["start_fast_lio_script"], "--check", config["fast_lio_setup_file"],
+            config["start_fast_lio_script"], "--check",
+            config["prerequisite_setup_file"], config["extrinsics_file"],
+            config["fast_lio_setup_file"],
+            "epgeneral_map_stream", config["prerequisite_launch_file"],
             config["fast_lio_package"], config["fast_lio_launch_file"],
-            config["generated_pcd_path"],
+        ],
+        "check_save_map": [
+            config["save_map_script"], "--check",
+            config["map_accumulator_setup_file"],
+            config["map_accumulator_service"], config["accumulator_pcd_path"],
         ],
         "check_pgm": [
             config["generate_pgm_script"], "--check", config["pgm_setup_file"],
@@ -378,14 +433,22 @@ def build_integration_commands(config, values):
             config["source_pcd_path"],
         ],
         "start_fast_lio": [
-            config["start_fast_lio_script"], config["fast_lio_setup_file"],
+            config["start_fast_lio_script"],
+            config["prerequisite_setup_file"], config["extrinsics_file"],
+            str(config["prerequisite_startup_timeout_seconds"]),
+            config["fast_lio_setup_file"],
+            "epgeneral_map_stream", config["prerequisite_launch_file"],
             config["fast_lio_package"], config["fast_lio_launch_file"],
             context["fast_lio_pid_path"], context["fast_lio_log_path"],
-            config["generated_pcd_path"],
         ] + fast_args,
+        "save_map": [
+            config["save_map_script"], config["map_accumulator_setup_file"],
+            config["map_accumulator_service"], config["accumulator_pcd_path"],
+            str(config["map_accumulator_save_timeout_seconds"]),
+        ],
         "stop_fast_lio": [
             config["stop_fast_lio_script"], config["fast_lio_setup_file"],
-            context["fast_lio_pid_path"], config["generated_pcd_path"],
+            context["fast_lio_pid_path"], config["accumulator_pcd_path"],
             context["pcd_path"],
             str(config["fast_lio_stop_timeout_seconds"]),
         ],

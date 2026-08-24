@@ -1,5 +1,21 @@
 # 更新记录
 
+## v0.2.2 - 2026-08-22
+
+### 新增
+
+- diagnostics 增加逐来源接收、有效、拒绝、样本年龄以及逐等级发送、失败、字节和序列统计。
+- 启动时输出设备、session、目标、descriptor hash、分级频率和所有订阅映射，并限频汇总来源状态。
+
+### 调整
+
+- 保持 `ccs-udp-telemetry-v1`、UDP 14560、descriptor hash 和 ROS 话题配置兼容。
+
+### 修复
+
+- Pose/IMU 样本在平滑前拒绝 `NaN/Inf`、非数值字段和无效四元数。
+- 单个 descriptor 映射、平均或快照异常时仅发送该项 `valid=false`，不再使整个 Level 1 报文失效。
+
 ## v0.2.1 - 2026-08-02
 
 ### 新增

@@ -17,7 +17,7 @@ from ccs_monitor.map_building_config import load_map_building_config
 from ccs_monitor.map_building_v2 import (
     ArtifactDescriptor, ArtifactDownloader, ArtifactPackageValidator,
     ArtifactValidationError, MapBuildingV2Protocol, RemoteMappingCoordinator,
-    RemoteMappingProtocolError,
+    RemoteMappingProtocolError, cloud_fragment_from_payload,
 )
 from ccs_monitor.map_repository import MapRepository
 from ccs_monitor.pgm_map import PgmMapLoader
@@ -50,7 +50,7 @@ def _artifact_bytes(map_id: str, device_id: str, session_id: str) -> bytes:
              "yaml": ("map.yaml", map_yaml)}
     manifest = {
         "schema_version": 1, "map_id": map_id, "device_id": device_id,
-        "session_id": session_id, "frame_id": "map",
+        "session_id": session_id, "frame_id": "lio_odom",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "files": {
             role: {"path": name, "byte_count": len(data), "sha256": _sha(data)}
@@ -93,13 +93,18 @@ class MapBuildingV2ProtocolTests(unittest.TestCase):
         self.config = load_map_building_config()
         self.protocol = MapBuildingV2Protocol(self.config)
 
+    def test_frame_lifecycle_configuration(self):
+        self.assertEqual(self.config.remote_mapping_frame, "odom")
+        self.assertEqual(self.config.remote_artifact_frame, "lio_odom")
+        self.assertEqual(self.config.final_map_frame, "map")
+
     def test_prepare_result_round_trip_and_consistency(self):
         envelope = MapBuildingEnvelope(
             "map-1", "UAV-1", "session-1", "prepare_result", 1, 1,
             {"request_id": "request-1", "accepted": True,
              "checks": [{"name": "pointcloud", "available": True}],
-             "sample_window_seconds": 1.0, "frame_id": "lio_odom",
-             "capability_version": "0.6.0", "preview_transport": "pcd_fragment_http",
+             "sample_window_seconds": 1.0, "frame_id": "odom",
+             "capability_version": "0.8.0", "preview_transport": "pcd_fragment_http",
              "fragment_interval_seconds": 1.0},
         )
         self.assertEqual(self.protocol.decode(self.protocol.encode(envelope)), envelope)
@@ -117,6 +122,30 @@ class MapBuildingV2ProtocolTests(unittest.TestCase):
         self.protocol.decode(self.protocol.encode(envelope))
         with self.assertRaises(RemoteMappingProtocolError):
             self.protocol.encode(replace(envelope, payload={**envelope.payload, "sha256": "bad"}))
+
+    def test_cloud_fragment_records_source_to_display_transform(self):
+        payload = {
+            "fragment_id": 1, "url": "http://127.0.0.1:14600/preview.pcd?token=x",
+            "byte_count": 100, "sha256": "0" * 64, "point_count": 2,
+            "frame_id": "odom", "source_frame_id": "lio_odom",
+            "display_from_source": {
+                "x": 1.0, "y": 2.0, "z": 0.0,
+                "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+            },
+            "started_at_ns": 1, "ended_at_ns": 2,
+            "expires_at": "2030-01-01T00:00:00+00:00",
+        }
+        envelope = MapBuildingEnvelope(
+            "map-1", "UAV-1", "session-1", "cloud_fragment_ready", 2, 2, payload)
+        decoded = self.protocol.decode(self.protocol.encode(envelope))
+        descriptor = cloud_fragment_from_payload(decoded.payload)
+        self.assertEqual(descriptor.frame_id, "odom")
+        self.assertEqual(descriptor.source_frame_id, "lio_odom")
+        self.assertEqual(descriptor.display_from_source["x"], 1.0)
+        invalid = replace(envelope, payload={key: value for key, value in payload.items()
+                                             if key != "display_from_source"})
+        with self.assertRaises(RemoteMappingProtocolError):
+            self.protocol.encode(invalid)
 
 
 class ArtifactTests(unittest.TestCase):
@@ -152,6 +181,8 @@ class ArtifactTests(unittest.TestCase):
                 archive, root / "validated", map_id=definition.map_id,
                 device_id="UAV-1", session_id="session-1",
             )
+            self.assertEqual(artifact.frame_id, "lio_odom")
+            artifact = replace(artifact, frame_id=self.config.final_map_frame)
             metadata = MapBuildingResultMetadata(
                 "session-1", "UAV-1", datetime.now(timezone.utc),
                 datetime.now(timezone.utc), self.config.protocol_v2_id, 0.1,
@@ -210,7 +241,7 @@ class CoordinatorTests(unittest.TestCase):
                 {"request_id": request.payload["request_id"], "accepted": False,
                  "checks": [{"name": "pointcloud", "available": False,
                              "reason": "topic unavailable"}],
-                 "sample_window_seconds": 0.2, "frame_id": "lio_odom",
+                 "sample_window_seconds": 0.2, "frame_id": "odom",
                  "capability_version": "0.1.0", "error_code": "POINTCLOUD_MISSING",
                  "reason": "pointcloud unavailable"},
             )
@@ -223,7 +254,7 @@ class CoordinatorTests(unittest.TestCase):
                 rejected, sequence=2,
                 payload={"request_id": request.payload["request_id"], "accepted": True,
                          "checks": [{"name": "pointcloud", "available": True}],
-                         "sample_window_seconds": 0.2, "frame_id": "lio_odom",
+                         "sample_window_seconds": 0.2, "frame_id": "odom",
                          "capability_version": "0.1.0", "restarted": True,
                          "previous_state": "mapping", "active_session_id": session_id},
             )
@@ -252,7 +283,7 @@ class CoordinatorTests(unittest.TestCase):
                 definition.map_id, device.device_id, session_id, "prepare_result", 1, 1,
                 {"request_id": prepare.payload["request_id"], "accepted": True,
                  "checks": [{"name": "pointcloud", "available": True}],
-                 "sample_window_seconds": 0.2, "frame_id": "lio_odom",
+                 "sample_window_seconds": 0.2, "frame_id": "odom",
                  "capability_version": "0.4.0"}), "127.0.0.1")
             coordinator.begin()
             for unused in range(config.command_max_attempts + 2):

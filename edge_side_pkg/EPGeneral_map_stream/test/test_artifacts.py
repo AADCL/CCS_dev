@@ -6,6 +6,7 @@ import unittest
 import urllib.error
 import urllib.request
 import zipfile
+from unittest import mock
 
 import yaml
 
@@ -17,7 +18,7 @@ except ModuleNotFoundError:
     ArtifactPackageValidator = None
 
 from epgeneral_map_stream.artifacts import (
-    ArtifactError, ArtifactHttpServer, SessionPaths, build_archive, file_fingerprint,
+    ArtifactError, ArtifactHttpServer, CommandRunner, SessionPaths, build_archive, file_fingerprint,
     require_fresh_file,
     validate_artifacts, wait_for_stable_artifacts,
 )
@@ -48,6 +49,21 @@ def write_outputs(paths):
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_integration_checks_use_dedicated_timeout(self):
+        runner = CommandRunner(self.config)
+        commands = {
+            "check_fast_lio": [__file__],
+            "check_save_map": [__file__],
+            "check_pgm": [__file__],
+        }
+        completed = mock.Mock(returncode=0, stdout="")
+        with mock.patch("epgeneral_map_stream.artifacts.subprocess.run",
+                        return_value=completed) as run:
+            runner.check(commands)
+        self.assertEqual(
+            [call.kwargs["timeout"] for call in run.call_args_list],
+            [self.config["integration_check_timeout_seconds"]] * 3)
+
     def test_source_pcd_must_change_after_session_start(self):
         source = os.path.join(self.temp.name, "source.pcd")
         with io.open(source, "wb") as stream:

@@ -17,6 +17,7 @@ class MapBuildingConfig:
     protocol_id: str
     protocol_v2_id: str
     remote_mapping_frame: str
+    remote_artifact_frame: str
     final_map_frame: str
     bind_host: str
     data_port: int
@@ -69,7 +70,8 @@ def load_map_building_config(path: Path = DEFAULT_MAP_BUILDING_CONFIG_PATH) -> M
         config = MapBuildingConfig(
             protocol_id=str(payload["protocol_id"]),
             protocol_v2_id=str(payload.get("protocol_v2_id", "ccs-map-stream-v2")),
-            remote_mapping_frame=str(frames.get("remote_mapping", "lio_odom")),
+            remote_mapping_frame=str(frames.get("remote_mapping", "odom")),
+            remote_artifact_frame=str(frames.get("remote_artifact", "lio_odom")),
             final_map_frame=str(frames.get("final_map", "map")),
             bind_host=str(network["bind_host"]),
             data_port=int(network["data_port"]),
@@ -117,10 +119,15 @@ def load_map_building_config(path: Path = DEFAULT_MAP_BUILDING_CONFIG_PATH) -> M
         raise MapBuildingConfigError(f"建图配置字段无效：{exc}") from exc
     if not config.protocol_id or not config.protocol_v2_id:
         raise MapBuildingConfigError("protocol_id 和 protocol_v2_id 不能为空")
-    if not config.remote_mapping_frame or not config.final_map_frame:
-        raise MapBuildingConfigError("遥控建图和最终地图坐标系不能为空")
+    if (not config.remote_mapping_frame or not config.remote_artifact_frame
+            or not config.final_map_frame):
+        raise MapBuildingConfigError("遥控建图、端侧成果和最终地图坐标系不能为空")
     if config.remote_mapping_frame == config.final_map_frame:
         raise MapBuildingConfigError("遥控建图坐标系和最终地图坐标系必须区分")
+    if config.remote_mapping_frame == config.remote_artifact_frame:
+        raise MapBuildingConfigError("遥控显示坐标系和端侧成果坐标系必须区分")
+    if config.remote_artifact_frame == config.final_map_frame:
+        raise MapBuildingConfigError("端侧成果坐标系和最终地图坐标系必须区分")
     if config.protocol_id == config.protocol_v2_id:
         raise MapBuildingConfigError("v1 与 v2 协议 ID 不能相同")
     if not 1 <= config.data_port <= 65535 or not 1 <= config.device_control_port <= 65535:

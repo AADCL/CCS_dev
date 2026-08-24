@@ -2,6 +2,72 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## 端侧 epgeneral_map_stream v0.9.1 - 2026-08-24
+
+- 建图启动链新增 `go2_map_accumulator/map_accumulator.launch`，并等待 `/go2_map_accumulator` 节点就绪后才允许进入 mapping。
+- 停止事务和 `ccs-map-stream-v2` 不变，仍按保存服务、新鲜度校验、停止进程和成果生成顺序执行。
+
+## 端侧 epgeneral_map_stream v0.9.0 - 2026-08-24
+
+- 停止建图先调用 `/go2_map_accumulator/save`，验证 `/maps/current/public_map.pcd` 为当前 session 新成果后，再终止 FAST_LIO 和坐标转换进程。
+- 配置升级为 schema 6，新增保存 setup、服务名和 60 秒超时；保存失败统一 abort 清理，不进入 PGM/ZIP。
+- start wrapper 不再删除已有 PCD，旧地图在新成果验证完成前保持不变。
+
+## 端侧 epgeneral_map_stream v0.8.1 - 2026-08-24
+
+- 取消建图启动阶段对 `odom <- lio_odom` 的可用性检测和数据记录，避免转换节点刚启动、TF 树尚未连通时返回 `cannot start mapping`。
+- TF 仅在建图进入 mapping 且收到实际点云后，随点云时间戳查询并写入预览描述符；点云仍实际转换到 `odom`。
+- v0.8.1 已部署至 `192.168.50.100`，端侧重建、53 项测试和版本一致性检查通过。
+
+## v0.18.3 / 端侧 epgeneral_map_stream v0.8.0 - 2026-08-24
+
+- 端侧按点云窗口参考时间查询 `odom <- lio_odom` TF，将实时 PCD 点坐标实际转换至 `odom` 后回传。
+- PCD 描述符记录 `frame_id=odom`、`source_frame_id=lio_odom` 及七字段变换，平台严格校验并输出变换摘要。
+- FAST_LIO 最终成果仍以 `lio_odom` 校验，完整提交后才定义为 `map`，避免实时显示帧与成果源帧混用。
+- `epgeneral_map_stream` 配置升级至 schema 5、版本 v0.8.0；指控平台升级至 v0.18.3，协议 ID 保持 `ccs-map-stream-v2`。
+- 已部署到 `192.168.50.100` 并完成 MID360 真机时间戳 TF 查询、start/abort 和残留清理验证。
+
+## 端侧 epqrd_go2_bridge v0.2.0 - 2026-08-23
+
+- 完整转发 Unitree SDK2 `rt/lowstate` 和 `rt/sportmodestate` 的全部字段，新增十二个 prefixed 强类型 ROS 话题。
+- 增加 LowState 100 Hz、SportModeState 50 Hz 可配置限频，并保留 v0.1.0 的标准 ROS 兼容话题。
+- 新增完整 ROS 话题接口、字段来源和订阅说明，配套 Go2 profile 同步升级。
+- 已在 `QRD_001` 完成 Noetic 构建和 12 个新增话题真机验收，并将 Go2 DDS 网卡修正为 `eth1`。
+
+## 端侧 epgeneral_map_stream v0.7.2 - 2026-08-23
+
+- 建图流程调整为先启动并确认 FAST_LIO `/laserMapping`，再启动 TF manager、位姿适配器和两路点云坐标转换。
+- 两阶段启动继续使用统一受控进程组，stop、abort、Ctrl+C 和成果保存行为保持不变。
+
+## 端侧 epgeneral_map_stream v0.7.1 - 2026-08-23
+
+- 修复坐标转换前置链加入后，建图协商仍以 1.5 秒运行 ROS 集成预检并误判超时的问题。
+- 对 `prepare_result` 的错误摘要限长，避免预检异常文本导致 UDP 失败响应超过 1400 字节。
+
+## 端侧 epgeneral_map_stream v0.7.0 - 2026-08-23
+
+- 建图配置升级为 schema 4；新增外参文件、坐标转换 prerequisites launch 和就绪超时。
+- v0.7.0 最初先启动 TF manager、位姿适配器和两路点云坐标适配器，后续 v0.7.2 已将顺序调整为 FAST_LIO 优先。
+- 整条建图链统一纳入一个进程组，正常停止、强制结束和异常回滚均清理全部新增节点。
+
+## v0.18.2 - 2026-08-22
+
+### 新增
+
+- `epgeneral_udp_telemetry` diagnostics 增加逐 ROS 来源的 topic、消息类型、接收/有效/拒绝计数和样本年龄，以及 Level 1/2/3 发送计数、字节数、失败数和序列。
+- 端侧启动日志输出设备、session、目标地址、descriptor hash、分级频率和逐项订阅映射，并每 30 秒限频汇总来源统计。
+- 增加端侧非法样本隔离、完整 Level 1 契约、localhost 20 Hz 接收及详情页最新快照绘制回归测试。
+
+### 调整
+
+- 指控平台升级至 `v0.18.2`，`epgeneral_udp_telemetry` 升级至 `v0.2.2`；`ccs-udp-telemetry-v1` wire schema 和 descriptor hash 保持兼容。
+- 地面站按拒收原因累计并限频输出 UDP 协议告警，区分描述哈希、非有限数值、超长报文、解码、未知设备、旧会话和乱序。
+
+### 修复
+
+- 端侧 Pose/IMU 在进入平滑窗口前拒绝 `NaN/Inf` 和无效四元数；单个 descriptor 映射、平均或快照失败只将该项标记为无效，不再导致整组 Level 1 位姿与 IMU 被地面站拒收。
+- 修正 UDP 接口文档中与实现不一致的数据年龄字段名，统一为 `sample_age_seconds`。
+
 ## v0.18.1 - 2026-08-22
 
 - 修复 SRT 首帧到达后播放状态页覆盖真实视频画面的问题；播放状态仅触发一次，并增加首帧超时和 FFmpeg 诊断日志。

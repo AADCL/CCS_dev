@@ -1,13 +1,34 @@
+import ast
 import os
 import subprocess
 import sys
 import unittest
+import xml.etree.ElementTree as ET
 
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class SourceEntrypointTests(unittest.TestCase):
+    def test_manifest_and_runtime_versions_match(self):
+        sys.path.insert(0, os.path.join(PACKAGE, "src"))
+        try:
+            from epgeneral_udp_telemetry import __version__
+        finally:
+            sys.path.pop(0)
+        manifest_version = ET.parse(os.path.join(PACKAGE, "package.xml")).getroot().findtext("version")
+        self.assertEqual(__version__, "0.2.2")
+        self.assertEqual(manifest_version, __version__)
+
+    def test_python_sources_parse_as_python36(self):
+        for root, unused_dirs, files in os.walk(PACKAGE):
+            for name in files:
+                if not name.endswith(".py"):
+                    continue
+                path = os.path.join(root, name)
+                with open(path, "r", encoding="utf-8") as stream:
+                    ast.parse(stream.read(), filename=path, feature_version=(3, 6))
+
     def test_source_script_imports_package_without_catkin_pythonpath(self):
         environment = dict(os.environ)
         package_source = os.path.abspath(os.path.join(PACKAGE, "src"))
