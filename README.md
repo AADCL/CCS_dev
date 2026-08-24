@@ -1,8 +1,8 @@
 # 多异构智能体指挥与控制系统
 
-当前指控平台版本：**v0.18.2**
+当前指控平台版本：**v0.18.3**
 
-端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.3.1**、epgeneral_udp_telemetry **v0.2.2**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.7.2**、epgeneral_task_control **v0.1.0**
+端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.3.1**、epgeneral_udp_telemetry **v0.2.2**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.9.1**、epgeneral_task_control **v0.1.0**
 
 ## 功能介绍
 
@@ -37,7 +37,7 @@ CCS_dev/
 │   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.1
 │   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.2
-│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.7.2
+│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.9.1
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
 │   ├── epgeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
@@ -80,7 +80,7 @@ CCS_dev/
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
-v0.18.2 配套端侧 `epgeneral_map_stream` v0.7.2；建图时先启动 FAST_LIO，再启动 TF、位姿和点云坐标转换链，并保留 HTTP PCD 分片、成果新鲜度校验和协商错误限长。
+v0.18.3 配套端侧 `epgeneral_map_stream` v0.9.1；建图启动时拉起 map accumulator，停止建图再调用保存并校验新 PCD，随后停止建图进程并生成最终成果。
 
 ## 部署方法
 
@@ -333,7 +333,7 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 ### PGM 下载提示端侧版本不支持
 
-当前端侧 `epgeneral_map_stream` v0.7.2 已实现 PCD 实时分片、最终 PCD/PGM/YAML 成果 ZIP 和短期令牌 HTTP 服务。联调时应确保 UDP 14561/14562 与 TCP 14600 可达，并从 `map_stream.log` 核对协商检查、session 状态和成果生成过程。
+当前端侧 `epgeneral_map_stream` v0.9.1 已实现 `odom` 坐标实时 PCD 分片、map accumulator 随建图链启动和主动保存、最终 PCD/PGM/YAML 成果 ZIP 和短期令牌 HTTP 服务。
 
 ### 融合算法无法导入或执行失败
 
@@ -355,8 +355,8 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 
 完整新增、调整、修复和删除内容见 [CHANGELOG.md](CHANGELOG.md)。README 仅保留摘要。
 
-**v0.18.2 · 2026-08-22**
-<small>隔离 UDP Level 1 非有限样本，恢复位姿与 IMU 高频显示，并增加端侧来源和发送诊断。</small>
+**v0.18.3 · 2026-08-24**
+<small>实时建图点云由 lio_odom 实际转换至 odom 显示，并记录源帧、目标帧和所用 TF。</small>
 
 **v0.18.0 · 2026-08-22**
 <small>延长遥控建图命令截止时间，支持无成果清理活动会话并重新协商，新增端到端命令日志面板。</small>

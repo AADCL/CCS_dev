@@ -45,6 +45,31 @@ def transform_from_pose(message, position_path, orientation_path):
     return result
 
 
+def transform_from_stamped(message):
+    try:
+        value = message.transform
+        result = {
+            "x": float(value.translation.x),
+            "y": float(value.translation.y),
+            "z": float(value.translation.z),
+            "qx": float(value.rotation.x),
+            "qy": float(value.rotation.y),
+            "qz": float(value.rotation.z),
+            "qw": float(value.rotation.w),
+        }
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ProcessingError("TF transform fields are invalid: %s" % exc)
+    if not all(math.isfinite(item) for item in result.values()):
+        raise ProcessingError("TF transform contains non-finite values")
+    norm = math.sqrt(sum(result[key] * result[key]
+                         for key in ("qx", "qy", "qz", "qw")))
+    if norm < 1e-6:
+        raise ProcessingError("TF transform quaternion is zero")
+    for key in ("qx", "qy", "qz", "qw"):
+        result[key] /= norm
+    return result
+
+
 class PoseSample(object):
     def __init__(self, stamp_ns, transform):
         self.stamp_ns = int(stamp_ns)
@@ -138,6 +163,17 @@ def transform_matrix(transform):
     return matrix
 
 
+def transform_points(points, target_from_source):
+    array = np.asarray(points, dtype=np.float64)
+    if array.ndim != 2 or array.shape[1] != 3:
+        raise ProcessingError("point cloud must be an Nx3 array")
+    matrix = transform_matrix(target_from_source)
+    converted = np.dot(array, matrix[:3, :3].T) + matrix[:3, 3]
+    if not np.isfinite(converted).all():
+        raise ProcessingError("point cloud transform produced non-finite points")
+    return np.ascontiguousarray(converted, dtype="<f4")
+
+
 def aggregate_window(scans, body_from_sensor, voxel_size_m, max_points):
     """Express every synchronized scan in the final scan's sensor frame."""
     if not scans:
@@ -146,7 +182,8 @@ def aggregate_window(scans, body_from_sensor, voxel_size_m, max_points):
     sensor_from_reference = np.linalg.inv(
         np.dot(transform_matrix(reference_pose), transform_matrix(body_from_sensor)))
     transformed = []
-    for points, map_from_body, unused_stamp in scans:
+    for scan in scans:
+        points, map_from_body = scan[0], scan[1]
         array = np.asarray(points, dtype=np.float64)
         if not len(array):
             continue

@@ -108,6 +108,8 @@ class CloudFragmentDescriptor:
     sha256: str
     point_count: int
     frame_id: str
+    source_frame_id: str
+    display_from_source: dict[str, float]
     started_at_ns: int
     ended_at_ns: int
     expires_at: datetime
@@ -341,6 +343,8 @@ class MapBuildingV2Protocol:
             raise RemoteMappingProtocolError("PCD 分片 SHA-256 无效")
         self._integer(payload, "point_count", 1, self.config.max_frame_points)
         self._string(payload, "frame_id")
+        self._string(payload, "source_frame_id")
+        self._transform(payload.get("display_from_source"), "display_from_source")
         self._string(payload, "expires_at")
         started = self._integer(payload, "started_at_ns", 0)
         ended = self._integer(payload, "ended_at_ns", started)
@@ -386,6 +390,22 @@ class MapBuildingV2Protocol:
         if not math.isfinite(number) or number < minimum:
             raise RemoteMappingProtocolError(f"{key} 超出范围")
         return number
+
+    @staticmethod
+    def _transform(value: Any, name: str) -> None:
+        if not isinstance(value, dict):
+            raise RemoteMappingProtocolError(f"{name} 无效")
+        keys = ("x", "y", "z", "qx", "qy", "qz", "qw")
+        if any(
+            not isinstance(value.get(key), (int, float))
+            or isinstance(value.get(key), bool)
+            or not math.isfinite(float(value[key]))
+            for key in keys
+        ):
+            raise RemoteMappingProtocolError(f"{name} 字段无效")
+        norm = math.sqrt(sum(float(value[key]) ** 2 for key in ("qx", "qy", "qz", "qw")))
+        if norm < 1e-6:
+            raise RemoteMappingProtocolError(f"{name} 四元数无效")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -628,7 +648,10 @@ def cloud_fragment_from_payload(payload: dict[str, Any]) -> CloudFragmentDescrip
         return CloudFragmentDescriptor(
             int(payload["fragment_id"]), str(payload["url"]), int(payload["byte_count"]),
             str(payload["sha256"]).lower(), int(payload["point_count"]),
-            str(payload["frame_id"]), int(payload["started_at_ns"]),
+            str(payload["frame_id"]), str(payload["source_frame_id"]),
+            {key: float(payload["display_from_source"][key])
+             for key in ("x", "y", "z", "qx", "qy", "qz", "qw")},
+            int(payload["started_at_ns"]),
             int(payload["ended_at_ns"]), expires_at.astimezone(timezone.utc),
         )
     except (KeyError, TypeError, ValueError) as exc:
@@ -963,6 +986,9 @@ class RemoteMappingCoordinator(QObject):
         if descriptor.frame_id != self.config.remote_mapping_frame:
             self._fail(session, "PCD 分片坐标系不匹配", "FRAME_MISMATCH")
             return
+        if descriptor.source_frame_id != self.config.remote_artifact_frame:
+            self._fail(session, "PCD 分片源坐标系不匹配", "FRAME_MISMATCH")
+            return
         if descriptor.fragment_id in session.processed_fragments:
             self._send_fragment_ack(session, descriptor.fragment_id)
             return
@@ -1008,7 +1034,11 @@ class RemoteMappingCoordinator(QObject):
                     self._log(
                         session, "RX", "pcd_fragment",
                         f"分片 {descriptor.fragment_id}，{len(points):,} 点，"
-                        f"预览保留 {len(preview):,} 点")
+                        f"预览保留 {len(preview):,} 点，"
+                        f"{descriptor.source_frame_id}->{descriptor.frame_id} "
+                        f"xyz=({descriptor.display_from_source['x']:.3f},"
+                        f"{descriptor.display_from_source['y']:.3f},"
+                        f"{descriptor.display_from_source['z']:.3f})")
                     self._send_fragment_ack(session, descriptor.fragment_id)
                     self.preview_updated.emit(session.session_id, preview, bounds)
                     self._emit(session)
@@ -1083,13 +1113,13 @@ class RemoteMappingCoordinator(QObject):
                     archive, root / "validated", map_id=session.definition.map_id,
                     device_id=session.device.device_id, session_id=session.session_id,
                 )
-                if artifact.frame_id != self.config.remote_mapping_frame:
+                if artifact.frame_id != self.config.remote_artifact_frame:
                     raise ArtifactValidationError(
-                        f"端侧成果坐标系 {artifact.frame_id} 与实时建图坐标系 "
-                        f"{self.config.remote_mapping_frame} 不一致"
+                        f"端侧成果坐标系 {artifact.frame_id} 与要求的源成果坐标系 "
+                        f"{self.config.remote_artifact_frame} 不一致"
                     )
-                # lio_odom is the local frame used during capture. Once the
-                # artifact is accepted, its local origin becomes the map frame.
+                # The source artifact remains in the FAST_LIO frame. Once it is
+                # accepted, its local origin becomes the final map frame.
                 artifact = dataclasses.replace(
                     artifact, frame_id=self.config.final_map_frame
                 )

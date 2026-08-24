@@ -4,11 +4,11 @@
 
 命名规则：通用包目录使用 `EPGeneral_<function>`，ROS/catkin 包名使用全小写 `epgeneral_<function>`。设备专属扩展使用 `EPDQUAV_`、`EPUGV_`、`EPQRD_`、`EPDATUGV_` 或 `EPAGUAV_` 目录前缀，对应 ROS 前缀为 `epdquav_`、`epugv_`、`epqrd_`、`epdatugv_`、`epaguav_`。
 
-地面站当前为 v0.18.2；视频链路要求端侧使用 `epgeneral_video_srt` v0.1.0。`epgeneral_map_stream` v0.7.2 调整为先启动 FAST_LIO，再启动坐标转换链。
+地面站当前为 v0.18.3；视频链路要求端侧使用 `epgeneral_video_srt` v0.1.0。`epgeneral_map_stream` v0.9.1 随建图链启动 map accumulator，并在停止进程前保存和校验 PCD。
 
 地面站修改设备 ID 后，必须同步修改端侧共享 `device.yaml` 并重启 MQTT、UDP、建图、任务和视频节点。v0.15.1 只修复地面站融合算法的可迁移路径；v0.15.0 的展示与本地引用调整以及现有端侧协议字段、功能包版本均保持不变。
 
-本次启动顺序调整将 `epgeneral_map_stream` 升级至 v0.7.2；地面站保持 v0.18.2，其他端侧包版本和协议保持不变。
+本次启动流程修正将 `epgeneral_map_stream` 升级至 v0.9.1；地面站保持 v0.18.3，其他端侧包版本和协议 ID 保持不变。
 
 ## 包含内容
 
@@ -21,13 +21,13 @@
 - `epgeneral_mqtav` v0.3.1：订阅 ROS 状态和电池信息，并向地面站 MQTT Broker 发布带启动 session 的 presence、heartbeat、status。
 - `epgeneral_video_srt` v0.1.0：订阅配置的 ROS 原始或压缩图像话题，并通过 GStreamer 以 SRT Listener 输出 baseline H.264/MPEG-TS，默认 UDP 9000。
 - `epgeneral_udp_telemetry` v0.2.2：按配置订阅 MAVROS/ROS 位姿、IMU、点云、地图生成状态和建图模式，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测，并隔离非法高频样本、报告逐来源 diagnostics。
-- `epgeneral_map_stream` v0.7.2：校验传感器外参，先启动 FAST_LIO，再启动 TF、位姿和点云坐标转换链；通过 TCP 14600 提供实时 PCD 分片和最终成果 ZIP。
+- `epgeneral_map_stream` v0.9.1：建图启动时拉起 map accumulator；停止时保存并校验当前 session PCD，再停止建图进程和生成 PGM/YAML/ZIP。
 - `epgeneral_task_control` v0.1.0：监听 UDP 14563 任务指令，原子保存 XML，通过 ROS 强类型接口协调执行，并向 UDP 14564 回传状态和进度。
 - `epgeneral_mqtav.zip`：包含 `epgeneral_mqtav` 与共享配置包的部署归档。
 
 ## v0.8.0 实时建图接口
 
-地面站 v0.18.2 与 `epgeneral_map_stream` v0.7.2 使用独立 `ccs-map-stream-v2`：UDP 14561/14562 传输控制、状态、PCD 描述符与 ACK，实时分片和最终 ZIP 均通过端侧 TCP 14600 下载。
+地面站 v0.18.3 与 `epgeneral_map_stream` v0.9.1 使用独立 `ccs-map-stream-v2`：UDP 14561/14562 传输控制、状态、PCD 描述符与 ACK，实时分片和最终 ZIP 均通过端侧 TCP 14600 下载。
 
 双方实现遵循根目录 `docs/EDGE_DEVICE_INTERFACES.md`，包括 MessagePack 信封、1400 字节数据报上限、CRC32、zlib、`map <- body <- sensor` 坐标约定、ACK 幂等和超时处理。
 
@@ -35,7 +35,7 @@
 
 历史 v1 后端支持多设备独立会话及可选 `job_id`、`role`、`primary_device_id` 字段；v0.5.0 端侧运行路径使用 v2 单机协商，不读取这些 v1 扩展字段。
 
-## v0.9.0 任务接口状态
+## v0.9.1 任务接口状态
 
 地面站新增 `ccs-task-control-v1`，向端侧 UDP 14563 下发轨迹任务，并在 UDP 14564 接收 ACK、任务心跳、状态和航点进度。完整字段、时钟约束与错误码见根目录 `docs/EDGE_DEVICE_INTERFACES.md`。
 

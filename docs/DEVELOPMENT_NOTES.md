@@ -1,5 +1,23 @@
 # 开发笔记
 
+## epgeneral_map_stream v0.9.1
+
+- `mapping_prerequisites.launch` 在坐标转换链后启动 `go2_map_accumulator/map_accumulator.launch`，`start_fast_lio.sh` 等待 `/go2_map_accumulator` 后才宣布建图栈就绪。
+
+- stop 成果事务拆分为 `save_map -> require_fresh_file -> stop_fast_lio -> generate_pgm`，新鲜度校验发生在建图进程终止前。
+- 保存服务、超时或 PCD 校验失败时调用 abort 清理受控进程组；start 不再删除 accumulator 的既有 PCD。
+
+## epgeneral_map_stream v0.8.1
+
+- 删除 `_wait_for_fast_lio_outputs()` 的零时间戳 TF lookup；FAST_LIO 输出与坐标转换节点就绪即可完成 start。
+- `odom <- lio_odom` 仅保留在 `_process_cloud()`，随实际 cloud header 时间戳查询、记录并用于 PCD 点坐标转换。
+
+## v0.18.3 / epgeneral_map_stream v0.8.0
+
+- 坐标生命周期拆分为 `lio_odom` FAST_LIO 源、`odom` 实时预览和 `map` 最终成果定义。
+- 端侧在窗口最后一帧时间戳查询 `odom <- lio_odom`，先统一窗口到 `lio_odom`，再把实际点坐标转换至 `odom`；描述符记录同一份规范化 TF。
+- 平台分别校验实时分片 `odom` 和端侧成果 `lio_odom`，成果完整验收后才重标为 `map`。
+
 ## epgeneral_map_stream v0.7.2
 
 - `start_fast_lio.sh` 先启动 FAST_LIO 并等待 `/laserMapping`，然后拉起统一坐标转换 launch 并等待四个转换节点。

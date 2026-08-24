@@ -2,6 +2,31 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## 端侧 epgeneral_map_stream v0.9.1 - 2026-08-24
+
+- 建图启动链新增 `go2_map_accumulator/map_accumulator.launch`，并等待 `/go2_map_accumulator` 节点就绪后才允许进入 mapping。
+- 停止事务和 `ccs-map-stream-v2` 不变，仍按保存服务、新鲜度校验、停止进程和成果生成顺序执行。
+
+## 端侧 epgeneral_map_stream v0.9.0 - 2026-08-24
+
+- 停止建图先调用 `/go2_map_accumulator/save`，验证 `/maps/current/public_map.pcd` 为当前 session 新成果后，再终止 FAST_LIO 和坐标转换进程。
+- 配置升级为 schema 6，新增保存 setup、服务名和 60 秒超时；保存失败统一 abort 清理，不进入 PGM/ZIP。
+- start wrapper 不再删除已有 PCD，旧地图在新成果验证完成前保持不变。
+
+## 端侧 epgeneral_map_stream v0.8.1 - 2026-08-24
+
+- 取消建图启动阶段对 `odom <- lio_odom` 的可用性检测和数据记录，避免转换节点刚启动、TF 树尚未连通时返回 `cannot start mapping`。
+- TF 仅在建图进入 mapping 且收到实际点云后，随点云时间戳查询并写入预览描述符；点云仍实际转换到 `odom`。
+- v0.8.1 已部署至 `192.168.50.100`，端侧重建、53 项测试和版本一致性检查通过。
+
+## v0.18.3 / 端侧 epgeneral_map_stream v0.8.0 - 2026-08-24
+
+- 端侧按点云窗口参考时间查询 `odom <- lio_odom` TF，将实时 PCD 点坐标实际转换至 `odom` 后回传。
+- PCD 描述符记录 `frame_id=odom`、`source_frame_id=lio_odom` 及七字段变换，平台严格校验并输出变换摘要。
+- FAST_LIO 最终成果仍以 `lio_odom` 校验，完整提交后才定义为 `map`，避免实时显示帧与成果源帧混用。
+- `epgeneral_map_stream` 配置升级至 schema 5、版本 v0.8.0；指控平台升级至 v0.18.3，协议 ID 保持 `ccs-map-stream-v2`。
+- 已部署到 `192.168.50.100` 并完成 MID360 真机时间戳 TF 查询、start/abort 和残留清理验证。
+
 ## 端侧 epqrd_go2_bridge v0.2.0 - 2026-08-23
 
 - 完整转发 Unitree SDK2 `rt/lowstate` 和 `rt/sportmodestate` 的全部字段，新增十二个 prefixed 强类型 ROS 话题。

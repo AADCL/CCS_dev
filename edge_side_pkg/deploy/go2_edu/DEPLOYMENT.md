@@ -1,6 +1,10 @@
 # Go2 EDU 端侧监控套件部署指南
 
-本 profile 面向 Ubuntu 20.04、ROS Noetic、Go2 EDU 和 Unitree SDK2。必装包为 `epgeneral_device_config`、`epqrd_go2_bridge`、`epgeneral_mqtav`、`epgeneral_udp_telemetry`；任务状态接入时再安装 `epgeneral_task_control` 和设备运动适配器。遥控建图另需安装 `epgeneral_map_stream` v0.7.2、FAST_LIO 和 PGM 生成包。TCP 14600 同时服务实时 PCD 分片和最终 ZIP；必须保证工作目录及 FAST_LIO 固定 PCD 输出目录可写。v0.7.2 已于 2026-08-23 在 `QRD_001` 完成 Noetic 重建和 FAST_LIO 优先启动联调；`epqrd_go2_bridge` v0.2.0 同日完成部署、13 个消息生成、C++ 构建和 12 个新增话题真机验收，实测 LowState 约 89.7 Hz、SportModeState 约 45.6 Hz，`link/sdk=true`；指控平台保持 v0.18.2。
+本 profile 面向 Ubuntu 20.04、ROS Noetic、Go2 EDU 和 Unitree SDK2。遥控建图需安装 `epgeneral_map_stream` v0.9.1、FAST_LIO、map accumulator、`tf2_ros` 和 PGM 生成包。建图启动链会先拉起 accumulator，停止建图再保存和验证 PCD；指控平台配套 v0.18.3。
+
+v0.8.0 已于 2026-08-24 部署到 `192.168.50.100`：按 ROS、Go2 MID360、edge workspace 顺序重建成功，53 项端侧测试通过（2 项地面站契约环境跳过）。短时启动 MID360、FAST_LIO 和四个坐标转换节点后，已按 `/lio/cloud_registered` 实际时间戳验证 `odom <- lio_odom` 可查询；abort 后未生成成果，PID、Livox 和建图节点均清理。
+
+v0.8.1 已于同日增量部署：取消 start 阶段的零时间戳 TF 查询，避免转换树尚未连通时拒绝启动；端侧重建、53 项测试和版本一致性检查通过。v0.8.0 完整备份位于 `~/.deployment_backups/20260824_map_stream_081_deferred_tf/EPGeneral_map_stream_v080`。
 
 ## 1. 安装 SDK 与 ROS 依赖
 
@@ -89,17 +93,17 @@ sudo tcpdump -ni any udp port 14560
 
 默认 `go2_edu_bringup.launch` 和 `start_ccs_edge_dev.sh` 不启动建图节点，避免在未配置 SLAM 适配器时误报可用。先编辑
 `EPGeneral_map_stream/config/mapping.yaml` 的 Livox 输入、FAST_LIO 输出、frame、外参、工作目录和
-`integrations.fast_lio`/`integrations.pgm`。Go2 profile 的 FAST_LIO setup 使用
+`integrations.fast_lio`/`integrations.map_accumulator`/`integrations.pgm`。Go2 profile 的 FAST_LIO setup 使用
 `~/ccs_edge_ws/devel/setup.bash`，该 overlay 必须包含导航工作区；包内
-`fast_lio_mapping.launch` 会启用 FAST_LIO 退出保存。确认 `artifacts.generated_pcd_path`
-指向 FAST_LIO 的 `PCD/scans.pcd`，`artifacts.source_pcd_path` 指向 PGM 工具读取的
+`fast_lio_mapping.launch`。确认 `artifacts.accumulator_pcd_path` 指向
+`/home/nvidia/go2_mid360_nav/maps/current/public_map.pcd`，`artifacts.source_pcd_path` 指向 PGM 工具读取的
 公开 PCD，并确认 PGM launch 成功退出时生成 `map.pgm` 和 `map.yaml`，再执行：
 
 ```bash
 roslaunch epgeneral_map_stream epgeneral_map_stream.launch
 ```
 
-端侧监听 UDP 14561、向地面站 UDP 14562 回传，地面站按 `device.ip` 访问端侧 TCP 14600 下载实时 PCD 和带短期令牌的成果 ZIP。部署前使用 `rostopic type/hz` 验证 `/livox/lidar`、`/livox/imu`、`/lio/cloud_registered_body` 和 `/lio/odometry`，执行 `bash -n` 检查四个包装器，并确保端侧与地面站 UTC 已同步。停止后应确认固定输出与 `public_map.pcd` 的 SHA-256 一致，且 manifest 的 `session_id` 等于当前会话。
+端侧监听 UDP 14561、向地面站 UDP 14562 回传，地面站按 `device.ip` 访问端侧 TCP 14600 下载实时 PCD 和带短期令牌的成果 ZIP。部署前使用 `rostopic type/hz` 验证 `/livox/lidar`、`/livox/imu`、`/lio/cloud_registered_body` 和 `/lio/odometry`，执行 `bash -n` 检查五个包装器，并确保端侧与地面站 UTC 已同步。停止时应确认日志顺序为 save、freshness、stop、PGM，且 manifest 的 `session_id` 等于当前会话。
 
 ## 5. 自启动与故障处理
 

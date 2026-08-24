@@ -53,6 +53,7 @@ class ArtifactTests(unittest.TestCase):
         runner = CommandRunner(self.config)
         commands = {
             "check_fast_lio": [__file__],
+            "check_save_map": [__file__],
             "check_pgm": [__file__],
         }
         completed = mock.Mock(returncode=0, stdout="")
@@ -61,7 +62,7 @@ class ArtifactTests(unittest.TestCase):
             runner.check(commands)
         self.assertEqual(
             [call.kwargs["timeout"] for call in run.call_args_list],
-            [self.config["integration_check_timeout_seconds"]] * 2)
+            [self.config["integration_check_timeout_seconds"]] * 3)
 
     def test_source_pcd_must_change_after_session_start(self):
         source = os.path.join(self.temp.name, "source.pcd")

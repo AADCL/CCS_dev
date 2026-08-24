@@ -1,8 +1,8 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.18.2`，更新日期：2026-08-23。
+文档版本：`v0.18.3`，更新日期：2026-08-24。
 
-指控平台 v0.18.2 配套 `epgeneral_udp_telemetry` v0.2.2，并与端侧 `epgeneral_map_stream` v0.7.2 使用 `ccs-map-stream-v2` 单机遥控建图。MQTT schema 1.0、SRT、UDP 遥测信封、descriptor hash、v1 后端和任务协议保持兼容；v2 端侧不自动回退 v1。
+指控平台 v0.18.3 配套 `epgeneral_udp_telemetry` v0.2.2，并与端侧 `epgeneral_map_stream` v0.9.1 使用 `ccs-map-stream-v2` 单机遥控建图。MQTT schema 1.0、SRT、UDP 遥测信封、descriptor hash、v1 后端和任务协议保持兼容；v2 端侧不自动回退 v1。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -15,7 +15,7 @@
 | SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.0 |
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | 保留后端 |
-| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.7.2 |
+| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.9.1 |
 | UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 | UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
 
@@ -147,11 +147,11 @@ IPv6 地址使用方括号。地面站先执行 `ffmpeg -hide_banner -protocols`
 
 端侧和地面站的延迟配置均以毫秒保存；SRT URL 的 `latency` 查询参数使用微秒，因此地面站乘以 1000。端侧应开放 UDP 9000，并通过 `gst-inspect-1.0 srtsink` 检查插件。系统 FFmpeg 必须由用户安装且带 libsrt。
 
-## UDP 14561/14562 单机遥控建图 v2（指控平台 v0.18.2）
+## UDP 14561/14562 单机遥控建图 v2（指控平台 v0.18.3）
 
-v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.7.2` 协调 Livox、FAST_LIO、坐标转换链和 PGM 生成器；最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
+v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.9.1` 协调 Livox、FAST_LIO、map accumulator、坐标转换链和 PGM 生成器；最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
 
-v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sent_at_ns/payload`。v0.18.2 使用 `cloud_fragment_ready` 和 `cloud_fragment_ack`：UDP 只承载控制、状态与轻量描述符，PCD 内容通过 TCP 14600 下载。端侧未收到 ACK 时最多重发描述符 3 次，未确认文件和后台队列均有硬上限。
+v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sent_at_ns/payload`。v0.18.3 使用 `cloud_fragment_ready` 和 `cloud_fragment_ack`：UDP 只承载控制、状态与轻量描述符，PCD 内容通过 TCP 14600 下载。端侧未收到 ACK 时最多重发描述符 3 次，未确认文件和后台队列均有硬上限。
 
 `prepare_mapping` 下发 `request_id`、`return_host`、`return_port` 及 `required_inputs=[pointcloud,imu,artifact_storage,map_generation]`。重新协商额外携带 `restart_active=true`。`pointcloud` 检查原始 `/livox/lidar` 的类型、新鲜度、frame 和字段；`imu` 只检查 `/livox/imu` 类型并等待一条新数据，不校验消息字段完整性。端侧必须返回：
 
@@ -160,8 +160,8 @@ v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sen
   "request_id": "...", "accepted": True,
   "checks": [{"name": "pointcloud", "available": True, "reason": ""}],
   "sample_window_seconds": 1.0,
-  "frame_id": "lio_odom",
-  "capability_version": "0.7.2",
+  "frame_id": "odom",
+  "capability_version": "0.9.1",
   "preview_transport": "pcd_fragment_http",
   "fragment_interval_seconds": 1.0,
   "restarted": False, "previous_state": "", "active_session_id": "",
@@ -169,7 +169,9 @@ v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sen
 }
 ```
 
-`accepted` 必须等于所有 checks 的逻辑与。`start_mapping` 带 `coordinate_contract=sensor+map_body+body_sensor`、`preview_transport=pcd_fragment_http` 和 1 秒周期。每个 `cloud_fragment_ready` 包含 `fragment_id/url/byte_count/sha256/point_count/frame_id/started_at_ns/ended_at_ns/expires_at`。平台限制 URL 主机为设备 IP，校验字节数、SHA-256 和二进制 XYZ PCD 后增量显示，再以 request ID 和 fragment ID 确认。
+`accepted` 必须等于所有 checks 的逻辑与。`start_mapping` 带 `coordinate_contract=sensor+map_body+body_sensor`、`preview_transport=pcd_fragment_http` 和 1 秒周期。每个 `cloud_fragment_ready` 包含 `fragment_id/url/byte_count/sha256/point_count/frame_id/source_frame_id/display_from_source/started_at_ns/ended_at_ns/expires_at`。其中 `frame_id=odom`、`source_frame_id=lio_odom`，`display_from_source` 为端侧实际用于点变换的 `{x,y,z,qx,qy,qz,qw}`。平台限制 URL 主机为设备 IP，校验坐标契约、字节数、SHA-256 和二进制 XYZ PCD 后以 `odom` 增量显示，再以 request ID 和 fragment ID 确认。
+
+实时预览坐标生命周期为 `lio_odom --(odom <- lio_odom TF)--> odom`。端侧以点云窗口最后一帧时间戳查询 TF，将窗口统一到 `lio_odom` 后再实际变换全部点坐标，禁止只修改 PCD 的 frame 标签。FAST_LIO 最终成果 ZIP 的 manifest 仍声明 `frame_id=lio_odom`；平台完整校验并提交后，才将成果本地基准定义为 `map`。
 
 FAST_LIO 点云和里程计按 header 时间戳在 50 ms 窗口内匹配。点云回调先到时端侧最多缓存 3 帧等待对应位姿，不得直接匹配约 100 ms 前的上一帧位姿；位姿时间已越过窗口或缓存溢出时才丢帧，并记录原因和时间差。
 
@@ -193,7 +195,7 @@ FAST_LIO 点云和里程计按 header 时间戳在 50 ms 窗口内匹配。点�
 
 指控平台只允许 URL 主机等于设备 IP 的明文 HTTP，禁止重定向，并使用 Range 续传。端侧默认在 TCP 14600 提供固定路径 `/mapping/result.zip?token=<短期令牌>`，令牌有效期默认 15 分钟。ZIP 必须且只能包含 `manifest.json` 及清单声明的一个 PCD、一个 PGM、一个 ROS YAML。清单 schema 1 包含 `map_id/device_id/session_id/frame_id/generated_at`，以及 `files.pcd/pgm/yaml` 的 `path/byte_count/sha256`。路径穿越、符号链接、重复或未声明文件、异常压缩比和任何校验不匹配均会拒绝整个成果。
 
-端侧配置 schema 4 的 `integrations.mapping_prerequisites` 指定 Go2 MID360 setup、外参 YAML、wrapper launch 和启动超时；`integrations.fast_lio` 与 `integrations.pgm` 继续指定建图与成果生成。开始建图时先启动 FAST_LIO 并等待 `/laserMapping` 注册，再依次声明 TF manager、pose adapter、cloud_to_base、cloud_world_to_odom，并等待四个转换节点全部注册。全部组件共享一个受控进程组，stop/abort/Ctrl+C 会统一清理。
+端侧配置 schema 6 增加 `integrations.map_accumulator` 和 `artifacts.accumulator_pcd_path`。建图启动链先启动 `go2_map_accumulator/map_accumulator.launch` 并等待 `/go2_map_accumulator` 节点；停止建图时再调用 `/go2_map_accumulator/save`，确认 `/home/nvidia/go2_mid360_nav/maps/current/public_map.pcd` 非空、晚于 session 启动且指纹已变化，再停止 FAST_LIO/转换进程并继续 PGM/YAML/ZIP。服务失败、超时或旧文件校验失败统一 abort，不发布成果。
 
 端侧必须将命令接收、request/session ID、状态转换、FAST_LIO 启停、源 PCD 基线与最终指纹、PCD 分片发布/确认/背压、子进程输出和错误同时写入 ROS 日志与 `~/.ros/ccs_edge_dev/log/map_stream.log`。指控端每个 session 保留最近 200 条 TX/RX/LOCAL 日志。
 
@@ -399,7 +401,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 - stop 后停止发送，释放 ROS subscriber、位姿缓存和会话资源；控制 socket 保持监听以接受下一次 start，进程退出时再关闭。
 - 在 localhost/局域网测试乱序、重复、缺片、CRC 错误、点云/位姿超时、重复命令和干净退出。
 
-当前结论：v1 作为历史后端保留；v0.18.2 地面站与端侧 `epgeneral_map_stream` v0.7.2 的 PCD 分片协议已通过纯 Python、localhost UDP/HTTP 契约测试。v0.7.2 已部署到 Go2 端侧，并完成 FAST_LIO 优先启动与坐标转换链联调。
+当前结论：v1 作为历史后端保留；v0.18.3 地面站与端侧 `epgeneral_map_stream` v0.9.1 保持 `ccs-map-stream-v2` 兼容，并增加 accumulator 随建图链启动、停止前主动保存与新鲜度校验。真机部署结果见对应版本部署记录。
 
 ## UDP 地图任务控制接口（ccs-task-control-v1）
 

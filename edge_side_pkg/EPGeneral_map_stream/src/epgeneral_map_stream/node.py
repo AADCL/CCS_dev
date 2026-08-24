@@ -14,7 +14,8 @@ from .config import ConfigError, build_integration_commands, load_config
 from .processing import (
     PoseBuffer, PoseSample, ProcessingError, aggregate_window,
     extract_pointcloud2, map_points_to_sensor, preprocess_points, stamp_to_ns,
-    sensor_points_to_map, transform_from_pose,
+    sensor_points_to_map, transform_from_pose, transform_from_stamped,
+    transform_points,
 )
 from .protocol import ProtocolError, decode_command, encode_envelope
 
@@ -26,6 +27,29 @@ ERROR_CODES = {
     "MAP_GENERATION_UNAVAILABLE", "UNSUPPORTED_INPUT", "UNSUPPORTED_FORMAT",
     "INTERNAL_ERROR", "COMMAND_FAILED", "ARTIFACT_ERROR",
 }
+
+
+class RosTfTransformLookup(object):
+    def __init__(self, rospy, timeout_seconds):
+        import tf2_ros
+
+        self.rospy = rospy
+        self.timeout_seconds = float(timeout_seconds)
+        self.buffer = tf2_ros.Buffer(cache_time=rospy.Duration(30.0))
+        self.listener = tf2_ros.TransformListener(self.buffer)
+
+    def lookup(self, target_frame, source_frame, stamp_ns):
+        stamp = (self.rospy.Time(0) if not stamp_ns
+                 else self.rospy.Time.from_sec(float(stamp_ns) / 1000000000.0))
+        try:
+            message = self.buffer.lookup_transform(
+                target_frame, source_frame, stamp,
+                self.rospy.Duration(self.timeout_seconds))
+        except Exception as exc:
+            raise ProcessingError(
+                "TF %s <- %s is unavailable: %s" % (
+                    target_frame, source_frame, exc))
+        return transform_from_stamped(message)
 
 
 class MappingSession(object):
@@ -47,20 +71,21 @@ class MappingSession(object):
         self.window_started_at = None
         self.pending_clouds = []
         self.fragment_cache = {}
-        self.source_pcd_baseline = None
+        self.accumulator_pcd_baseline = None
         self.mapping_started_at_ns = 0
 
 
 class RosMapStreamNode(object):
     def __init__(self, rospy, config, socket_factory=socket.socket,
-                 clock=time.monotonic, message_resolver=None, command_runner=None,
-                 artifact_server=None, log_path=None):
+                  clock=time.monotonic, message_resolver=None, command_runner=None,
+                  artifact_server=None, transform_lookup=None, log_path=None):
         self.rospy = rospy
         self.config = config
         self.socket_factory = socket_factory
         self.clock = clock
         self.message_resolver = message_resolver
         self.command_runner = command_runner or CommandRunner(config)
+        self.transform_lookup = transform_lookup
         self.artifact_server = artifact_server
         self.socket = None
         self.control_thread = None
@@ -288,7 +313,7 @@ class RosMapStreamNode(object):
             "checks": [{"name": item["name"], "available": item["available"],
                         "reason": item["reason"]} for item in checks],
             "sample_window_seconds": self.config["sample_window_seconds"],
-            "frame_id": self.config["map_frame"],
+            "frame_id": self.config["preview_frame"],
             "capability_version": self.config["capability_version"],
             "preview_transport": self.config["preview_transport"],
             "fragment_interval_seconds": self.config["sample_window_seconds"],
@@ -463,11 +488,13 @@ class RosMapStreamNode(object):
         with self.lock:
             session.state = "starting"
             self.state = "starting"
-            session.source_pcd_baseline = file_fingerprint(self.config["generated_pcd_path"])
+            session.accumulator_pcd_baseline = file_fingerprint(
+                self.config["accumulator_pcd_path"])
             session.mapping_started_at_ns = time.time_ns()
         self._log_info(
             "mapping source baseline session=%s fingerprint=%s",
-            session.identity["session_id"][:8], session.source_pcd_baseline or "missing")
+            session.identity["session_id"][:8],
+            session.accumulator_pcd_baseline or "missing")
         self._send_session_message(session, "session_status", {
             "state": "starting", "reason": "starting FAST_LIO and waiting for outputs",
             "error_code": ""})
@@ -590,19 +617,28 @@ class RosMapStreamNode(object):
 
     def _generate_artifact(self, session):
         commands = build_integration_commands(self.config, session.paths.values)
+        mapping_stack_stopped = False
         try:
             self._send_session_message(session, "artifact_status", {
-                "state": "generating", "message": "stopping FAST_LIO and saving PCD",
+                "state": "generating", "message": "saving map through accumulator service",
+                "reason": ""})
+            self._run_command(
+                "save_map", commands["save_map"],
+                timeout=self.config["map_accumulator_save_timeout_seconds"] + 6.0)
+            fingerprint = require_fresh_file(
+                self.config["accumulator_pcd_path"],
+                session.accumulator_pcd_baseline,
+                session.mapping_started_at_ns)
+            self._log_info(
+                "mapping accumulator freshness passed session=%s fingerprint=%s",
+                session.identity["session_id"][:8], fingerprint)
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating", "message": "stopping mapping process group",
                 "reason": ""})
             self._run_command(
                 "stop_fast_lio", commands["stop_fast_lio"],
                 timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
-            fingerprint = require_fresh_file(
-                self.config["generated_pcd_path"], session.source_pcd_baseline,
-                session.mapping_started_at_ns)
-            self._log_info(
-                "mapping source freshness passed session=%s fingerprint=%s",
-                session.identity["session_id"][:8], fingerprint)
+            mapping_stack_stopped = True
             self._send_session_message(session, "artifact_status", {
                 "state": "generating", "message": "generating PGM and map YAML",
                 "reason": ""})
@@ -626,7 +662,6 @@ class RosMapStreamNode(object):
                 "sha256": descriptor["sha256"], "expires_at": expires_at,
                 "reason": "",
             }
-            self._send_session_message(session, "artifact_status", payload)
             self._cleanup_fragments(session)
             with self.lock:
                 if self.session is session:
@@ -634,7 +669,16 @@ class RosMapStreamNode(object):
                     self.state = "serving"
                     self.session = None
                     self.state = "standby"
+            self._send_session_message(session, "artifact_status", payload)
         except Exception as exc:
+            if not mapping_stack_stopped:
+                try:
+                    self._run_command(
+                        "abort_after_save_failure", commands["abort_fast_lio"],
+                        timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+                except Exception as cleanup_exc:
+                    self._log_error(
+                        "mapping cleanup after save failure also failed: %s", cleanup_exc)
             self._send_session_message(session, "artifact_status", {
                 "state": "error", "reason": str(exc)})
             self._cleanup_fragments(session)
@@ -726,6 +770,10 @@ class RosMapStreamNode(object):
 
     def _process_cloud(self, token, session, message, stamp_ns, pose, received_at):
         try:
+            if self.transform_lookup is None:
+                raise ProcessingError("preview TF lookup is not configured")
+            preview_from_map = self.transform_lookup.lookup(
+                self.config["preview_frame"], self.config["map_frame"], stamp_ns)
             points = extract_pointcloud2(message)
             if self.config["cloud_coordinates"] == "map":
                 points = map_points_to_sensor(
@@ -748,7 +796,7 @@ class RosMapStreamNode(object):
             remaining = self.config["max_window_points"] - session.window_points
             if remaining > 0:
                 points = points[:remaining]
-                session.scans.append((points, pose.transform, stamp_ns))
+                session.scans.append((points, pose.transform, stamp_ns, preview_from_map))
                 session.window_points += len(points)
             flush = (received_at - session.window_started_at >= self.config["sample_window_seconds"]
                      or session.window_points >= self.config["max_window_points"])
@@ -792,6 +840,8 @@ class RosMapStreamNode(object):
                     continue
                 points = sensor_points_to_map(
                     points, reference_pose, self.config["body_from_sensor"])
+                preview_from_map = scans[-1][3]
+                points = transform_points(points, preview_from_map)
                 with self.lock:
                     if self.session is not session or session.token != token or session.state != "mapping":
                         continue
@@ -813,10 +863,18 @@ class RosMapStreamNode(object):
                     "url": "http://%s:%d%s?token=%s" % (
                         host, self.artifact_server.port, route, http_token),
                     "byte_count": descriptor["byte_count"], "sha256": descriptor["sha256"],
-                    "point_count": len(points), "frame_id": self.config["map_frame"],
+                    "point_count": len(points), "frame_id": self.config["preview_frame"],
+                    "source_frame_id": self.config["map_frame"],
+                    "display_from_source": dict(preview_from_map),
                     "started_at_ns": scans[0][2], "ended_at_ns": scans[-1][2],
                     "expires_at": expires_at,
                 }
+                self._log_info(
+                    "mapping preview transform fragment=%d source=%s target=%s "
+                    "xyz=(%.3f,%.3f,%.3f)",
+                    fragment_id, self.config["map_frame"], self.config["preview_frame"],
+                    preview_from_map["x"], preview_from_map["y"],
+                    preview_from_map["z"])
                 with self.lock:
                     if self.session is not session or session.token != token or session.state != "mapping":
                         self.artifact_server.unregister(http_token, delete=True)
@@ -927,7 +985,7 @@ class RosMapStreamNode(object):
         payload = {
             "request_id": command["payload"]["request_id"], "accepted": False,
             "checks": checks, "sample_window_seconds": self.config["sample_window_seconds"],
-            "frame_id": self.config["map_frame"],
+            "frame_id": self.config["preview_frame"],
             "capability_version": self.config["capability_version"],
             "error_code": error_code, "reason": wire_reason,
         }
@@ -1078,11 +1136,13 @@ def run():
         "~device_config_file", device_package_path + "/config/device.yaml")
     try:
         config = load_config(mapping_path, device_path)
+        transform_lookup = RosTfTransformLookup(
+            rospy, config["preview_transform_timeout_seconds"])
         node = RosMapStreamNode(
-            rospy, config,
+            rospy, config, transform_lookup=transform_lookup,
             log_path=os.path.expanduser("~/.ros/ccs_edge_dev/log/map_stream.log"))
         node.start()
-    except (ConfigError, OSError, ArtifactError) as exc:
+    except (ConfigError, OSError, ArtifactError, ProcessingError) as exc:
         rospy.logfatal("epgeneral_map_stream startup failed: %s", exc)
         return
     rospy.spin()

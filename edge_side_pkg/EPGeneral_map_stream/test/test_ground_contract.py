@@ -24,7 +24,10 @@ class GroundContractTests(unittest.TestCase):
             descriptor = CloudFragmentDescriptor(
                 1, "http://127.0.0.1/fragment.pcd?token=x",
                 metadata["byte_count"], metadata["sha256"], len(points),
-                "lio_odom", 100, 200, datetime.now(timezone.utc),
+                "odom", "lio_odom",
+                {"x": 0.0, "y": 0.0, "z": 0.0,
+                 "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0},
+                100, 200, datetime.now(timezone.utc),
             )
             loaded = load_preview_pcd(Path(path), descriptor)
         np.testing.assert_allclose(loaded, points, rtol=0, atol=0)

@@ -7,7 +7,8 @@ import unittest
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT_NAMES = (
-    "start_fast_lio.sh", "stop_fast_lio.sh", "abort_fast_lio.sh", "generate_pgm.sh",
+    "start_fast_lio.sh", "stop_fast_lio.sh", "abort_fast_lio.sh", "save_map.sh",
+    "generate_pgm.sh",
 )
 
 
@@ -36,6 +37,17 @@ class ScriptTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_mapping_prerequisites_starts_map_accumulator(self):
+        launch_path = os.path.join(PACKAGE, "launch", "mapping_prerequisites.launch")
+        with open(launch_path, "r", encoding="utf-8") as stream:
+            launch = stream.read()
+        self.assertIn("$(find go2_map_accumulator)/launch/map_accumulator.launch", launch)
+
+        start_path = os.path.join(PACKAGE, "scripts", "start_fast_lio.sh")
+        with open(start_path, "r", encoding="utf-8") as stream:
+            start = stream.read()
+        self.assertIn("/go2_map_accumulator)", start)
+
     @unittest.skipIf(os.name == "nt" or not shutil.which("bash") or not shutil.which("setsid"),
                      "native Bash and setsid are required")
     def test_fast_lio_starts_before_mapping_prerequisites_and_abort_cleans_pid(self):
@@ -58,7 +70,7 @@ if grep -q '^fast_lio ' <<<"${events}"; then
   printf '%s\n' /laserMapping
 fi
 if grep -q '^epgeneral_map_stream ' <<<"${events}"; then
-  printf '%s\n' /go2_tf_manager /go2_pose_adapter /cloud_to_base /cloud_world_to_odom
+  printf '%s\n' /go2_tf_manager /go2_pose_adapter /cloud_to_base /cloud_world_to_odom /go2_map_accumulator
 fi
 """)
             executable("roslaunch", """#!/usr/bin/env bash
@@ -90,20 +102,22 @@ d435i_mount:
             os.chmod(start, 0o755)
             pid_file = os.path.join(directory, "mapping.pid")
             log_file = os.path.join(directory, "mapping.log")
-            generated_pcd = os.path.join(directory, "output", "scans.pcd")
-            os.makedirs(os.path.dirname(generated_pcd))
+            existing_pcd = os.path.join(directory, "output", "public_map.pcd")
+            os.makedirs(os.path.dirname(existing_pcd))
+            with open(existing_pcd, "w", encoding="ascii") as stream:
+                stream.write("existing map")
             environment = dict(os.environ, FAKE_ROS_EVENTS=events)
             checked = subprocess.run([
                 start, "--check", setup, extrinsics, setup,
                 "epgeneral_map_stream", "mapping_prerequisites.launch",
-                "fast_lio", "mapping.launch", generated_pcd,
+                "fast_lio", "mapping.launch",
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
                 env=environment, timeout=10)
             self.assertEqual(checked.returncode, 0, checked.stderr)
             result = subprocess.run([
                 start, setup, extrinsics, "2", setup,
                 "epgeneral_map_stream", "mapping_prerequisites.launch",
-                "fast_lio", "mapping.launch", pid_file, log_file, generated_pcd,
+                "fast_lio", "mapping.launch", pid_file, log_file,
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
                 env=environment, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -114,6 +128,8 @@ d435i_mount:
             self.assertTrue(launches[1].startswith("epgeneral_map_stream "))
             self.assertTrue(os.path.isfile(pid_file))
             self.assertTrue(os.path.isfile(pid_file + ".ready"))
+            with open(existing_pcd, "r", encoding="ascii") as stream:
+                self.assertEqual(stream.read(), "existing map")
 
             aborted = subprocess.run([
                 "bash", os.path.join(PACKAGE, "scripts", "abort_fast_lio.sh"),
@@ -130,6 +146,34 @@ d435i_mount:
                 supervisor_log.index("stage=fast_lio action=ready"),
                 supervisor_log.index("stage=prerequisites action=start"))
             self.assertNotIn("exited unexpectedly", supervisor_log)
+
+    @unittest.skipIf(os.name == "nt" or not shutil.which("bash")
+                     or not shutil.which("timeout"),
+                     "native Bash and timeout are required")
+    def test_save_map_sources_setup_and_calls_exact_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = os.path.join(directory, "bin")
+            output = os.path.join(directory, "maps", "current", "public_map.pcd")
+            event = os.path.join(directory, "service.log")
+            os.makedirs(binary)
+            os.makedirs(os.path.dirname(output))
+            rosservice = os.path.join(binary, "rosservice")
+            with open(rosservice, "w", encoding="utf-8") as stream:
+                stream.write("#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >\"$SAVE_EVENT\"\n")
+            os.chmod(rosservice, 0o755)
+            setup = os.path.join(directory, "setup.bash")
+            with open(setup, "w", encoding="utf-8") as stream:
+                stream.write('export PATH="%s:$PATH"\n' % binary)
+            environment = dict(os.environ, SAVE_EVENT=event)
+            result = subprocess.run([
+                "bash", os.path.join(PACKAGE, "scripts", "save_map.sh"),
+                setup, "/go2_map_accumulator/save", output, "2",
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+                env=environment, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(event, "r", encoding="utf-8") as stream:
+                self.assertEqual(stream.read().strip(),
+                                 "call /go2_map_accumulator/save")
 
 
 if __name__ == "__main__":

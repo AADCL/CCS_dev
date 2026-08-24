@@ -111,14 +111,18 @@ class FakeRunner(object):
     def run(self, arguments, timeout=None):
         name = os.path.basename(arguments[0])
         self.events.append("run:%s" % name)
-        if name == "stop_fast_lio.sh":
+        if name == "save_map.sh":
             content = ("VERSION .7\nFIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\n"
                        "WIDTH 1\nHEIGHT 1\nPOINTS 1\nDATA ascii\n1 0 0\n")
-            for path in (arguments[3], arguments[4]):
-                with io.open(path, "w", encoding="ascii") as stream:
-                    stream.write(content)
+            with io.open(arguments[3], "w", encoding="ascii") as stream:
+                stream.write(content)
             fresh_ns = time.time_ns() + 1_000_000_000
             os.utime(arguments[3], ns=(fresh_ns, fresh_ns))
+        elif name == "stop_fast_lio.sh":
+            with io.open(arguments[3], "r", encoding="ascii") as source:
+                content = source.read()
+            with io.open(arguments[4], "w", encoding="ascii") as stream:
+                stream.write(content)
         elif name == "generate_pgm.sh":
             with io.open(arguments[5], "wb") as stream:
                 stream.write(b"P5\n2 2\n255\n" + bytes((0, 254, 205, 254)))
@@ -129,6 +133,22 @@ class FakeRunner(object):
                     "occupied_thresh": 0.65, "free_thresh": 0.196,
                 }, stream)
         return "ok"
+
+
+class FakeTransformLookup(object):
+    def __init__(self, events):
+        self.events = events
+        self.transform = {
+            "x": 10.0, "y": -2.0, "z": 1.0,
+            "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+        }
+
+    def lookup(self, target_frame, source_frame, stamp_ns):
+        if not stamp_ns:
+            raise AssertionError("preview TF must not be queried during mapping startup")
+        self.events.append(
+            "tf:%s<-%s:%s" % (target_frame, source_frame, stamp_ns))
+        return dict(self.transform)
 
 
 class FakeArtifactServer(object):
@@ -157,7 +177,7 @@ class NodeTests(unittest.TestCase):
         self.config = dict(load_config(MAPPING, DEVICE))
         self.config.update(
             workspace_root=self.temp.name, min_free_bytes=1,
-            generated_pcd_path=os.path.join(self.temp.name, "generated.pcd"),
+            accumulator_pcd_path=os.path.join(self.temp.name, "accumulator.pcd"),
             source_pcd_path=os.path.join(self.temp.name, "source.pcd"),
             artifact_poll_seconds=0.001, artifact_stable_polls=2,
             artifact_generation_timeout_seconds=1.0,
@@ -167,10 +187,12 @@ class NodeTests(unittest.TestCase):
         self.clock_value = [10.0]
         self.events = []
         self.runner = FakeRunner(self.events)
+        self.transform_lookup = FakeTransformLookup(self.events)
         self.node = RosMapStreamNode(
             FakeRospy(self.config, self.events), self.config,
             clock=lambda: self.clock_value[0], message_resolver=lambda unused: object,
-            command_runner=self.runner, artifact_server=FakeArtifactServer())
+            command_runner=self.runner, artifact_server=FakeArtifactServer(),
+            transform_lookup=self.transform_lookup)
         self.node.socket = FakeSocket()
         self.identity = {"map_id": "map-1", "session_id": "a" * 32}
 
@@ -208,6 +230,7 @@ class NodeTests(unittest.TestCase):
         result = self.messages()[-1]
         self.assertEqual(result["message_type"], "prepare_result")
         self.assertTrue(result["payload"]["accepted"])
+        self.assertEqual(result["payload"]["frame_id"], "odom")
         first_count = len(self.node.socket.sent)
         self.prepare()
         self.assertEqual(len(self.node.socket.sent), first_count + 1)
@@ -261,6 +284,7 @@ class NodeTests(unittest.TestCase):
         self.assertLess(start, cloud_probe)
         self.assertLess(cloud_probe, pose_probe)
         self.assertLess(pose_probe, subscribe)
+        self.assertFalse(any(event.startswith("tf:") for event in self.events))
         messages = self.messages()
         starting = next(index for index, item in enumerate(messages)
                         if item["message_type"] == "session_status"
@@ -327,6 +351,8 @@ class NodeTests(unittest.TestCase):
         self.assertIs(queued_session, session)
         self.assertEqual(queued_token, session.token)
         self.assertEqual(len(scans), 2)
+        self.assertEqual(scans[-1][3], self.transform_lookup.transform)
+        self.assertIn("tf:odom<-lio_odom:123456789", self.events)
 
     def test_cloud_waits_for_matching_pose_when_callback_arrives_first(self):
         self.prepare()
@@ -353,10 +379,16 @@ class NodeTests(unittest.TestCase):
     def test_stop_ack_precedes_generating_and_ready(self):
         self.prepare()
         self.start()
-        self.node.handle_datagram(self.command("stop_mapping", {
-            "request_id": "stop-1", "reason": "done",
-        }), self.config["ground_station_ip"])
-        self.node.generation_thread.join(timeout=2.0)
+        def validate_fresh(*unused_args):
+            self.events.append("freshness_check")
+            return {"sha256": "fresh"}
+
+        with patch("epgeneral_map_stream.node.require_fresh_file",
+                   side_effect=validate_fresh):
+            self.node.handle_datagram(self.command("stop_mapping", {
+                "request_id": "stop-1", "reason": "done",
+            }), self.config["ground_station_ip"])
+            self.node.generation_thread.join(timeout=2.0)
         messages = self.messages()
         stop_index = next(index for index, item in enumerate(messages)
                           if item["message_type"] == "command_ack"
@@ -368,9 +400,68 @@ class NodeTests(unittest.TestCase):
                      and item["payload"]["state"] == "ready")
         self.assertLess(stop_index, generating_index)
         self.assertIn("token=token", ready["payload"]["url"])
+        self.assertLess(self.events.index("run:save_map.sh"),
+                        self.events.index("freshness_check"))
+        self.assertLess(self.events.index("freshness_check"),
+                        self.events.index("run:stop_fast_lio.sh"))
         self.assertLess(self.events.index("run:stop_fast_lio.sh"),
                         self.events.index("run:generate_pgm.sh"))
         self.assertEqual(self.node.state, "standby")
+
+    def test_save_failure_aborts_without_stopping_or_generating(self):
+        self.prepare()
+        self.start()
+        original_run = self.runner.run
+
+        def fail_save(arguments, timeout=None):
+            if os.path.basename(arguments[0]) == "save_map.sh":
+                self.events.append("run:save_map.sh")
+                raise RuntimeError("save service failed")
+            return original_run(arguments, timeout)
+
+        self.runner.run = fail_save
+        self.node.handle_datagram(self.command("stop_mapping", {
+            "request_id": "stop-save-failure", "reason": "done",
+        }), self.config["ground_station_ip"])
+        self.node.generation_thread.join(timeout=2.0)
+        self.assertIn("run:abort_fast_lio.sh", self.events)
+        self.assertNotIn("run:stop_fast_lio.sh", self.events)
+        self.assertNotIn("run:generate_pgm.sh", self.events)
+        error = next(item for item in self.messages()
+                     if item["message_type"] == "artifact_status"
+                     and item["payload"]["state"] == "error")
+        self.assertIn("save service failed", error["payload"]["reason"])
+
+    def test_missing_empty_or_stale_accumulator_pcd_aborts(self):
+        for mode in ("missing", "empty", "stale"):
+            with self.subTest(mode=mode):
+                self.tearDown()
+                self.setUp()
+                self.prepare()
+                if mode == "stale":
+                    with io.open(self.config["accumulator_pcd_path"],
+                                 "w", encoding="ascii") as stream:
+                        stream.write("old map")
+                self.start()
+                original_run = self.runner.run
+
+                def invalid_save(arguments, timeout=None):
+                    if os.path.basename(arguments[0]) == "save_map.sh":
+                        self.events.append("run:save_map.sh")
+                        if mode == "empty":
+                            with io.open(arguments[3], "wb"):
+                                pass
+                        return "ok"
+                    return original_run(arguments, timeout)
+
+                self.runner.run = invalid_save
+                self.node.handle_datagram(self.command("stop_mapping", {
+                    "request_id": "stop-invalid-" + mode, "reason": "done",
+                }), self.config["ground_station_ip"])
+                self.node.generation_thread.join(timeout=2.0)
+                self.assertIn("run:abort_fast_lio.sh", self.events)
+                self.assertNotIn("run:stop_fast_lio.sh", self.events)
+                self.assertNotIn("run:generate_pgm.sh", self.events)
 
     def test_abort_stops_fast_lio_without_generating_artifacts(self):
         self.prepare()

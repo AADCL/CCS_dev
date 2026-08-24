@@ -142,7 +142,7 @@ class CommandRunner(object):
         self.config = config
 
     def check(self, commands):
-        for name in ("check_fast_lio", "check_pgm"):
+        for name in ("check_fast_lio", "check_save_map", "check_pgm"):
             self.run(
                 commands[name], timeout=self.config["integration_check_timeout_seconds"])
 

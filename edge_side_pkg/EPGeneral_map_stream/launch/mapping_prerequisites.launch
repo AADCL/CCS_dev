@@ -12,4 +12,7 @@
 
   <include file="$(find cloud_frame_adapter)/launch/cloud_to_base.launch" />
   <include file="$(find cloud_frame_adapter)/launch/cloud_world_to_odom.launch" />
+
+  <!-- Keep the accumulator alive before stop_mapping invokes its save service. -->
+  <include file="$(find go2_map_accumulator)/launch/map_accumulator.launch" />
 </launch>

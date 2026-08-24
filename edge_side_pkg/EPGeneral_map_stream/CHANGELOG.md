@@ -1,6 +1,33 @@
 # 更新记录
 
-<!-- epgeneral_map_stream_VERSION: 0.7.2 -->
+<!-- epgeneral_map_stream_VERSION: 0.9.1 -->
+
+## v0.9.1 - 2026-08-24
+
+- `mapping_prerequisites.launch` 新增 `go2_map_accumulator/map_accumulator.launch`，确保停止建图调用 `/go2_map_accumulator/save` 前保存节点已运行。
+- `start_fast_lio.sh` 将 `/go2_map_accumulator` 纳入启动就绪检查；启动失败或运行中退出时沿用受控进程组清理。
+
+## v0.9.0 - 2026-08-24
+
+- 配置升级为 schema 6，新增 `map_accumulator` setup、保存服务、60 秒超时和固定输出路径。
+- 停止建图改为先调用 `/go2_map_accumulator/save`，在 FAST_LIO 仍运行时验证当前 session PCD 新鲜度，再停止进程组并继续 PGM/YAML 与 ZIP 流程。
+- `start_fast_lio.sh` 不再接收或删除生成 PCD；保存或新鲜度失败时走 abort 清理并返回成果错误。
+- 新增 `save_map.sh` 及服务调用、严格顺序、失败清理和旧文件保护测试。
+
+## v0.8.1 - 2026-08-24
+
+- 移除 `start_mapping` 启动阶段对 `odom <- lio_odom` 的零时间戳可用性探测和日志记录，坐标树短暂未合并不再导致启动失败。
+- FAST_LIO 点云、里程计和坐标转换流程就绪后即可返回启动 ACK；TF 只随实际点云窗口按其时间戳查询、记录并用于坐标转换。
+- 保持 schema 5、`ccs-map-stream-v2` 和地面站 v0.18.3 兼容。
+- 已部署到 `192.168.50.100`，Noetic 重建、53 项端侧测试和版本一致性检查通过。
+
+## v0.8.0 - 2026-08-24
+
+- 配置升级为 schema 5，新增实时预览目标坐标系 `odom` 和 TF 查询超时。
+- 端侧按点云窗口参考时间记录 `odom <- lio_odom`，将 PCD 坐标实际转换到 `odom` 后再回传，禁止只改 frame 标签。
+- `cloud_fragment_ready` 增加 `source_frame_id` 和 `display_from_source`；FAST_LIO 最终成果继续使用 `lio_odom`，平台验收后切换为 `map`。
+- 增加 `tf2_ros` 依赖、TF 可用性启动探测、变换日志和坐标变换回归测试。
+- 2026-08-24 在 `192.168.50.100` 完成 Noetic 重建、53 项端侧测试及 MID360 真机 start/abort；按实际点云时间戳查询 `odom <- lio_odom` 成功，清理后无 PID 和节点残留。
 
 ## v0.7.2 - 2026-08-23
 

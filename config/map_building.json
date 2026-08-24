@@ -3,7 +3,8 @@
   "protocol_id": "ccs-map-stream-v1",
   "protocol_v2_id": "ccs-map-stream-v2",
   "frames": {
-    "remote_mapping": "lio_odom",
+    "remote_mapping": "odom",
+    "remote_artifact": "lio_odom",
     "final_map": "map"
   },
   "network": {

@@ -1,8 +1,8 @@
 # epgeneral_map_stream
 
-<!-- epgeneral_map_stream_VERSION: 0.7.2 -->
+<!-- epgeneral_map_stream_VERSION: 0.9.1 -->
 
-版本：`v0.7.2`。
+版本：`v0.9.1`。
 
 `epgeneral_map_stream` 是 ROS Noetic/Python 3 端侧遥控建图包，使用独立的
 `ccs-map-stream-v2`。节点监听平台 UDP 14561，向协商得到的平台 UDP 14562
@@ -21,13 +21,22 @@ v2 不自动回退 v1。实时点云仅用于平台预览，最终地图以成�
 2. `start_mapping` 协商 `preview_transport=pcd_fragment_http` 和默认 1 秒分片周期，立即发送
    `session_status=starting`，再执行 `start_fast_lio.sh`。脚本先校验设备外参，启动并等待
    FAST_LIO `/laserMapping`，然后启动 TF manager、位姿适配器和两路点云坐标适配器。
-   输出就绪后，有界后台队列把同步点云
-   转换到 `lio_odom`，原子写入不可变二进制 XYZ PCD，并用 `cloud_fragment_ready` 发布
-   URL、大小和 SHA-256。平台校验并显示后发送 `cloud_fragment_ack`，端侧删除临时文件。
+   启动阶段不查询或记录 `odom <- lio_odom`，避免坐标树短暂未连通时拒绝建图。
+   点云与位姿输出就绪后，有界后台队列把同步点云
+   先聚合到 `lio_odom`，再随每个点云窗口按其参考时间查询并记录
+   `odom <- lio_odom` TF，将坐标实际转换到
+   `odom` 后原子写入不可变二进制 XYZ PCD，并用 `cloud_fragment_ready` 发布
+   URL、大小、SHA-256、源/目标 frame 和所用 TF。平台校验并以 `odom` 显示后发送
+   `cloud_fragment_ack`，端侧删除临时文件。最终成果仍保持 FAST_LIO 的 `lio_odom`，
+   平台完整验收后才将成果基准定义为 `map`。
    两路 FAST_LIO 输出按 header 时间戳匹配；点云短暂先到时最多缓存 3 帧等待位姿，
    只有位姿时间越过 50 ms 同步窗口或队列溢出才丢帧。
-3. `stop_mapping` 立即停止订阅并返回 ACK；后台通过 `stop_fast_lio.sh` 停止
-   FAST_LIO，将本 session 新生成的 `artifacts.generated_pcd_path` 快照到会话目录，
+3. `stop_mapping` 立即停止订阅并返回 ACK；后台先由 `save_map.sh` 加载 Go2 MID360
+   setup 并调用 `/go2_map_accumulator/save`。`start_fast_lio.sh` 已在建图启动阶段通过
+   `mapping_prerequisites.launch` 启动 `go2_map_accumulator/map_accumulator.launch`，并等待
+   `/go2_map_accumulator` 节点就绪。服务完成后，在 FAST_LIO 仍运行时验证
+   `artifacts.accumulator_pcd_path` 相对 session 基线已更新且非空，再通过
+   `stop_fast_lio.sh` 停止整个建图进程组并将 PCD 快照到会话目录，
    再由 `generate_pgm.sh` 归档既有公开地图、原子更新 `artifacts.source_pcd_path`
    并生成 PGM/YAML。固定输出 PCD 必须在本 session 启动后发生指纹变化，否则作为旧成果拒绝；
    PGM 失败时恢复原公开 PCD、PGM 和 YAML。
@@ -37,16 +46,18 @@ v2 不自动回退 v1。实时点云仅用于平台预览，最终地图以成�
 ## 配置 FAST_LIO 与 PGM 生成器
 
 必须按设备修改 `config/mapping.yaml` 中的话题、frame、静态外参、工作目录和
-`integrations.mapping_prerequisites`、`integrations.fast_lio`、`integrations.pgm`。
+`integrations.mapping_prerequisites`、`integrations.fast_lio`、
+`integrations.map_accumulator`、`integrations.pgm`。
 Go2 EDU 默认读取 `~/go2_mid360_nav/calibration/go2_edu_02/extrinsics.yaml`，并通过
 `mapping_prerequisites.launch` 的 `extrinsics_file` 参数映射到下游 launch 的 `extrinsics`。
 prepare 的 `map_generation`
 会检查 setup、ROS 包、launch 和 FAST_LIO 固定输出目录，失败时不会进入 start。
 
-Python 节点仅以参数数组调用仓库提供的四个 Bash 包装器，不执行 shell 字符串：
+Python 节点仅以参数数组调用仓库提供的五个 Bash 包装器，不执行 shell 字符串：
 
 ```text
 scripts/start_fast_lio.sh
+scripts/save_map.sh
 scripts/stop_fast_lio.sh
 scripts/abort_fast_lio.sh
 scripts/generate_pgm.sh
@@ -62,8 +73,9 @@ scripts/generate_pgm.sh
 
 FAST_LIO start 必须在启动超时内产生输出。Go2 MID360 profile 使用本包的
 `fast_lio_mapping.launch` 加载 `go2_bringup` 参数并启用退出保存；其 setup 必须是
-同时 overlay 导航工作区的 edge workspace。固定输出写入 `artifacts.generated_pcd_path`，
-验证为当前 session 后才发布到 `artifacts.source_pcd_path`。PGM launch 以前台退出码表示完成。
+同时 overlay 导航工作区的 edge workspace。map accumulator 输出写入
+`artifacts.accumulator_pcd_path`，验证为当前 session 后才快照并发布到
+`artifacts.source_pcd_path`。PGM launch 以前台退出码表示完成。
 会话文件为：
 
 ```text
@@ -80,7 +92,7 @@ YAML 的 `image` 必须引用 `map.pgm`，并包含有效的 `resolution`、三�
 ```bash
 sudo apt update
 sudo apt install python3-yaml python3-msgpack python3-numpy python3-catkin-pkg \
-  python3-rospkg ros-noetic-sensor-msgs ros-noetic-nav-msgs
+  python3-rospkg ros-noetic-sensor-msgs ros-noetic-nav-msgs ros-noetic-tf2-ros
 sudo install -d -o "$USER" -g "$USER" /var/lib/ccs/map_stream
 cd ~/catkin_ws
 source /opt/ros/noetic/setup.bash

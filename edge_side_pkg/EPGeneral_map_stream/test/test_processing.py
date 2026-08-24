@@ -5,7 +5,8 @@ import numpy as np
 
 from epgeneral_map_stream.processing import (
     PoseBuffer, PoseSample, aggregate_window, map_points_to_sensor,
-    preprocess_points, transform_from_pose,
+    preprocess_points, transform_from_pose, transform_from_stamped,
+    transform_points,
 )
 
 
@@ -57,3 +58,21 @@ class ProcessingTests(unittest.TestCase):
         points = map_points_to_sensor(
             np.asarray([[12.0, 0.0, 0.0]], dtype=np.float32), pose, extrinsic)
         np.testing.assert_allclose(points, [[1.0, 0.0, 0.0]])
+
+    def test_stamped_transform_is_parsed_and_normalized(self):
+        message = SimpleNamespace(transform=SimpleNamespace(
+            translation=SimpleNamespace(x=1.0, y=2.0, z=3.0),
+            rotation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=2.0),
+        ))
+        result = transform_from_stamped(message)
+        self.assertEqual(result["x"], 1.0)
+        self.assertEqual(result["qw"], 1.0)
+
+    def test_points_are_transformed_into_preview_frame(self):
+        transform = {
+            "x": 10.0, "y": -2.0, "z": 1.0,
+            "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+        }
+        result = transform_points(
+            np.asarray([[1.0, 2.0, 3.0], [-1.0, 0.0, 0.0]]), transform)
+        np.testing.assert_allclose(result, [[11.0, 0.0, 4.0], [9.0, -2.0, 1.0]])

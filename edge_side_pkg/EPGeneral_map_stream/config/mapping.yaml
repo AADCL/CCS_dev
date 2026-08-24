@@ -1,4 +1,4 @@
-schema_version: 4
+schema_version: 6
 protocol_id: "ccs-map-stream-v2"
 
 network:
@@ -36,6 +36,7 @@ ros:
       orientation_path: "pose.pose.orientation"
   frames:
     map: "lio_odom"
+    preview: "odom"
     body: "body_lio"
     sensor: "body_lio"
   body_from_sensor:
@@ -62,6 +63,10 @@ integrations:
     stop_timeout_seconds: 30.0
     pid_path: "{session_dir}/fast_lio.pid"
     log_path: "{session_dir}/fast_lio.log"
+  map_accumulator:
+    setup_file: "/home/nvidia/go2_mid360_nav/catkin_ws/devel/setup.bash"
+    service: "/go2_map_accumulator/save"
+    save_timeout_seconds: 60.0
   pgm:
     setup_file: "/home/nvidia/go2_mid360_nav/catkin_ws/devel/setup.bash"
     package: "go2_map_tools"
@@ -74,6 +79,7 @@ integrations:
 sync:
   tolerance_seconds: 0.05
   pose_buffer_size: 100
+  preview_transform_timeout_seconds: 0.20
 
 preprocess:
   sample_window_seconds: 1.0
@@ -104,7 +110,7 @@ limits:
 
 artifacts:
   workspace_root: "/home/nvidia/.ros/ccs_edge_dev/map_stream"
-  generated_pcd_path: "/home/nvidia/go2_mid360_nav/catkin_ws/src/vendor_links/FAST_LIO/PCD/scans.pcd"
+  accumulator_pcd_path: "/home/nvidia/go2_mid360_nav/maps/current/public_map.pcd"
   source_pcd_path: "/home/nvidia/go2_mid360_nav/maps/corridor_01/public_map.pcd"
   source_pgm_path: "/home/nvidia/go2_mid360_nav/maps/corridor_01/map.pgm"
   source_yaml_path: "/home/nvidia/go2_mid360_nav/maps/corridor_01/map.yaml"

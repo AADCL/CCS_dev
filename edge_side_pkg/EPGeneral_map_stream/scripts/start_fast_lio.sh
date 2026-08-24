@@ -90,7 +90,7 @@ child_exit_is_expected() {
 }
 
 supervise() {
-  [[ "$#" -ge 11 ]] || fail "internal supervisor arguments are incomplete"
+  [[ "$#" -ge 10 ]] || fail "internal supervisor arguments are incomplete"
   local prerequisite_setup="$1"
   local extrinsics_file="$2"
   local prerequisite_timeout="$3"
@@ -101,8 +101,7 @@ supervise() {
   local fast_launch="$8"
   local pid_file="$9"
   local log_file="${10}"
-  local generated_pcd="${11}"
-  shift 11
+  shift 10
 
   CHILD_PIDS=()
   SHUTTING_DOWN=false
@@ -144,7 +143,8 @@ supervise() {
   deadline=$(awk -v now="$(date +%s)" -v timeout="${prerequisite_timeout}" \
     'BEGIN { print now + timeout }')
   local expected_nodes=(
-    /go2_tf_manager /go2_pose_adapter /cloud_to_base /cloud_world_to_odom)
+    /go2_tf_manager /go2_pose_adapter /cloud_to_base /cloud_world_to_odom
+    /go2_map_accumulator)
   while true; do
     kill -0 "${prerequisite_pid}" 2>/dev/null \
       || fail "coordinate prerequisite launch exited during startup; see ${log_file}"
@@ -194,20 +194,18 @@ if [[ "${1:-}" == "--supervise" ]]; then
 fi
 
 if [[ "${1:-}" == "--check" ]]; then
-  [[ "$#" -eq 9 ]] || fail \
-    "usage: $0 --check PREREQUISITE_SETUP EXTRINSICS FAST_SETUP PREREQUISITE_PACKAGE PREREQUISITE_LAUNCH FAST_PACKAGE FAST_LAUNCH GENERATED_PCD"
+  [[ "$#" -eq 8 ]] || fail \
+    "usage: $0 --check PREREQUISITE_SETUP EXTRINSICS FAST_SETUP PREREQUISITE_PACKAGE PREREQUISITE_LAUNCH FAST_PACKAGE FAST_LAUNCH"
   validate_extrinsics "$3"
   source_setup "$2"
   source_setup "$4"
   check_launch "$5" "$6" "extrinsics_file:=$3"
   check_launch "$7" "$8"
-  [[ -d "$(dirname "$9")" && -w "$(dirname "$9")" ]] \
-    || fail "generated PCD directory is not writable: $(dirname "$9")"
   exit 0
 fi
 
-[[ "$#" -ge 11 ]] || fail \
-  "usage: $0 PREREQUISITE_SETUP EXTRINSICS PREREQUISITE_TIMEOUT FAST_SETUP PREREQUISITE_PACKAGE PREREQUISITE_LAUNCH FAST_PACKAGE FAST_LAUNCH PID_FILE LOG_FILE GENERATED_PCD [ROSLAUNCH_ARGS...]"
+[[ "$#" -ge 10 ]] || fail \
+  "usage: $0 PREREQUISITE_SETUP EXTRINSICS PREREQUISITE_TIMEOUT FAST_SETUP PREREQUISITE_PACKAGE PREREQUISITE_LAUNCH FAST_PACKAGE FAST_LAUNCH PID_FILE LOG_FILE [ROSLAUNCH_ARGS...]"
 PREREQUISITE_SETUP="$1"
 EXTRINSICS_FILE="$2"
 PREREQUISITE_TIMEOUT="$3"
@@ -218,8 +216,7 @@ FAST_PACKAGE="$7"
 FAST_LAUNCH="$8"
 PID_FILE="$9"
 LOG_FILE="${10}"
-GENERATED_PCD_PATH="${11}"
-shift 11
+shift 10
 
 [[ "${PREREQUISITE_TIMEOUT}" =~ ^[0-9]+([.][0-9]+)?$ ]] \
   || fail "prerequisite timeout is invalid"
@@ -240,14 +237,13 @@ if [[ -r "${PID_FILE}" ]]; then
   rm -f "${PID_FILE}"
 fi
 
-mkdir -p "$(dirname "${GENERATED_PCD_PATH}")"
-rm -f -- "${GENERATED_PCD_PATH}" "${PID_FILE}.ready" "${PID_FILE}.stopping"
+rm -f -- "${PID_FILE}.ready" "${PID_FILE}.stopping"
 
 setsid "$0" --supervise \
   "${PREREQUISITE_SETUP}" "${EXTRINSICS_FILE}" "${PREREQUISITE_TIMEOUT}" \
   "${FAST_SETUP}" "${PREREQUISITE_PACKAGE}" "${PREREQUISITE_LAUNCH}" \
   "${FAST_PACKAGE}" "${FAST_LAUNCH}" "${PID_FILE}" "${LOG_FILE}" \
-  "${GENERATED_PCD_PATH}" "$@" >>"${LOG_FILE}" 2>&1 &
+  "$@" >>"${LOG_FILE}" 2>&1 &
 SUPERVISOR_PID=$!
 TEMP_PID="${PID_FILE}.tmp.$$"
 printf '%s\n' "${SUPERVISOR_PID}" >"${TEMP_PID}"
