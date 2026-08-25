@@ -1,8 +1,8 @@
 # epgeneral_mqtav 开发日志
 
-<!-- epgeneral_mqtav_VERSION: 0.3.1 -->
+<!-- epgeneral_mqtav_VERSION: 0.4.0 -->
 
-当前版本：`v0.3.1`
+当前版本：`v0.4.0`
 
 ## v0.3.1 - 2026-08-21
 

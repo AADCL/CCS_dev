@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 from PySide6.QtCore import QEvent, QSettings, QTimer, Signal, Qt, QObject
-from PySide6.QtGui import QColor, QFontDatabase, QMouseEvent
+from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QMouseEvent, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
     QButtonGroup,
@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QStackedWidget,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -47,6 +49,7 @@ from ..map_building import MapBuildingSessionSnapshot
 from ..map_building_v2 import RemoteMappingSnapshot
 from ..map_fusion import MapFusionError, MapFusionRepository, MapFusionRunner
 from ..models import (
+    ConnectionStatus,
     DeviceMapMarker,
     DeviceSnapshot,
     MapCreatorDevice,
@@ -64,12 +67,14 @@ from ..models import (
     PgmFusionSource,
     PgmTransform2D,
     PoseTelemetry,
+    TaskStatus,
     UdpLinkStatus,
 )
 from ..pgm_map import PcdToPgmOptions, PgmMapError, PgmMapLoader
 from ..pgm_fusion import PgmFusionEngine, PgmFusionError, pcd_sha256
 from ..point_cloud import MapPointCloudLoader, PointCloudError
 from ..styles import ThemeMode, ThemePalette, theme_palette
+from ..srt_video import SrtVideoWidget
 from ..widgets import NoButtonDoubleSpinBox, NoButtonSpinBox
 
 
@@ -80,6 +85,100 @@ STATUS_TEXT = {
 }
 
 MAP_PAN_DRAG_SPEED = 3.0
+
+RAINBOW_STOPS = np.asarray((
+    (1.0, 0.0, 0.0, 1.0),
+    (1.0, 1.0, 0.0, 1.0),
+    (0.0, 1.0, 0.0, 1.0),
+    (0.0, 1.0, 1.0, 1.0),
+    (0.0, 0.0, 1.0, 1.0),
+    (0.5, 0.0, 1.0, 1.0),
+), dtype=np.float32)
+
+
+def height_rainbow_colors(
+    points: np.ndarray,
+    minimum_z: float | None = None,
+    maximum_z: float | None = None,
+) -> np.ndarray:
+    """Return red-low to violet-high per-point colors for finite XYZ points."""
+    array = np.asarray(points, dtype=np.float32)
+    if array.ndim != 2 or array.shape[1] != 3:
+        raise ValueError("点云必须为 Nx3 数组")
+    if not len(array):
+        return np.empty((0, 4), dtype=np.float32)
+    finite = np.isfinite(array).all(axis=1)
+    colors = np.zeros((len(array), 4), dtype=np.float32)
+    if not finite.any():
+        return colors
+    z_values = array[finite, 2]
+    low = float(np.min(z_values)) if minimum_z is None else float(minimum_z)
+    high = float(np.max(z_values)) if maximum_z is None else float(maximum_z)
+    if not math.isfinite(low) or not math.isfinite(high):
+        low, high = float(np.min(z_values)), float(np.max(z_values))
+    if high <= low:
+        normalized = np.full(len(z_values), 0.5, dtype=np.float32)
+    else:
+        normalized = np.clip((z_values - low) / (high - low), 0.0, 1.0)
+    scaled = normalized * (len(RAINBOW_STOPS) - 1)
+    lower = np.floor(scaled).astype(np.intp)
+    upper = np.minimum(lower + 1, len(RAINBOW_STOPS) - 1)
+    ratio = (scaled - lower).reshape(-1, 1)
+    colors[finite] = RAINBOW_STOPS[lower] * (1.0 - ratio) + RAINBOW_STOPS[upper] * ratio
+    return colors
+
+
+def _rpy_rotation_matrix(roll_deg: float, pitch_deg: float, yaw_deg: float) -> np.ndarray:
+    roll, pitch, yaw = np.radians((roll_deg, pitch_deg, yaw_deg))
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    return np.asarray((
+        (cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
+        (sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr),
+        (-sp, cp * sr, cp * cr),
+    ), dtype=np.float64)
+
+
+def transform_device_pose(pose: PoseTelemetry, transform: MapTransform) -> PoseTelemetry:
+    """Apply target-frame-from-source rigid transform to a UDP device pose."""
+    outer = _rpy_rotation_matrix(*transform.rotation_rpy_deg)
+    inner = _rpy_rotation_matrix(pose.roll, pose.pitch, pose.yaw)
+    position = outer @ np.asarray((pose.x, pose.y, pose.z), dtype=np.float64)
+    position += np.asarray(transform.translation_m, dtype=np.float64)
+    rotation = outer @ inner
+    pitch = math.asin(float(np.clip(-rotation[2, 0], -1.0, 1.0)))
+    if abs(math.cos(pitch)) > 1e-8:
+        roll = math.atan2(rotation[2, 1], rotation[2, 2])
+        yaw = math.atan2(rotation[1, 0], rotation[0, 0])
+    else:
+        roll = 0.0
+        yaw = math.atan2(-rotation[0, 1], rotation[1, 1])
+    return PoseTelemetry(
+        float(position[0]), float(position[1]), float(position[2]),
+        math.degrees(roll), math.degrees(pitch), math.degrees(yaw),
+        pose.sample_age_seconds,
+    )
+
+
+def device_task_status_text(
+    device: DeviceSnapshot,
+    remote: RemoteMappingSnapshot | None = None,
+) -> str:
+    if remote is not None and remote.device_id.casefold() == device.device_id.casefold():
+        return {
+            "preparing": "协商", "ready": "准备建图", "starting": "准备建图",
+            "mapping": "建图中", "stopping": "成果处理中",
+            "generating": "成果处理中", "downloading": "成果处理中",
+            "validating": "成果处理中", "completed": "建图完成",
+            "warning": "建图异常", "failed": "建图失败", "aborting": "正在取消",
+            "aborted": "已取消", "cancelled": "已取消",
+        }.get(remote.state, "等待")
+    return {
+        TaskStatus.STANDBY: "等待", TaskStatus.EXECUTING: "执行任务",
+        TaskStatus.PAUSED: "已暂停", TaskStatus.COMPLETED: "已完成",
+        TaskStatus.UNKNOWN: "未知",
+    }.get(device.task_status, "未知")
 
 
 class MapViewerSettings(QObject):
@@ -1151,6 +1250,302 @@ class MappingDeviceDialog(QDialog):
         return next((device_id for device_id, radio in self.radios.items() if radio.isChecked()), None)
 
 
+class RainbowHeightBar(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedSize(82, 8)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        gradient = QLinearGradient(0, 0, self.width(), 0)
+        for index, color in enumerate(RAINBOW_STOPS):
+            gradient.setColorAt(index / (len(RAINBOW_STOPS) - 1), QColor.fromRgbF(*color))
+        painter.fillRect(self.rect(), gradient)
+
+
+class HeightColorLegend(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        self.minimum_label = QLabel("")
+        self.minimum_label.setObjectName("muted")
+        self.bar = RainbowHeightBar()
+        self.maximum_label = QLabel("")
+        self.maximum_label.setObjectName("muted")
+        layout.addWidget(self.minimum_label)
+        layout.addWidget(self.bar)
+        layout.addWidget(self.maximum_label)
+        self.setVisible(False)
+
+    def set_range(self, minimum_z: float | None, maximum_z: float | None) -> None:
+        visible = minimum_z is not None and maximum_z is not None
+        self.setVisible(visible)
+        if visible:
+            self.minimum_label.setText(f"{minimum_z:.1f}m")
+            self.maximum_label.setText(f"{maximum_z:.1f}m")
+
+
+class MapDeviceCard(QFrame):
+    selected = Signal(str)
+    video_requested = Signal(str, bool)
+
+    def __init__(self, device: DeviceSnapshot) -> None:
+        super().__init__()
+        self.setObjectName("mapOnlineDeviceCard")
+        self.device = device
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 9, 10, 10)
+        layout.setSpacing(6)
+        self.name_button = QPushButton()
+        self.name_button.setObjectName("mapDeviceSelectButton")
+        self.name_button.setCheckable(True)
+        self.name_button.clicked.connect(lambda: self.selected.emit(self.device.device_id))
+        layout.addWidget(self.name_button)
+        self.identity = QLabel()
+        self.identity.setObjectName("muted")
+        self.identity.setWordWrap(True)
+        layout.addWidget(self.identity)
+        self.task_state = QLabel()
+        self.task_state.setObjectName("statusPill")
+        layout.addWidget(self.task_state)
+        battery_row = QHBoxLayout()
+        battery_row.setSpacing(7)
+        self.battery = QProgressBar()
+        self.battery.setRange(0, 100)
+        self.battery.setTextVisible(False)
+        self.battery.setFixedHeight(8)
+        self.battery_text = QLabel("--")
+        self.battery_text.setObjectName("muted")
+        battery_row.addWidget(self.battery, 1)
+        battery_row.addWidget(self.battery_text)
+        layout.addLayout(battery_row)
+        self.frame_name = QLabel()
+        self.frame_name.setObjectName("muted")
+        self.frame_name.setWordWrap(True)
+        layout.addWidget(self.frame_name)
+        self.frame_note = QLabel()
+        self.frame_note.setObjectName("mapFrameNote")
+        self.frame_note.setWordWrap(True)
+        self.frame_note.setVisible(False)
+        layout.addWidget(self.frame_note)
+        self.video = SrtVideoWidget(parent=self)
+        self.video.setMinimumSize(320, 250)
+        self.video.stream_switch.toggled.connect(
+            lambda enabled: self.video_requested.emit(self.device.device_id, bool(enabled))
+        )
+        layout.addWidget(self.video)
+        self.update_snapshot(device, None)
+
+    def update_snapshot(
+        self,
+        device: DeviceSnapshot,
+        remote: RemoteMappingSnapshot | None,
+    ) -> None:
+        self.device = device
+        self.name_button.setText(device.device_name)
+        type_name = device.device_type_name or device.device_type
+        self.identity.setText(f"类型 {type_name}  ·  ID {device.device_id}")
+        self.task_state.setText(device_task_status_text(device, remote))
+        if device.battery_percent is None:
+            self.battery.setValue(0)
+            self.battery.setEnabled(False)
+            self.battery_text.setText("--")
+        else:
+            battery = min(100, max(0, round(device.battery_percent)))
+            self.battery.setEnabled(True)
+            self.battery.setValue(battery)
+            self.battery.setObjectName("lowBattery" if battery < 20 else "")
+            self.battery.style().unpolish(self.battery)
+            self.battery.style().polish(self.battery)
+            self.battery_text.setText(f"{battery}%")
+        frame_id = (
+            remote.frame_id
+            if remote is not None and remote.device_id.casefold() == device.device_id.casefold()
+            else device.frame_id
+        )
+        self.frame_name.setText(f"坐标系 {frame_id or '未上报'}")
+        self.video.set_device(device)
+
+    def set_selected(self, selected: bool) -> None:
+        self.name_button.blockSignals(True)
+        self.name_button.setChecked(selected)
+        self.name_button.blockSignals(False)
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def set_frame_note(self, note: str) -> None:
+        self.frame_note.setText(note)
+        self.frame_note.setVisible(bool(note))
+
+    def stop_video(self) -> None:
+        self.video.stop_stream()
+
+
+class MapOnlineDevicePanel(QFrame):
+    device_selected = Signal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("mapOnlineDevicePanel")
+        self.devices: list[DeviceSnapshot] = []
+        self.remote: RemoteMappingSnapshot | None = None
+        self.selected_device_id: str | None = None
+        self.cards: dict[str, MapDeviceCard] = {}
+        self._frame_notes: dict[str, str] = {}
+        self._active_video_id: str | None = None
+        self._expanded_width = 380
+        self._collapsed = False
+        root = QVBoxLayout(self)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
+        self.header = QWidget()
+        header = QHBoxLayout(self.header)
+        header.setContentsMargins(0, 0, 0, 0)
+        self.title = QLabel("在线设备")
+        self.title.setObjectName("panelTitle")
+        self.count = QLabel("0")
+        self.count.setObjectName("muted")
+        self.collapse_button = QPushButton("‹")
+        self.collapse_button.setObjectName("mapDeviceCollapseButton")
+        self.collapse_button.setToolTip("收起在线设备")
+        self.collapse_button.clicked.connect(self.toggle_collapsed)
+        header.addWidget(self.title)
+        header.addStretch()
+        header.addWidget(self.count)
+        header.addWidget(self.collapse_button)
+        root.addWidget(self.header)
+        self.scroll = QScrollArea()
+        self.scroll.setObjectName("mapOnlineDeviceScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.container = QWidget()
+        self.container.setObjectName("mapOnlineDeviceContainer")
+        self.card_layout = QVBoxLayout(self.container)
+        self.card_layout.setContentsMargins(0, 0, 0, 0)
+        self.card_layout.setSpacing(8)
+        self.card_layout.addStretch()
+        self.scroll.setWidget(self.container)
+        root.addWidget(self.scroll, 1)
+        self.empty = QLabel("暂无在线设备")
+        self.empty.setObjectName("muted")
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.addWidget(self.empty)
+        self.setMinimumWidth(360)
+        self.setMaximumWidth(460)
+
+    def set_devices(
+        self,
+        devices: list[DeviceSnapshot],
+        remote: RemoteMappingSnapshot | None = None,
+    ) -> None:
+        online = [item for item in devices if item.connection_status == ConnectionStatus.ONLINE]
+        remote_id = remote.device_id.casefold() if remote is not None else ""
+        online.sort(key=lambda item: (
+            item.device_id.casefold() != remote_id,
+            item.device_name.casefold(), item.device_id.casefold(),
+        ))
+        self.devices = online
+        self.remote = remote
+        valid = {item.device_id for item in online}
+        for device_id in list(self.cards):
+            if device_id in valid:
+                continue
+            card = self.cards.pop(device_id)
+            card.stop_video()
+            self.card_layout.removeWidget(card)
+            card.deleteLater()
+            if self._active_video_id == device_id:
+                self._active_video_id = None
+        if self.selected_device_id not in valid:
+            self.selected_device_id = online[0].device_id if online else None
+        for item in online:
+            card = self.cards.get(item.device_id)
+            if card is None:
+                card = MapDeviceCard(item)
+                card.selected.connect(self.select_device)
+                card.video_requested.connect(self._on_video_requested)
+                self.cards[item.device_id] = card
+                self.card_layout.insertWidget(self.card_layout.count() - 1, card)
+            card.update_snapshot(item, remote)
+            card.set_selected(item.device_id == self.selected_device_id)
+            card.set_frame_note(self._frame_notes.get(item.device_id, ""))
+        for index, item in enumerate(online):
+            self.card_layout.insertWidget(index, self.cards[item.device_id])
+        self.count.setText(str(len(online)))
+        self.empty.setVisible(not online)
+        self.scroll.setVisible(bool(online) and not self._collapsed)
+        if self.selected_device_id:
+            self.device_selected.emit(self.selected_device_id)
+
+    def select_device(self, device_id: str) -> None:
+        if device_id == self.selected_device_id:
+            return
+        self.selected_device_id = device_id
+        for card_id, card in self.cards.items():
+            card.set_selected(card_id == device_id)
+        self.device_selected.emit(device_id)
+
+    def set_frame_note(self, device_id: str, note: str) -> None:
+        self._frame_notes[device_id] = note
+        card = self.cards.get(device_id)
+        if card is not None:
+            card.set_frame_note(note)
+
+    def select_remote_device(self, remote: RemoteMappingSnapshot) -> None:
+        if remote.device_id in self.cards:
+            self.select_device(remote.device_id)
+
+    def _on_video_requested(self, device_id: str, enabled: bool) -> None:
+        if not enabled:
+            if self._active_video_id == device_id:
+                self._active_video_id = None
+            return
+        previous = self._active_video_id
+        self._active_video_id = device_id
+        if previous and previous != device_id and previous in self.cards:
+            self.cards[previous].stop_video()
+
+    def toggle_collapsed(self) -> None:
+        self._collapsed = not self._collapsed
+        splitter = self.parentWidget()
+        if self._collapsed:
+            if isinstance(splitter, QSplitter):
+                sizes = splitter.sizes()
+                index = splitter.indexOf(self)
+                if 0 <= index < len(sizes):
+                    self._expanded_width = max(360, sizes[index])
+            self.stop_videos()
+            self.title.setVisible(False)
+            self.count.setVisible(False)
+            self.scroll.setVisible(False)
+            self.empty.setVisible(False)
+            self.setMinimumWidth(36)
+            self.setMaximumWidth(40)
+            self.collapse_button.setText("›")
+            self.collapse_button.setToolTip("展开在线设备")
+        else:
+            self.title.setVisible(True)
+            self.count.setVisible(True)
+            self.scroll.setVisible(bool(self.devices))
+            self.empty.setVisible(not self.devices)
+            self.setMinimumWidth(360)
+            self.setMaximumWidth(460)
+            self.collapse_button.setText("‹")
+            self.collapse_button.setToolTip("收起在线设备")
+        if isinstance(splitter, QSplitter):
+            total = max(sum(splitter.sizes()), splitter.width())
+            width = 38 if self._collapsed else min(self._expanded_width, 460)
+            splitter.setSizes([width, max(1, total - width)])
+
+    def stop_videos(self) -> None:
+        for card in self.cards.values():
+            card.stop_video()
+        self._active_video_id = None
+
+
 class PointCloudViewer(QWidget):
     load_failed = Signal(str)
     map_point_picked = Signal(float, float)
@@ -1181,6 +1576,7 @@ class PointCloudViewer(QWidget):
         self._trail_visual = None
         self._camera = None
         self.layer_mode = "overlay"
+        self.devices_visible = True
         self.pointcloud_loaded = False
         self.pgm_loaded = False
         self.selected_device_pose: PoseTelemetry | None = None
@@ -1228,13 +1624,17 @@ class PointCloudViewer(QWidget):
         self.tick_spacing_input.setDecimals(2)
         self.tick_spacing_input.setSuffix(" m")
         self.cursor_check = QCheckBox("光标坐标")
+        self.devices_check = QCheckBox("设备")
+        self.devices_check.setChecked(True)
+        self.height_legend = HeightColorLegend()
         for widget in (
             QLabel("图层"), *self.layer_buttons.values(), self.grid_check,
             self.grid_spacing_input, self.grid_opacity_input, self.coordinate_check,
-            self.tick_spacing_input, self.cursor_check,
+            self.tick_spacing_input, self.cursor_check, self.devices_check,
         ):
             controls.addWidget(widget)
         controls.addStretch()
+        controls.addWidget(self.height_legend)
         layout.addWidget(self.display_toolbar)
         self._stack = QStackedWidget()
         layout.addWidget(self._stack)
@@ -1271,6 +1671,7 @@ class PointCloudViewer(QWidget):
         self.cursor_check.toggled.connect(
             lambda value: MAP_VIEWER_SETTINGS.update(cursor_visible=bool(value))
         )
+        self.devices_check.toggled.connect(self.set_devices_layer_visible)
         self._apply_display_settings()
 
     def _initialize_canvas(self, canvas_factory: Callable[[], object] | None) -> None:
@@ -1325,13 +1726,8 @@ class PointCloudViewer(QWidget):
             if self._points_visual is None:
                 raise PointCloudError("VisPy/OpenGL 渲染器未初始化")
             self._point_data = np.asarray(data.points, dtype=np.float32)
-            self._points_visual.set_data(
-                self._point_data,
-                face_color=self.theme_palette.primary,
-                edge_width=0,
-                size=2.2,
-            )
             self.pointcloud_loaded = True
+            self._refresh_point_colors()
             self.set_layer_mode(self.layer_mode)
             self._render_coordinate_grid()
             self.reset_view()
@@ -1416,6 +1812,8 @@ class PointCloudViewer(QWidget):
         self._pgm_data = None
         self.selected_device_pose = None
         self.device_trail = ()
+        self.markers = ()
+        self.height_legend.set_range(None, None)
         self.show_message("尚未加载点云")
         self._render_coordinate_grid()
         self._update_layer_controls()
@@ -1424,11 +1822,10 @@ class PointCloudViewer(QWidget):
         array = np.asarray(points, dtype=np.float32)
         if array.ndim != 2 or array.shape[1] != 3:
             raise ValueError("实时点云必须为 Nx3 数组")
+        array = array[np.isfinite(array).all(axis=1)]
         if self._live_points_visual is not None:
             self._live_point_data = array
-            self._live_points_visual.set_data(
-                array, face_color=self.theme_palette.focus, edge_width=0, size=2.5
-            )
+            self._refresh_point_colors()
             native = getattr(self._canvas, "native", None)
             if native is not None:
                 self._stack.setCurrentWidget(native)
@@ -1447,9 +1844,10 @@ class PointCloudViewer(QWidget):
 
     def clear_live_points(self) -> None:
         self._live_view_initialized = False
+        self._live_point_data = np.empty((0, 3), dtype=np.float32)
         if self._live_points_visual is not None:
-            self._live_point_data = np.empty((0, 3), dtype=np.float32)
             self._live_points_visual.set_data(np.empty((0, 3), dtype=np.float32))
+        self._refresh_point_colors()
 
     def show_message(self, message: str) -> None:
         self.status.setText(message)
@@ -1561,6 +1959,41 @@ class PointCloudViewer(QWidget):
         self.layer_buttons["pointcloud"].setEnabled(has_points)
         self.layer_buttons["grid"].setEnabled(self.pgm_loaded)
         self.layer_buttons["overlay"].setEnabled(has_points and self.pgm_loaded)
+        self.height_legend.setVisible(
+            has_points and self.layer_mode in {"pointcloud", "overlay"}
+        )
+
+    def _refresh_point_colors(self) -> None:
+        point_sets = [
+            values for values in (self._point_data, self._live_point_data)
+            if len(values)
+        ]
+        finite_z = [
+            values[np.isfinite(values).all(axis=1), 2]
+            for values in point_sets
+        ]
+        finite_z = [values for values in finite_z if len(values)]
+        if not finite_z:
+            self.height_legend.set_range(None, None)
+            return
+        minimum_z = min(float(values.min()) for values in finite_z)
+        maximum_z = max(float(values.max()) for values in finite_z)
+        if self._points_visual is not None and self.pointcloud_loaded:
+            self._points_visual.set_data(
+                self._point_data,
+                face_color=height_rainbow_colors(self._point_data, minimum_z, maximum_z),
+                edge_width=0, size=2.2,
+            )
+        if self._live_points_visual is not None and len(self._live_point_data):
+            self._live_points_visual.set_data(
+                self._live_point_data,
+                face_color=height_rainbow_colors(
+                    self._live_point_data, minimum_z, maximum_z
+                ),
+                edge_width=0, size=2.5,
+            )
+        self.height_legend.set_range(minimum_z, maximum_z)
+        self._update_layer_controls()
 
     def _map_xy_bounds(self):
         if self.current_map and self.current_map.bounds:
@@ -1708,6 +2141,20 @@ class PointCloudViewer(QWidget):
         self.markers = tuple(markers)
         self._render_markers()
 
+    def set_devices_layer_visible(self, visible: bool) -> None:
+        self.devices_visible = bool(visible)
+        self.devices_check.blockSignals(True)
+        self.devices_check.setChecked(self.devices_visible)
+        self.devices_check.blockSignals(False)
+        if self._marker_visual is not None:
+            self._marker_visual.visible = self.devices_visible
+        for visual in self._shape_visuals:
+            visual.visible = self.devices_visible
+        if self._device_axis_visual is not None:
+            self._device_axis_visual.visible = self.devices_visible
+        if self._trail_visual is not None:
+            self._trail_visual.visible = self.devices_visible
+
     def _render_markers(self) -> None:
         if self._marker_visual is None:
             return
@@ -1720,13 +2167,16 @@ class PointCloudViewer(QWidget):
         fallback = []
         for marker in self.markers:
             try:
-                self._shape_visuals.append(self._create_marker_mesh(marker))
+                visual = self._create_marker_mesh(marker)
+                visual.visible = self.devices_visible
+                self._shape_visuals.append(visual)
             except Exception:
                 fallback.append((marker.x, marker.y, marker.z))
         positions = np.asarray(fallback, dtype=np.float32)
         if not len(positions):
             positions = np.empty((0, 3), dtype=np.float32)
         self._marker_visual.set_data(positions, face_color=self.theme_palette.warning, edge_color=self.theme_palette.text_strong, size=12)
+        self._marker_visual.visible = self.devices_visible
 
     def _create_marker_mesh(self, marker: DeviceMapMarker):
         from vispy import scene
@@ -1791,6 +2241,7 @@ class PointCloudViewer(QWidget):
         self._device_axis_visual.set_data(
             pos=positions, color=colors, connect="segments", width=2.5
         )
+        self._device_axis_visual.visible = self.devices_visible
 
     def set_device_trail(self, positions: list[tuple[float, float, float]] | tuple[tuple[float, float, float], ...]) -> None:
         self.device_trail = tuple(positions)
@@ -1800,6 +2251,7 @@ class PointCloudViewer(QWidget):
         if len(points) < 2:
             points = np.empty((0, 3), dtype=np.float32)
         self._trail_visual.set_data(pos=points, color=self.theme_palette.primary_strong, width=2.0)
+        self._trail_visual.visible = self.devices_visible
 
     @staticmethod
     def _rgba(value: str) -> tuple[float, float, float, float]:
@@ -1813,10 +2265,7 @@ class PointCloudViewer(QWidget):
                 self._canvas.bgcolor = palette.dashboard_background
             except Exception:
                 pass
-        if self._points_visual is not None and self.pointcloud_loaded:
-            self._points_visual.set_data(self._point_data, face_color=palette.primary, edge_width=0, size=2.2)
-        if self._live_points_visual is not None and len(self._live_point_data):
-            self._live_points_visual.set_data(self._live_point_data, face_color=palette.focus, edge_width=0, size=2.5)
+        self._refresh_point_colors()
         if self._task_paths:
             self.set_task_paths(self._task_paths)
         if self._task_conflicts:
@@ -1824,6 +2273,7 @@ class PointCloudViewer(QWidget):
         self._render_markers()
         self.set_selected_device_pose(self.selected_device_pose)
         self.set_device_trail(self.device_trail)
+        self.set_devices_layer_visible(self.devices_visible)
         self._render_coordinate_grid()
         self.status.update()
         self.update()
@@ -1835,6 +2285,7 @@ class MapDetailPage(QWidget):
     export_requested = Signal()
     mapping_requested = Signal()
     mapping_cancel_requested = Signal()
+    device_selected = Signal(str)
 
     def __init__(self, viewer_factory: Callable[[], PointCloudViewer] | None = None) -> None:
         super().__init__()
@@ -1910,8 +2361,17 @@ class MapDetailPage(QWidget):
         self.readiness_details.setWordWrap(True)
         self.readiness_details.setVisible(False)
         root.addWidget(self.readiness_details)
+        self.content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.content_splitter.setChildrenCollapsible(False)
+        self.device_panel = MapOnlineDevicePanel()
+        self.device_panel.device_selected.connect(self.device_selected)
         self.viewer = viewer_factory() if viewer_factory else PointCloudViewer()
-        root.addWidget(self.viewer, 1)
+        self.content_splitter.addWidget(self.device_panel)
+        self.content_splitter.addWidget(self.viewer)
+        self.content_splitter.setStretchFactor(0, 0)
+        self.content_splitter.setStretchFactor(1, 1)
+        self.content_splitter.setSizes([380, 900])
+        root.addWidget(self.content_splitter, 1)
         self._started_at = None
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.setInterval(1000)
@@ -1922,6 +2382,16 @@ class MapDetailPage(QWidget):
         if set_theme is not None:
             set_theme(palette)
         self.update()
+
+    def set_devices(
+        self,
+        devices: list[DeviceSnapshot],
+        remote: RemoteMappingSnapshot | None = None,
+    ) -> None:
+        self.device_panel.set_devices(devices, remote)
+
+    def stop_videos(self) -> None:
+        self.device_panel.stop_videos()
 
     def set_map(
         self,
@@ -2099,6 +2569,9 @@ class MapPage(QWidget):
         self.pgm_fusion_engine = PgmFusionEngine()
         self.telemetry_store = telemetry_store
         self._remote_trail: list[tuple[float, float, float]] = []
+        self._trail_device_id: str | None = None
+        self._latest_telemetry: dict[str, object] = {}
+        self._selected_remote_session_id: str | None = None
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self._build(viewer_factory)
         self._render_cards()
@@ -2120,6 +2593,10 @@ class MapPage(QWidget):
             self.mapping_service.remote_updated.connect(self._on_remote_mapping_updated)
         if self.telemetry_store is not None:
             self.telemetry_store.telemetry_updated.connect(self._on_remote_telemetry)
+        self._device_render_timer = QTimer(self)
+        self._device_render_timer.setInterval(100)
+        self._device_render_timer.timeout.connect(self._refresh_device_overlays)
+        self._device_render_timer.start()
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
@@ -2143,6 +2620,7 @@ class MapPage(QWidget):
         self.detail_page.export_requested.connect(self._export_current_map)
         self.detail_page.mapping_requested.connect(self._toggle_mapping)
         self.detail_page.mapping_cancel_requested.connect(self._cancel_remote_mapping)
+        self.detail_page.device_selected.connect(self._on_map_device_selected)
         if self.mapping_service is None:
             self.detail_page.set_mapping_available(False, "UDP 建图模块未配置")
         else:
@@ -2731,6 +3209,9 @@ class MapPage(QWidget):
         definition = self.repository.map_by_id(map_id)
         if not definition:
             return
+        if map_id != self.current_map_id:
+            self._remote_trail.clear()
+            self._trail_device_id = None
         self.current_map_id = map_id
         pcd_path = None
         pgm_yaml_path = None
@@ -2744,8 +3225,12 @@ class MapPage(QWidget):
             except MapRepositoryError:
                 pgm_yaml_path = None
         self.detail_page.set_map(definition, pcd_path, pgm_yaml_path)
-        self.detail_page.viewer.set_device_markers([])
+        remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
+        if remote is not None and remote.map_id != map_id:
+            remote = None
+        self.detail_page.set_devices(self.devices, remote)
         self.page_stack.setCurrentWidget(self.detail_page)
+        self._refresh_device_overlays()
         self._offer_interrupted_session(map_id)
 
     def show_list(self) -> None:
@@ -2755,11 +3240,14 @@ class MapPage(QWidget):
             return
         if self.mapping_service is not None and self.mapping_service.active:
             self.mapping_service.interrupt_mapping("返回地图列表")
+        self.detail_page.stop_videos()
         self.detail_page.viewer.clear()
         self.current_map_id = None
         self.page_stack.setCurrentWidget(self.list_page)
 
     def set_active(self, active: bool) -> None:
+        if not active:
+            self.detail_page.stop_videos()
         if (not active and self.mapping_service is not None and self.mapping_service.active
                 and not self.mapping_service.remote.active):
             self.mapping_service.interrupt_mapping("切换主导航")
@@ -2840,6 +3328,10 @@ class MapPage(QWidget):
     def _on_remote_mapping_updated(self, snapshot: RemoteMappingSnapshot) -> None:
         if snapshot.map_id == self.current_map_id:
             self.detail_page.update_remote_mapping(snapshot)
+            self.detail_page.set_devices(self.devices, snapshot)
+            if snapshot.session_id != self._selected_remote_session_id:
+                self._selected_remote_session_id = snapshot.session_id
+                self.detail_page.device_panel.select_remote_device(snapshot)
 
     def _cancel_remote_mapping(self) -> None:
         if self.mapping_service is None:
@@ -2867,22 +3359,97 @@ class MapPage(QWidget):
         self.detail_page.viewer.set_device_trail([])
 
     def _on_remote_telemetry(self, device_id: str, snapshot: object) -> None:
+        self._latest_telemetry[device_id.casefold()] = snapshot
+
+    def _on_map_device_selected(self, device_id: str) -> None:
+        if device_id != self._trail_device_id:
+            self._trail_device_id = device_id
+            self._remote_trail.clear()
+            self.detail_page.viewer.set_device_trail([])
+        self._refresh_device_overlays()
+
+    def _refresh_device_overlays(self) -> None:
+        if (
+            self.current_map_id is None
+            or self.page_stack.currentWidget() != self.detail_page
+        ):
+            return
+        definition = self.repository.map_by_id(self.current_map_id)
+        if definition is None:
+            return
         remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
-        if (remote is None or remote.map_id != self.current_map_id
-                or device_id.casefold() != remote.device_id.casefold()):
-            return
-        pose = getattr(snapshot, "global_pose", None)
-        if pose is None or float(getattr(pose, "sample_age_seconds", 999.0)) > 2.0:
-            self.detail_page.viewer.set_selected_device_pose(None)
-            if remote.state in {"mapping", "warning"}:
-                self.detail_page.mapping_state.setText("全局位姿缺失或已超时")
-            return
-        self.detail_page.viewer.set_selected_device_pose(pose)
-        position = (float(pose.x), float(pose.y), float(pose.z))
-        if not self._remote_trail or self._remote_trail[-1] != position:
-            self._remote_trail.append(position)
-            if len(self._remote_trail) > 10000:
-                self._remote_trail = self._remote_trail[-10000:]
+        if remote is not None and remote.map_id != self.current_map_id:
+            remote = None
+        online = [
+            item for item in self.devices
+            if item.connection_status == ConnectionStatus.ONLINE
+        ]
+        selected_id = self.detail_page.device_panel.selected_device_id
+        markers: list[DeviceMapMarker] = []
+        selected_pose: PoseTelemetry | None = None
+        for device in online:
+            snapshot = self._latest_telemetry.get(device.device_id.casefold())
+            if snapshot is None and self.telemetry_store is not None:
+                snapshot = self.telemetry_store.telemetry(device.device_id)
+            pose = getattr(snapshot, "global_pose", None)
+            source_frame = (
+                remote.frame_id
+                if remote is not None and remote.device_id.casefold() == device.device_id.casefold()
+                else device.frame_id
+            )
+            note = ""
+            transformed: PoseTelemetry | None = None
+            values = () if pose is None else (
+                pose.x, pose.y, pose.z, pose.roll, pose.pitch, pose.yaw,
+            )
+            if pose is None or float(getattr(pose, "sample_age_seconds", 999.0)) > 2.0:
+                note = "UDP 全局位姿缺失或已超时"
+            elif not all(math.isfinite(float(value)) for value in values):
+                note = "UDP 全局位姿包含无效值"
+            elif not source_frame:
+                note = "未上报位姿坐标系"
+            elif source_frame.casefold() == definition.frame_id.casefold():
+                transformed = pose
+                note = f"已定位到 {definition.frame_id}"
+            else:
+                transforms = (
+                    definition.build_provenance.transforms
+                    if definition.build_provenance is not None else ()
+                )
+                matches = [
+                    item for item in transforms
+                    if item.source_id.casefold() == device.device_id.casefold()
+                ]
+                if len(matches) == 1:
+                    transformed = transform_device_pose(pose, matches[0])
+                    note = f"{source_frame} -> {definition.frame_id}"
+                elif len(matches) > 1:
+                    note = f"存在重复的 {source_frame} -> {definition.frame_id} 变换"
+                else:
+                    note = f"未配置 {source_frame} -> {definition.frame_id} 变换"
+            self.detail_page.device_panel.set_frame_note(device.device_id, note)
+            if transformed is None:
+                continue
+            markers.append(DeviceMapMarker(
+                device.device_id, device.device_name,
+                transformed.x, transformed.y, transformed.z,
+                status=device.task_status.value,
+                marker_shape=device.map_marker_shape,
+                yaw=transformed.yaw,
+            ))
+            if device.device_id == selected_id:
+                selected_pose = transformed
+        self.detail_page.viewer.set_device_markers(markers)
+        self.detail_page.viewer.set_selected_device_pose(selected_pose)
+        if selected_id != self._trail_device_id:
+            self._trail_device_id = selected_id
+            self._remote_trail.clear()
+        if selected_pose is not None:
+            position = (selected_pose.x, selected_pose.y, selected_pose.z)
+            if not self._remote_trail or math.dist(self._remote_trail[-1], position) >= 0.02:
+                self._remote_trail.append(position)
+                if len(self._remote_trail) > 10000:
+                    del self._remote_trail[:-10000]
         self.detail_page.viewer.set_device_trail(self._remote_trail)
 
     def _on_mapping_degraded(self, snapshot: object) -> None:
@@ -3004,6 +3571,16 @@ class MapPage(QWidget):
 
     def _on_devices_updated(self, devices: object) -> None:
         self.devices = list(devices)
+        remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
+        if remote is not None and remote.map_id != self.current_map_id:
+            remote = None
+        self.detail_page.set_devices(self.devices, remote)
+        self._refresh_device_overlays()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self.detail_page.stop_videos()
+        self._device_render_timer.stop()
+        super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

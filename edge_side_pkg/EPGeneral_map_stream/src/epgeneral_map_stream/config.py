@@ -14,7 +14,7 @@ class ConfigError(ValueError):
 
 TEMPLATE_FIELDS = {
     "map_id", "device_id", "session_id", "session_dir",
-    "pcd_path", "pgm_path", "yaml_path",
+    "pcd_path", "pgm_path", "yaml_path", "map_name",
 }
 
 
@@ -157,6 +157,9 @@ def load_config(mapping_path, device_path):
     stream = _mapping(ros, "stream", "ros.stream")
     frames = _mapping(ros, "frames", "ros.frames")
     integrations = _mapping(mapping, "integrations")
+    backend = integrations.get("backend", "go2_accumulator")
+    if backend not in ("go2_accumulator", "scout_finalize"):
+        raise ConfigError("integrations.backend must be go2_accumulator or scout_finalize")
     prerequisites = _mapping(
         integrations, "mapping_prerequisites",
         "integrations.mapping_prerequisites")
@@ -164,6 +167,9 @@ def load_config(mapping_path, device_path):
     map_accumulator = _mapping(
         integrations, "map_accumulator", "integrations.map_accumulator")
     pgm = _mapping(integrations, "pgm", "integrations.pgm")
+    scout = integrations.get("scout", {})
+    if backend == "scout_finalize" and not isinstance(scout, dict):
+        raise ConfigError("integrations.scout must be a mapping")
     sync = _mapping(mapping, "sync")
     preprocess = _mapping(mapping, "preprocess")
     timeouts = _mapping(mapping, "timeouts")
@@ -206,7 +212,7 @@ def load_config(mapping_path, device_path):
         raise ConfigError("sync.preview_transform_timeout_seconds must not exceed 5 seconds")
     map_frame = _text(frames, "map", "ros.frames.map")
     preview_frame = _text(frames, "preview", "ros.frames.preview")
-    if map_frame == preview_frame:
+    if backend == "go2_accumulator" and map_frame == preview_frame:
         raise ConfigError("ros.frames.map and ros.frames.preview must be different")
     map_accumulator_service = _text(
         map_accumulator, "service", "integrations.map_accumulator.service")
@@ -228,13 +234,15 @@ def load_config(mapping_path, device_path):
         raise ConfigError("limits.max_decompressed_bytes must cover max_frame_points * 12")
     workspace_root = os.path.abspath(os.path.expanduser(
         _text(artifacts, "workspace_root", "artifacts.workspace_root")))
-    package_root = os.path.abspath(os.path.dirname(os.path.dirname(mapping_path)))
+    package_root = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
     script_root = os.path.join(package_root, "scripts")
 
     return {
         "schema_version": 6,
         "protocol_id": protocol_id,
         "capability_version": "0.9.1",
+        "integration_backend": backend,
         "device_id": device_id,
         "device_ip": device_ip,
         "bind_host": _ip(network.get("bind_host"), "network.bind_host", True),
@@ -321,6 +329,8 @@ def load_config(mapping_path, device_path):
         "abort_fast_lio_script": os.path.join(script_root, "abort_fast_lio.sh"),
         "save_map_script": os.path.join(script_root, "save_map.sh"),
         "generate_pgm_script": os.path.join(script_root, "generate_pgm.sh"),
+        "scout_mapping_script": os.path.join(script_root, "scout_mapping_stack.sh"),
+        "scout_finalize_script": os.path.join(script_root, "scout_finalize_map.sh"),
         "sync_tolerance_seconds": tolerance,
         "pose_buffer_size": pose_buffer_size,
         "preview_transform_timeout_seconds": preview_transform_timeout,
@@ -389,6 +399,19 @@ def load_config(mapping_path, device_path):
             artifacts.get("pgm_path"), "artifacts.pgm_path", True),
         "yaml_template": _template(
             artifacts.get("yaml_path"), "artifacts.yaml_path", True),
+        "artifact_frame": str(artifacts.get("frame", map_frame)).strip(),
+        "scout_fast_lio_package": str(scout.get("fast_lio_package", "")).strip(),
+        "scout_fast_lio_launch": str(scout.get("fast_lio_launch", "")).strip(),
+        "scout_tf_package": str(scout.get("tf_package", "")).strip(),
+        "scout_tf_launch": str(scout.get("tf_launch", "")).strip(),
+        "scout_pose_package": str(scout.get("pose_package", "")).strip(),
+        "scout_pose_launch": str(scout.get("pose_launch", "")).strip(),
+        "scout_finalize_package": str(scout.get("finalize_package", "")).strip(),
+        "scout_finalize_executable": str(scout.get("finalize_executable", "")).strip(),
+        "scout_source_pcd_path": os.path.abspath(os.path.expanduser(
+            str(scout.get("source_pcd_path", "")))),
+        "scout_map_root": os.path.abspath(os.path.expanduser(
+            str(scout.get("map_root", "")))),
     }
 
 
@@ -412,9 +435,51 @@ def command_context(config, values):
 
 def build_integration_commands(config, values):
     context = command_context(config, values)
+    if config["integration_backend"] == "scout_finalize":
+        required = (
+            "scout_fast_lio_package", "scout_fast_lio_launch", "scout_tf_package",
+            "scout_tf_launch", "scout_pose_package", "scout_pose_launch",
+            "scout_finalize_package", "scout_finalize_executable",
+            "scout_source_pcd_path", "scout_map_root",
+        )
+        missing = [name for name in required if not config.get(name)]
+        if missing:
+            raise ConfigError("Scout integration fields are missing: %s" % ", ".join(missing))
+        launch_args = [
+            config["scout_fast_lio_package"], config["scout_fast_lio_launch"],
+            config["scout_tf_package"], config["scout_tf_launch"],
+            config["scout_pose_package"], config["scout_pose_launch"],
+        ]
+        return {
+            "checks": [[config["scout_mapping_script"], "--check"] + launch_args, [
+                config["scout_finalize_script"], "--check",
+                config["scout_finalize_package"], config["scout_finalize_executable"],
+                config["scout_source_pcd_path"], config["scout_map_root"],
+            ]],
+            "start_fast_lio": [
+                config["scout_mapping_script"], "--start", context["fast_lio_pid_path"],
+                context["fast_lio_log_path"], str(config["fast_lio_startup_timeout_seconds"]),
+                str(config["fast_lio_stop_timeout_seconds"]),
+            ] + launch_args,
+            "stop_fast_lio": [
+                config["scout_mapping_script"], "--stop", context["fast_lio_pid_path"],
+                str(config["fast_lio_stop_timeout_seconds"]),
+            ],
+            "abort_fast_lio": [
+                config["scout_mapping_script"], "--abort", context["fast_lio_pid_path"],
+                str(config["fast_lio_stop_timeout_seconds"]),
+            ],
+            "generate_pgm": [
+                config["scout_finalize_script"], config["scout_finalize_package"],
+                config["scout_finalize_executable"], context["map_name"],
+                config["scout_source_pcd_path"], config["scout_map_root"],
+                context["pcd_path"], context["pgm_path"], context["yaml_path"],
+                context["pgm_log_path"], str(config["pgm_generation_timeout_seconds"]),
+            ],
+        }
     fast_args = [item.format(**context) for item in config["fast_lio_launch_args"]]
     pgm_args = [item.format(**context) for item in config["pgm_launch_args"]]
-    return {
+    commands = {
         "check_fast_lio": [
             config["start_fast_lio_script"], "--check",
             config["prerequisite_setup_file"], config["extrinsics_file"],
@@ -465,3 +530,6 @@ def build_integration_commands(config, values):
             config["source_yaml_path"], config["archive_root"],
         ] + pgm_args,
     }
+    commands["checks"] = [commands[name] for name in (
+        "check_fast_lio", "check_save_map", "check_pgm")]
+    return commands

@@ -73,6 +73,7 @@ class MappingSession(object):
         self.fragment_cache = {}
         self.accumulator_pcd_baseline = None
         self.mapping_started_at_ns = 0
+        self.map_name = ""
 
 
 class RosMapStreamNode(object):
@@ -488,9 +489,13 @@ class RosMapStreamNode(object):
         with self.lock:
             session.state = "starting"
             self.state = "starting"
-            session.accumulator_pcd_baseline = file_fingerprint(
-                self.config["accumulator_pcd_path"])
+            source_pcd = (self.config["scout_source_pcd_path"]
+                          if self.config["integration_backend"] == "scout_finalize"
+                          else self.config["accumulator_pcd_path"])
+            session.accumulator_pcd_baseline = file_fingerprint(source_pcd)
             session.mapping_started_at_ns = time.time_ns()
+            session.map_name = time.strftime("%Y%m%d_%H%M%S")
+            session.paths.values["map_name"] = session.map_name
         self._log_info(
             "mapping source baseline session=%s fingerprint=%s",
             session.identity["session_id"][:8],
@@ -500,6 +505,10 @@ class RosMapStreamNode(object):
             "error_code": ""})
         commands = build_integration_commands(self.config, session.paths.values)
         try:
+            if (self.config["integration_backend"] == "scout_finalize"
+                    and os.path.exists(os.path.join(
+                        self.config["scout_map_root"], session.map_name))):
+                raise RuntimeError("Scout map directory already exists: %s" % session.map_name)
             self._run_command(
                 "start_fast_lio", commands["start_fast_lio"],
                 timeout=self.config["fast_lio_startup_timeout_seconds"])
@@ -617,6 +626,9 @@ class RosMapStreamNode(object):
 
     def _generate_artifact(self, session):
         commands = build_integration_commands(self.config, session.paths.values)
+        if self.config["integration_backend"] == "scout_finalize":
+            self._generate_scout_artifact(session, commands)
+            return
         mapping_stack_stopped = False
         try:
             self._send_session_message(session, "artifact_status", {
@@ -650,26 +662,7 @@ class RosMapStreamNode(object):
                 "reason": ""})
             wait_for_stable_artifacts(session.paths, self.config)
             descriptor = build_archive(session.paths, self.config, session.identity)
-            token, expires_at = self.artifact_server.register(
-                descriptor["path"], self.config["http_token_ttl_seconds"])
-            url_host = ("[%s]" % self.config["device_ip"]
-                        if ":" in self.config["device_ip"] else self.config["device_ip"])
-            payload = {
-                "state": "ready",
-                "url": "http://%s:%d/mapping/result.zip?token=%s" % (
-                    url_host, self.artifact_server.port, token),
-                "byte_count": descriptor["byte_count"],
-                "sha256": descriptor["sha256"], "expires_at": expires_at,
-                "reason": "",
-            }
-            self._cleanup_fragments(session)
-            with self.lock:
-                if self.session is session:
-                    session.state = "serving"
-                    self.state = "serving"
-                    self.session = None
-                    self.state = "standby"
-            self._send_session_message(session, "artifact_status", payload)
+            self._publish_artifact_ready(session, descriptor)
         except Exception as exc:
             if not mapping_stack_stopped:
                 try:
@@ -686,6 +679,69 @@ class RosMapStreamNode(object):
                 if self.session is session:
                     self.session = None
                     self.state = "standby"
+
+    def _generate_scout_artifact(self, session, commands):
+        mapping_stack_stopped = False
+        try:
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating", "message": "stopping Scout mapping processes",
+                "reason": ""})
+            self._run_command(
+                "stop_scout_mapping", commands["stop_fast_lio"],
+                timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+            mapping_stack_stopped = True
+            fingerprint = require_fresh_file(
+                self.config["scout_source_pcd_path"],
+                session.accumulator_pcd_baseline, session.mapping_started_at_ns)
+            self._log_info(
+                "Scout PCD freshness passed session=%s map_name=%s fingerprint=%s",
+                session.identity["session_id"][:8], session.map_name, fingerprint)
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating", "message": "finalizing Scout map",
+                "reason": ""})
+            self._run_command(
+                "finalize_scout_map", commands["generate_pgm"],
+                timeout=self.config["pgm_generation_timeout_seconds"] + 6.0)
+            wait_for_stable_artifacts(session.paths, self.config)
+            descriptor = build_archive(session.paths, self.config, session.identity)
+            self._publish_artifact_ready(session, descriptor)
+        except Exception as exc:
+            if not mapping_stack_stopped:
+                try:
+                    self._run_command(
+                        "abort_after_scout_failure", commands["abort_fast_lio"],
+                        timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+                except Exception as cleanup_exc:
+                    self._log_error("Scout mapping cleanup also failed: %s", cleanup_exc)
+            self._send_session_message(session, "artifact_status", {
+                "state": "error", "reason": str(exc)})
+            self._cleanup_fragments(session)
+            with self.lock:
+                if self.session is session:
+                    self.session = None
+                    self.state = "standby"
+
+    def _publish_artifact_ready(self, session, descriptor):
+        token, expires_at = self.artifact_server.register(
+            descriptor["path"], self.config["http_token_ttl_seconds"])
+        url_host = ("[%s]" % self.config["device_ip"]
+                    if ":" in self.config["device_ip"] else self.config["device_ip"])
+        payload = {
+            "state": "ready",
+            "url": "http://%s:%d/mapping/result.zip?token=%s" % (
+                url_host, self.artifact_server.port, token),
+            "byte_count": descriptor["byte_count"],
+            "sha256": descriptor["sha256"], "expires_at": expires_at,
+            "reason": "",
+        }
+        self._cleanup_fragments(session)
+        with self.lock:
+            if self.session is session:
+                session.state = "serving"
+                self.state = "serving"
+                self.session = None
+                self.state = "standby"
+        self._send_session_message(session, "artifact_status", payload)
 
     def _subscribe_session(self, session):
         cloud_class = self._resolve_message(self.config["cloud_message_type"])

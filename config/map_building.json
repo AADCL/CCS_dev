@@ -7,6 +7,13 @@
     "remote_artifact": "lio_odom",
     "final_map": "map"
   },
+  "device_frames": {
+    "UGV_001": {
+      "remote_mapping": "odom",
+      "preview_source": "odom",
+      "remote_artifact": "map"
+    }
+  },
   "network": {
     "bind_host": "0.0.0.0",
     "data_port": 14562,

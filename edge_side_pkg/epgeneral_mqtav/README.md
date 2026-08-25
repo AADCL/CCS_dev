@@ -1,8 +1,8 @@
 # epgeneral_mqtav
 
-<!-- epgeneral_mqtav_VERSION: 0.3.1 -->
+<!-- epgeneral_mqtav_VERSION: 0.4.0 -->
 
-当前版本：`v0.3.1`
+当前版本：`v0.4.0`
 
 `epgeneral_mqtav` 是运行在端侧计算机上的 ROS1 功能包。它订阅 ROS 健康状态并通过 MQTT 向地面站上报在线状态、设备链路、电量、模式和任务状态。为兼容既有地面站协议，MQTT topic 根和客户端 ID 前缀继续使用 `mqtav`。
 
@@ -14,6 +14,8 @@
 - 连接后发布 retained `online` presence；MQTT Last Will 为 retained `offline` presence。正常退出也会主动发布 `offline`。
 - 状态来自 `/mavros/state` 的 `connected`、`armed`、`system_status`、`mode`，以及 `/mavros/battery` 的 `percentage`、`voltage`、`current`。电量百分比统一为 0 到 100 的数值。
 - `ros.state.mapping` 可将上述四个健康字段映射到任意 ROS 消息字段；值为 `null` 时上报不可用。未配置 mapping 时继续使用 MAVROS 同名字段。
+- `ros.state.connected_on_message` 可用消息新鲜度表示自定义底盘在线状态，配合 `timeout_seconds` 超时置为离线。
+- `ros.battery.mapping` 支持从任意 ROS 消息字段读取 `percentage`、`voltage`、`current`；值为 `null` 时该项上报不可用。
 - 默认未启用任务状态。启用后可从任意 ROS 消息的安全点分字段路径提取任务字段；未收到、读取失败或未配置时为 `unknown`。
 
 主题由配置展开，例如设备 `UAV_001` 的默认主题为：

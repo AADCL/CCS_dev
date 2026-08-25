@@ -1,6 +1,12 @@
 # 更新记录
 
-<!-- epgeneral_map_stream_VERSION: 0.9.1 -->
+<!-- epgeneral_map_stream_VERSION: 0.10.0 -->
+
+## v0.10.0 - 2026-08-24
+
+- 新增 Scout Mini `scout_finalize` backend，依次启动 FAST-LIO、TF manager 和 pose adapter，命令不 source 工作空间。
+- Scout 停止流程使用 SIGINT 反序清理，不调用 accumulator rosservice；校验本次 `scans.pcd` 后调用 `finalize_map.py`。
+- 成果 manifest 记录秒级 `map_name` 和端侧目录，并支持与实时预览不同的最终成果 frame。
 
 ## v0.9.1 - 2026-08-24
 

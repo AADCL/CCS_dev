@@ -16,9 +16,13 @@ ros:
   state:
     topic: "/mavros/state"
     message_type: "mavros_msgs/State"
+    connected_on_message: false
+    timeout_seconds: 3.0
+    mapping: {connected: "connected", armed: "armed", system_status: "system_status", mode: "mode"}
   battery:
     topic: "/mavros/battery"
     message_type: "sensor_msgs/BatteryState"
+    mapping: {percentage: "percentage", voltage: "voltage", current: "current"}
   mission:
     enabled: false
     topic: "/mission/status"

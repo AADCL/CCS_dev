@@ -43,3 +43,16 @@ class ConfigTests(unittest.TestCase):
         device_path = self.write_config('schema_version: 2\ndevice:\n  id: "UAV_001"\n  ip: "192.168.151.250"\n')
         with self.assertRaisesRegex(ConfigError, "schema_version"):
             load_config(ROOT / "config" / "config.yaml", device_path)
+
+    def test_custom_state_freshness_and_battery_mapping(self):
+        content = (ROOT / "config" / "config.yaml").read_text(encoding="utf-8")
+        content = content.replace('topic: "/mavros/state"', 'topic: "/scout_status"')
+        content = content.replace('message_type: "mavros_msgs/State"', 'message_type: "scout_msgs/ScoutStatus"')
+        content = content.replace('    mapping: {connected: "connected", armed: "armed", system_status: "system_status", mode: "mode"}', '    connected_on_message: true\n    timeout_seconds: 3.0\n    mapping: {connected: null, armed: null, system_status: "fault_code", mode: "control_mode"}')
+        content = content.replace('topic: "/mavros/battery"', 'topic: "/scout_status"')
+        content = content.replace('message_type: "sensor_msgs/BatteryState"', 'message_type: "scout_msgs/ScoutStatus"')
+        content = content.replace('    mapping: {percentage: "percentage", voltage: "voltage", current: "current"}', '    mapping: {percentage: null, voltage: "battery_voltage", current: null}')
+        config = load_config(self.write_config(content), DEVICE_CONFIG)
+        self.assertTrue(config.ros.state.connected_on_message)
+        self.assertEqual(config.ros.state.timeout_seconds, 3.0)
+        self.assertEqual(config.ros.battery.mapping["voltage"], "battery_voltage")

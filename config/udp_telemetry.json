@@ -17,12 +17,10 @@
     "3": 1
   },
   "descriptors": [
-    {"name": "global_pose", "display_name": "全局位姿", "type": "pose", "level": 1},
-    {"name": "sensor_pose", "display_name": "传感器位姿", "type": "pose", "level": 1},
+    {"name": "vision_pose", "display_name": "视觉传感器位姿", "type": "pose", "level": 1},
     {"name": "imu", "display_name": "IMU", "type": "imu", "level": 1},
     {"name": "livox_pointcloud", "display_name": "雷达点云", "type": "pointcloud_status", "level": 2},
     {"name": "livox_driver", "display_name": "Livox 驱动", "type": "availability", "level": 3},
-    {"name": "fastlio2", "display_name": "FAST-LIO2 定位状态", "type": "availability", "level": 3},
     {"name": "pgm_mapping", "display_name": "PGM 地图生成状态", "type": "availability", "level": 3},
     {"name": "octomap_mapping", "display_name": "八叉树地图生成状态", "type": "availability", "level": 3},
     {"name": "occupancy_grid_mapping", "display_name": "占据栅格图生成状态", "type": "availability", "level": 3},

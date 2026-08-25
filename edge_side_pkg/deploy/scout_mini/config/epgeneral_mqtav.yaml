@@ -1,0 +1,34 @@
+mqtt:
+  ground_station_ip: "192.168.50.101"
+  port: 1883
+  client_id_prefix: "mqtav-"
+  qos: 1
+  keepalive_seconds: 10
+  heartbeat_hz: 1
+  telemetry_hz: 1
+  topics:
+    presence: "mqtav/{device_id}/presence"
+    heartbeat: "mqtav/{device_id}/heartbeat"
+    status: "mqtav/{device_id}/status"
+
+ros:
+  node_name: "epgeneral_mqtav"
+  state:
+    topic: "/scout_status"
+    message_type: "scout_msgs/ScoutStatus"
+    connected_on_message: true
+    timeout_seconds: 3.0
+    mapping:
+      connected: null
+      armed: null
+      system_status: "fault_code"
+      mode: "control_mode"
+  battery:
+    topic: "/BMS_status"
+    message_type: "scout_msgs/ScoutBmsStatus"
+    mapping:
+      percentage: null
+      voltage: "battery_voltage"
+      current: null
+  mission:
+    enabled: false

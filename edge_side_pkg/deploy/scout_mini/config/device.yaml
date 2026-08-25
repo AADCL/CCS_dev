@@ -1,0 +1,4 @@
+schema_version: 1
+device:
+  id: "UGV_001"
+  ip: "192.168.50.120"
