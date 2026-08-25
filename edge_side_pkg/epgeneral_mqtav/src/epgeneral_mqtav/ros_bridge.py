@@ -1,5 +1,7 @@
 """Python 3.6 compatible ROS subscription boundary for MAVROS telemetry."""
 
+import time
+
 from .config import RosTopicConfig
 
 
@@ -35,6 +37,8 @@ class RosBridge(object):
         self._rospy = rospy_module
         self._message_resolver = message_resolver
         self._subscriptions = []
+        self._last_state_message = None
+        self._freshness_timer = None
 
     def _subscribe(self, spec, callback, label):
         message_class = self._message_resolver(spec.message_type)
@@ -44,12 +48,19 @@ class RosBridge(object):
     def start(self):
         self._subscribe(self._config.ros.state, self._on_state, "state")
         self._subscribe(self._config.ros.battery, self._on_battery, "battery")
+        state = self._config.ros.state
+        if state.connected_on_message and state.timeout_seconds is not None:
+            self._freshness_timer = self._rospy.Timer(
+                self._rospy.Duration(min(1.0, state.timeout_seconds / 2.0)),
+                self._check_state_freshness,
+            )
         mission = self._config.ros.mission
         if mission.enabled:
             self._subscribe(RosTopicConfig(mission.topic or "", mission.message_type or ""), self._on_mission, "mission")
 
     def _on_state(self, message):
         mapping = self._config.ros.state.mapping
+        self._last_state_message = time.monotonic()
 
         def mapped(name):
             field_path = mapping.get(name)
@@ -61,19 +72,39 @@ class RosBridge(object):
                 self._logger.warning("state_field_unavailable field=%s error=%s", name, exc)
                 return None
 
+        connected = True if self._config.ros.state.connected_on_message else mapped("connected")
         self._health.update_state(
-            mapped("connected"),
+            connected,
             mapped("armed"),
             mapped("system_status"),
             mapped("mode"),
         )
 
     def _on_battery(self, message):
+        mapping = self._config.ros.battery.mapping
+
+        def mapped(name):
+            field_path = mapping.get(name)
+            if field_path is None:
+                return None
+            try:
+                return read_field(message, field_path)
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                self._logger.warning("battery_field_unavailable field=%s error=%s", name, exc)
+                return None
+
         self._health.update_battery(
-            getattr(message, "percentage", None),
-            getattr(message, "voltage", None),
-            getattr(message, "current", None),
+            mapped("percentage"),
+            mapped("voltage"),
+            mapped("current"),
         )
+
+    def _check_state_freshness(self, _event):
+        timeout = self._config.ros.state.timeout_seconds
+        if timeout is None:
+            return
+        if self._last_state_message is None or time.monotonic() - self._last_state_message > timeout:
+            self._health.update_connected(False)
 
     def _on_mission(self, message):
         try:

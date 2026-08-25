@@ -1,0 +1,8 @@
+<launch>
+  <!-- Scout Mini perception/base stack without FAST-LIO. -->
+  <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch" />
+  <include file="$(find scout_bringup)/launch/scout_mini_robot_base.launch">
+    <arg name="odom_topic_name" value="/scout/odom" />
+    <arg name="pub_tf" value="false" />
+  </include>
+</launch>

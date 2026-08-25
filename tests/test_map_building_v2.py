@@ -97,6 +97,9 @@ class MapBuildingV2ProtocolTests(unittest.TestCase):
         self.assertEqual(self.config.remote_mapping_frame, "odom")
         self.assertEqual(self.config.remote_artifact_frame, "lio_odom")
         self.assertEqual(self.config.final_map_frame, "map")
+        self.assertEqual(self.config.preview_source_frame_for("UGV_001"), "odom")
+        self.assertEqual(self.config.artifact_frame_for("UGV_001"), "map")
+        self.assertEqual(self.config.artifact_frame_for("QRD_001"), "lio_odom")
 
     def test_prepare_result_round_trip_and_consistency(self):
         envelope = MapBuildingEnvelope(

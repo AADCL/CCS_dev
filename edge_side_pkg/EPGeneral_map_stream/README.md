@@ -1,8 +1,14 @@
 # epgeneral_map_stream
 
-<!-- epgeneral_map_stream_VERSION: 0.9.1 -->
+<!-- epgeneral_map_stream_VERSION: 0.10.0 -->
 
-版本：`v0.9.1`。
+版本：`v0.10.0`。
+
+Scout Mini profile 使用 `scout_finalize` backend。启动顺序固定为
+`fastlio_mapping_scout.launch`、`tf_manager.launch`、`pose_adapter.launch`，所有命令
+直接继承常驻节点环境，不再 source 工作空间。停止时按反序发送 SIGINT，不调用
+rosservice；FAST-LIO 保存 `scans.pcd` 后，以开始时间 `YYYYMMDD_HHMMSS` 执行
+`rosrun scout_map_tools finalize_map.py MAP_NAME`。
 
 `epgeneral_map_stream` 是 ROS Noetic/Python 3 端侧遥控建图包，使用独立的
 `ccs-map-stream-v2`。节点监听平台 UDP 14561，向协商得到的平台 UDP 14562

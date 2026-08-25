@@ -1,0 +1,21 @@
+diff --git a/scout_base/src/scout_messenger.cpp b/scout_base/src/scout_messenger.cpp
+--- a/scout_base/src/scout_messenger.cpp
++++ b/scout_base/src/scout_messenger.cpp
+@@
+-//      bms_status.SOC = state.SOC;
+-//      bms_status.SOH = state.SOH;
+-//      bms_status.battery_voltage = state.bms_battery_voltage;
+-//      bms_status.battery_current = state.battery_current;
+-//      bms_status.battery_temperature = state.battery_temperature;
+-//      bms_status.Alarm_Status_1 = state.Alarm_Status_1;
+-//      bms_status.Alarm_Status_2 = state.Alarm_Status_2;
+-//      bms_status.Warning_Status_1 = state.Warning_Status_1;
+-//      bms_status.Warning_Status_2 = state.Warning_Status_2;
++      auto common_sensor = scout_->GetCommonSensorState();
++      bms_status.SOC = common_sensor.bms_basic_state.battery_soc;
++      bms_status.SOH = common_sensor.bms_basic_state.battery_soh;
++      bms_status.battery_voltage = common_sensor.bms_basic_state.voltage;
++      bms_status.battery_current = common_sensor.bms_basic_state.current;
++      bms_status.battery_temperature = common_sensor.bms_basic_state.temperature;
++      if (bms_status.battery_voltage <= 0.0)
++        bms_status.battery_voltage = robot_state.system_state.battery_voltage;

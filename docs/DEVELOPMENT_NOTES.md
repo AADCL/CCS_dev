@@ -14,6 +14,10 @@
 
 ## v0.18.3 / epgeneral_map_stream v0.8.0
 
+- `MapDetailPage` 使用水平 splitter 承载可收起在线设备栏；只渲染 MQTT `ONLINE` 设备，当前建图设备置顶。每个设备显示快照字段、电量进度和现有 `SrtVideoWidget`，由侧栏仲裁为最多一路视频，收起、离线或离页时停止。
+- 地图设备位置只读取 `UdpTelemetryStore.global_pose` 最新快照，100 ms 渲染定时器避免高频信号逐包重绘。2 秒以上位姿不显示；同 frame 使用恒等变换，否则只接受 `build_provenance.transforms` 中唯一且设备 ID 精确匹配的外参。
+- viewer 的设备标记、选中设备 XYZ 轴和最多 10,000 点轨迹受独立“设备”图层控制。轨迹按 0.02 m 位移阈值追加，设备、地图或变换变化时清空。
+- 静态 PCD 与实时预览共享可见点集 Z 范围，NumPy 向量化生成红、黄、绿、青、蓝、紫逐点 RGBA；主题切换不再覆盖高度颜色。
 - 坐标生命周期拆分为 `lio_odom` FAST_LIO 源、`odom` 实时预览和 `map` 最终成果定义。
 - 端侧在窗口最后一帧时间戳查询 `odom <- lio_odom`，先统一窗口到 `lio_odom`，再把实际点坐标转换至 `odom`；描述符记录同一份规范化 TF。
 - 平台分别校验实时分片 `odom` 和端侧成果 `lio_odom`，成果完整验收后才重标为 `map`。

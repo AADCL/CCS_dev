@@ -21,12 +21,15 @@
     },
     {
       "device_id": "UGV_001",
-      "device_name": "测试无人车01",
+      "device_name": "松灵 Scout Mini",
       "device_type": "UGV",
-      "ip_address": "192.168.31.100",
+      "ip_address": "192.168.50.120",
       "availability": "available",
       "last_tested_at": "2026-08-17T15:19:03.094356+00:00",
-      "status_cards": null,
+      "status_cards": [
+        "livox_driver",
+        "fastlio2"
+      ],
       "srt_port": 9000,
       "srt_latency_ms": 120
     },

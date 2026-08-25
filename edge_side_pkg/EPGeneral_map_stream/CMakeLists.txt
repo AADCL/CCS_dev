@@ -24,6 +24,7 @@ catkin_install_python(PROGRAMS scripts/epgeneral_map_stream_node.py scripts/chec
 
 install(PROGRAMS scripts/start_fast_lio.sh scripts/stop_fast_lio.sh
   scripts/abort_fast_lio.sh scripts/save_map.sh scripts/generate_pgm.sh
+  scripts/scout_mapping_stack.sh scripts/scout_finalize_map.sh
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/scripts)
 
 install(DIRECTORY config launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})

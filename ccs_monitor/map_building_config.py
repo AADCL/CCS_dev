@@ -19,6 +19,7 @@ class MapBuildingConfig:
     remote_mapping_frame: str
     remote_artifact_frame: str
     final_map_frame: str
+    device_frames: dict[str, dict[str, str]]
     bind_host: str
     data_port: int
     device_control_port: int
@@ -53,6 +54,18 @@ class MapBuildingConfig:
     http_download_attempts: int
     max_artifact_bytes: int
 
+    def mapping_frame_for(self, device_id: str) -> str:
+        return self.device_frames.get(device_id, {}).get(
+            "remote_mapping", self.remote_mapping_frame)
+
+    def preview_source_frame_for(self, device_id: str) -> str:
+        return self.device_frames.get(device_id, {}).get(
+            "preview_source", self.remote_artifact_frame)
+
+    def artifact_frame_for(self, device_id: str) -> str:
+        return self.device_frames.get(device_id, {}).get(
+            "remote_artifact", self.remote_artifact_frame)
+
 
 def load_map_building_config(path: Path = DEFAULT_MAP_BUILDING_CONFIG_PATH) -> MapBuildingConfig:
     try:
@@ -73,6 +86,10 @@ def load_map_building_config(path: Path = DEFAULT_MAP_BUILDING_CONFIG_PATH) -> M
             remote_mapping_frame=str(frames.get("remote_mapping", "odom")),
             remote_artifact_frame=str(frames.get("remote_artifact", "lio_odom")),
             final_map_frame=str(frames.get("final_map", "map")),
+            device_frames={
+                str(device_id): {str(key): str(value) for key, value in values.items()}
+                for device_id, values in payload.get("device_frames", {}).items()
+            },
             bind_host=str(network["bind_host"]),
             data_port=int(network["data_port"]),
             device_control_port=int(network["device_control_port"]),
@@ -128,6 +145,13 @@ def load_map_building_config(path: Path = DEFAULT_MAP_BUILDING_CONFIG_PATH) -> M
         raise MapBuildingConfigError("遥控显示坐标系和端侧成果坐标系必须区分")
     if config.remote_artifact_frame == config.final_map_frame:
         raise MapBuildingConfigError("端侧成果坐标系和最终地图坐标系必须区分")
+    for device_id, values in config.device_frames.items():
+        if not device_id or not isinstance(values, dict):
+            raise MapBuildingConfigError("device_frames 设备配置无效")
+        if set(values) - {"remote_mapping", "preview_source", "remote_artifact"}:
+            raise MapBuildingConfigError("device_frames 包含未知坐标字段")
+        if any(not value for value in values.values()):
+            raise MapBuildingConfigError("device_frames 坐标系不能为空")
     if config.protocol_id == config.protocol_v2_id:
         raise MapBuildingConfigError("v1 与 v2 协议 ID 不能相同")
     if not 1 <= config.data_port <= 65535 or not 1 <= config.device_control_port <= 65535:

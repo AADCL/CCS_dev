@@ -50,6 +50,10 @@ class HealthState(object):
                 flight_mode=str(mode) if mode else "unknown",
             )
 
+    def update_connected(self, connected):
+        with self._lock:
+            self._health["fcu_connected"] = None if connected is None else bool(connected)
+
     def update_battery(self, percentage, voltage, current):
         def number(value):
             try:

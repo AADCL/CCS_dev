@@ -1,3 +1,11 @@
+<!--
+ * @Author: alex 289724358@qq.com
+ * @Date: 2026-08-18 10:52:31
+ * @LastEditors: alex 289724358@qq.com
+ * @LastEditTime: 2026-08-24 16:50:43
+ * @FilePath: \SwarmDatad:\Projects\AI_assisted\CCS_dev\edge_side_pkg\README.md
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+-->
 # edge_side_pkg
 
 `edge_side_pkg` 是配合地面站指挥控制系统部署到端侧设备的 ROS 功能包目录。它不是单独的 ROS 包，而是便于一起复制到 catkin 工作空间的部署容器。
@@ -18,12 +26,11 @@
   `config/*.yaml`，并用 `ground_station_ip`/`CCS_GROUND_STATION_IP` 设置地面站地址。
 
 - `epgeneral_device_config` v0.1.0：保存端侧设备 ID/IP 的共享配置。地面站 `config/devices.json` 必须有同 ID 且 IP 相同的记录。
-- `epgeneral_mqtav` v0.3.1：订阅 ROS 状态和电池信息，并向地面站 MQTT Broker 发布带启动 session 的 presence、heartbeat、status。
+- `epgeneral_mqtav` v0.4.0：订阅可配置 ROS 状态和电池字段，支持自定义状态新鲜度，并向地面站 MQTT Broker 发布带启动 session 的 presence、heartbeat、status。
 - `epgeneral_video_srt` v0.1.0：订阅配置的 ROS 原始或压缩图像话题，并通过 GStreamer 以 SRT Listener 输出 baseline H.264/MPEG-TS，默认 UDP 9000。
 - `epgeneral_udp_telemetry` v0.2.2：按配置订阅 MAVROS/ROS 位姿、IMU、点云、地图生成状态和建图模式，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测，并隔离非法高频样本、报告逐来源 diagnostics。
 - `epgeneral_map_stream` v0.9.1：建图启动时拉起 map accumulator；停止时保存并校验当前 session PCD，再停止建图进程和生成 PGM/YAML/ZIP。
 - `epgeneral_task_control` v0.1.0：监听 UDP 14563 任务指令，原子保存 XML，通过 ROS 强类型接口协调执行，并向 UDP 14564 回传状态和进度。
-- `epgeneral_mqtav.zip`：包含 `epgeneral_mqtav` 与共享配置包的部署归档。
 
 ## v0.8.0 实时建图接口
 

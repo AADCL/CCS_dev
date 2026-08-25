@@ -569,6 +569,45 @@ QFrame#videoPanel {
     border: 1px solid #1e2b39;
     border-radius: 7px;
 }
+QFrame#mapOnlineDevicePanel {
+    background: #0e1720;
+    border: 1px solid #223442;
+    border-radius: 5px;
+}
+QScrollArea#mapOnlineDeviceScroll, QWidget#mapOnlineDeviceContainer {
+    background: transparent;
+    border: none;
+}
+QFrame#mapOnlineDeviceCard {
+    background: #111a24;
+    border: 1px solid #223142;
+    border-radius: 6px;
+}
+QFrame#mapOnlineDeviceCard[selected='true'] {
+    border-color: #37c5a0;
+    background: #12241f;
+}
+QPushButton#mapDeviceSelectButton {
+    background: transparent;
+    border: none;
+    padding: 2px 0;
+    text-align: left;
+    color: #f1f5fa;
+    font-size: 14px;
+    font-weight: 650;
+}
+QPushButton#mapDeviceSelectButton:checked {
+    color: #7be0bd;
+}
+QPushButton#mapDeviceCollapseButton {
+    min-width: 24px;
+    max-width: 24px;
+    padding: 3px;
+}
+QLabel#mapFrameNote {
+    color: #8fb3c9;
+    font-size: 11px;
+}
 QWidget#videoStack, QVideoWidget#videoOutput {
     background: #05080c;
     border: 1px solid #1c2a36;

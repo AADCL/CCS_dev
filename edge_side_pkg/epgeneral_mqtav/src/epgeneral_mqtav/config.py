@@ -37,10 +37,12 @@ class MqttConfig(object):
 
 
 class RosTopicConfig(object):
-    def __init__(self, topic, message_type, mapping=None):
+    def __init__(self, topic, message_type, mapping=None, connected_on_message=False, timeout_seconds=None):
         self.topic = topic
         self.message_type = message_type
         self.mapping = mapping or {}
+        self.connected_on_message = connected_on_message
+        self.timeout_seconds = timeout_seconds
 
 
 class MissionConfig(object):
@@ -105,7 +107,7 @@ def _ip(value, path):
         raise ConfigError("{0} must be a valid IPv4 or IPv6 address".format(path)) from exc
 
 
-def _topic_config(value, path, mapping_fields=None):
+def _topic_config(value, path, mapping_fields=None, freshness=False):
     data = _mapping(value, path)
     topic = _string(data.get("topic"), "{0}.topic".format(path))
     message_type = _string(data.get("message_type"), "{0}.message_type".format(path))
@@ -123,7 +125,18 @@ def _topic_config(value, path, mapping_fields=None):
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ConfigError("{0}.mapping.{1} must be a field path or null".format(path, field))
             mapping[field] = value.strip() if isinstance(value, str) else None
-    return RosTopicConfig(topic, message_type, mapping)
+    connected_on_message = False
+    timeout_seconds = None
+    if freshness:
+        connected_on_message = data.get("connected_on_message", False)
+        if not isinstance(connected_on_message, bool):
+            raise ConfigError("{0}.connected_on_message must be true or false".format(path))
+        if connected_on_message:
+            raw_timeout = data.get("timeout_seconds", 3.0)
+            if isinstance(raw_timeout, bool) or not isinstance(raw_timeout, (int, float)) or not 0.1 <= float(raw_timeout) <= 3600:
+                raise ConfigError("{0}.timeout_seconds must be between 0.1 and 3600 seconds".format(path))
+            timeout_seconds = float(raw_timeout)
+    return RosTopicConfig(topic, message_type, mapping, connected_on_message, timeout_seconds)
 
 
 def _load_yaml(path):
@@ -199,8 +212,13 @@ def load_config(path, device_config_path):
             ros_data.get("state"),
             "ros.state",
             {"connected": "connected", "armed": "armed", "system_status": "system_status", "mode": "mode"},
+            freshness=True,
         ),
-        _topic_config(ros_data.get("battery"), "ros.battery"),
+        _topic_config(
+            ros_data.get("battery"),
+            "ros.battery",
+            {"percentage": "percentage", "voltage": "voltage", "current": "current"},
+        ),
         mission,
     )
     return AppConfig(device, mqtt, ros)

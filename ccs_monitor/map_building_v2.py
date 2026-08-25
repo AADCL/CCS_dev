@@ -983,10 +983,12 @@ class RemoteMappingCoordinator(QObject):
         if session.state not in {"mapping", "warning"}:
             return
         descriptor = cloud_fragment_from_payload(payload)
-        if descriptor.frame_id != self.config.remote_mapping_frame:
+        expected_mapping_frame = self.config.mapping_frame_for(session.device.device_id)
+        expected_source_frame = self.config.preview_source_frame_for(session.device.device_id)
+        if descriptor.frame_id != expected_mapping_frame:
             self._fail(session, "PCD 分片坐标系不匹配", "FRAME_MISMATCH")
             return
-        if descriptor.source_frame_id != self.config.remote_artifact_frame:
+        if descriptor.source_frame_id != expected_source_frame:
             self._fail(session, "PCD 分片源坐标系不匹配", "FRAME_MISMATCH")
             return
         if descriptor.fragment_id in session.processed_fragments:
@@ -1113,10 +1115,12 @@ class RemoteMappingCoordinator(QObject):
                     archive, root / "validated", map_id=session.definition.map_id,
                     device_id=session.device.device_id, session_id=session.session_id,
                 )
-                if artifact.frame_id != self.config.remote_artifact_frame:
+                expected_artifact_frame = self.config.artifact_frame_for(
+                    session.device.device_id)
+                if artifact.frame_id != expected_artifact_frame:
                     raise ArtifactValidationError(
                         f"端侧成果坐标系 {artifact.frame_id} 与要求的源成果坐标系 "
-                        f"{self.config.remote_artifact_frame} 不一致"
+                        f"{expected_artifact_frame} 不一致"
                     )
                 # The source artifact remains in the FAST_LIO frame. Once it is
                 # accepted, its local origin becomes the final map frame.

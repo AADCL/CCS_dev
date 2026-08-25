@@ -9,6 +9,7 @@ PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT_NAMES = (
     "start_fast_lio.sh", "stop_fast_lio.sh", "abort_fast_lio.sh", "save_map.sh",
     "generate_pgm.sh",
+    "scout_mapping_stack.sh", "scout_finalize_map.sh",
 )
 
 

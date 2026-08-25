@@ -96,6 +96,7 @@ class SessionPaths(object):
         values = {
             "map_id": identity["map_id"], "device_id": config["device_id"],
             "session_id": identity["session_id"], "session_dir": self.session_dir,
+            "map_name": "19700101_000000",
         }
         values.update({"pcd_path": "", "pgm_path": "", "yaml_path": ""})
         self.pcd_path = os.path.abspath(config["pcd_template"].format(**values))
@@ -142,9 +143,10 @@ class CommandRunner(object):
         self.config = config
 
     def check(self, commands):
-        for name in ("check_fast_lio", "check_save_map", "check_pgm"):
-            self.run(
-                commands[name], timeout=self.config["integration_check_timeout_seconds"])
+        checks = commands.get("checks") or [commands[name] for name in (
+            "check_fast_lio", "check_save_map", "check_pgm")]
+        for command in checks:
+            self.run(command, timeout=self.config["integration_check_timeout_seconds"])
 
     def run(self, arguments, timeout=None):
         if not isinstance(arguments, list) or not arguments:
@@ -305,9 +307,15 @@ def build_archive(paths, config, identity):
     manifest = {
         "schema_version": 1, "map_id": identity["map_id"],
         "device_id": config["device_id"], "session_id": identity["session_id"],
-        "frame_id": config["map_frame"], "generated_at": generated_at,
+        "frame_id": config.get("artifact_frame", config["map_frame"]),
+        "generated_at": generated_at,
         "files": manifest_files,
     }
+    map_name = paths.values.get("map_name")
+    if map_name:
+        manifest["map_name"] = map_name
+        manifest["device_map_directory"] = os.path.join(
+            config.get("scout_map_root", ""), map_name)
     temporary = paths.archive_path + ".tmp"
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
         archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True).encode("utf-8"))
