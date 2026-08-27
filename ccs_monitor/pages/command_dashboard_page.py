@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..data_source import DeviceDataSource
+from ..app_icons import apply_button_icon
 from ..map_repository import MapRepository, MapRepositoryError
 from ..models import (
     ConnectionStatus,
@@ -217,6 +218,7 @@ class CollapsibleDevicePanel(QFrame):
 
     def __init__(self) -> None:
         super().__init__()
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.setObjectName("dashboardSidePanel")
         self.mode = DevicePanelMode.SUMMARY
         self._previous_mode = DevicePanelMode.SUMMARY
@@ -233,13 +235,15 @@ class CollapsibleDevicePanel(QFrame):
         self.title.setObjectName("dashboardPanelTitle")
         self.count_label = QLabel("0")
         self.count_label.setObjectName("dashboardCount")
-        self.detail_button = QPushButton("»")
+        self.detail_button = QPushButton()
         self.detail_button.setObjectName("dashboardIconButton")
         self.detail_button.setToolTip("展开设备详细摘要")
+        self.detail_button.setAccessibleName("展开设备详细摘要")
         self.detail_button.clicked.connect(self.toggle_expanded)
-        self.collapse_button = QPushButton("‹")
+        self.collapse_button = QPushButton()
         self.collapse_button.setObjectName("dashboardIconButton")
         self.collapse_button.setToolTip("完全收起在线设备栏")
+        self.collapse_button.setAccessibleName("完全收起在线设备栏")
         self.collapse_button.clicked.connect(self.toggle_collapsed)
         header.addWidget(self.title)
         header.addStretch()
@@ -353,20 +357,37 @@ class CollapsibleDevicePanel(QFrame):
         if collapsed:
             self.setMinimumWidth(34)
             self.setMaximumWidth(38)
-            self.collapse_button.setText("›")
             self.collapse_button.setToolTip("展开在线设备栏")
         elif self.mode == DevicePanelMode.DETAIL:
             self.setMinimumWidth(280)
             self.setMaximumWidth(330)
-            self.detail_button.setText("«")
             self.detail_button.setToolTip("收起设备详细摘要")
-            self.collapse_button.setText("‹")
         else:
             self.setMinimumWidth(165)
             self.setMaximumWidth(205)
-            self.detail_button.setText("»")
             self.detail_button.setToolTip("展开设备详细摘要")
-            self.collapse_button.setText("‹")
+        self.detail_button.setAccessibleName(self.detail_button.toolTip())
+        self.collapse_button.setAccessibleName(self.collapse_button.toolTip())
+        self._refresh_icons()
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self._refresh_icons()
+        self.update()
+
+    def _refresh_icons(self) -> None:
+        apply_button_icon(
+            self.detail_button,
+            "close" if self.mode == DevicePanelMode.DETAIL else "expand",
+            self.theme_palette,
+            text="",
+        )
+        apply_button_icon(
+            self.collapse_button,
+            "expand" if self.mode == DevicePanelMode.COLLAPSED else "close",
+            self.theme_palette,
+            text="",
+        )
 
     def _sync_splitter_width(self) -> None:
         splitter = self.parentWidget()
@@ -490,6 +511,7 @@ class TelemetryChart(QFrame):
 class TelemetryStatusPanel(QFrame):
     def __init__(self) -> None:
         super().__init__()
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.setObjectName("dashboardSidePanel")
         self.expanded = False
         self.user_collapsed = False
@@ -498,9 +520,10 @@ class TelemetryStatusPanel(QFrame):
         root.setContentsMargins(8, 10, 8, 10)
         root.setSpacing(8)
         header = QHBoxLayout()
-        self.toggle_button = QPushButton("«")
+        self.toggle_button = QPushButton()
         self.toggle_button.setObjectName("dashboardIconButton")
         self.toggle_button.setToolTip("展开设备实时状态")
+        self.toggle_button.setAccessibleName("展开设备实时状态")
         self.toggle_button.clicked.connect(self.toggle_expanded)
         self.title = QLabel("设备实时状态")
         self.title.setObjectName("dashboardPanelTitle")
@@ -623,8 +646,24 @@ class TelemetryStatusPanel(QFrame):
         self.title.setVisible(self.expanded)
         self.setMinimumWidth(330 if self.expanded else 42)
         self.setMaximumWidth(410 if self.expanded else 46)
-        self.toggle_button.setText("»" if self.expanded else "«")
         self.toggle_button.setToolTip("收起设备实时状态" if self.expanded else "展开设备实时状态")
+        self.toggle_button.setAccessibleName(self.toggle_button.toolTip())
+        self._refresh_icon()
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self._refresh_icon()
+        self.position_chart.set_theme(palette)
+        self.attitude_chart.set_theme(palette)
+        self.update()
+
+    def _refresh_icon(self) -> None:
+        apply_button_icon(
+            self.toggle_button,
+            "expand" if self.expanded else "close",
+            self.theme_palette,
+            text="",
+        )
 
 
 class CollapsibleConsolePanel(QFrame):
@@ -633,6 +672,7 @@ class CollapsibleConsolePanel(QFrame):
 
     def __init__(self) -> None:
         super().__init__()
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.setObjectName("dashboardConsole")
         self.collapsed = False
         self._expanded_height = 165
@@ -645,9 +685,10 @@ class CollapsibleConsolePanel(QFrame):
         self.title.setObjectName("dashboardPanelTitle")
         self.status_label = QLabel("等待地图与设备数据")
         self.status_label.setObjectName("dashboardConsoleStatus")
-        self.toggle_button = QPushButton("⌄")
+        self.toggle_button = QPushButton()
         self.toggle_button.setObjectName("dashboardIconButton")
         self.toggle_button.setToolTip("完全收起控制台")
+        self.toggle_button.setAccessibleName("完全收起控制台")
         self.toggle_button.clicked.connect(self.toggle_collapsed)
         header.addWidget(self.title)
         header.addStretch()
@@ -660,6 +701,7 @@ class CollapsibleConsolePanel(QFrame):
         self.content_layout.setHorizontalSpacing(9)
         self.content_layout.setVerticalSpacing(6)
         root.addWidget(self.content_widget, 1)
+        self._refresh_icon()
 
     def toggle_collapsed(self) -> None:
         self.set_collapsed(not self.collapsed)
@@ -682,14 +724,29 @@ class CollapsibleConsolePanel(QFrame):
     def _apply_state(self) -> None:
         self.content_widget.setVisible(not self.collapsed)
         self.status_label.setVisible(not self.collapsed)
-        self.toggle_button.setText("⌃" if self.collapsed else "⌄")
         self.toggle_button.setToolTip("展开控制台" if self.collapsed else "完全收起控制台")
+        self.toggle_button.setAccessibleName(self.toggle_button.toolTip())
+        self._refresh_icon()
         if self.collapsed:
             self.setMinimumHeight(self.COLLAPSED_HEIGHT)
             self.setMaximumHeight(self.COLLAPSED_HEIGHT)
         else:
             self.setMinimumHeight(110)
             self.setMaximumHeight(16777215)
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self._refresh_icon()
+        self.update()
+
+    def _refresh_icon(self) -> None:
+        apply_button_icon(
+            self.toggle_button,
+            "close" if self.collapsed else "expand",
+            self.theme_palette,
+            rotation=90,
+            text="",
+        )
 
     def _sync_splitter_size(self) -> None:
         splitter = self.parentWidget()
@@ -759,6 +816,9 @@ class CommandDashboardPage(QWidget):
         set_theme = getattr(self.viewer, "set_theme", None)
         if set_theme is not None:
             set_theme(palette)
+        self.device_panel.set_theme(palette)
+        self.status_panel.set_theme(palette)
+        self.console_panel.set_theme(palette)
         for chart in self.findChildren(TelemetryChart):
             chart.set_theme(palette)
         self.update()

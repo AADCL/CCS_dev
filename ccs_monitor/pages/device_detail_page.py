@@ -35,6 +35,7 @@ from ..models import (
 )
 from ..device_map_context import map_mode_text, resolve_device_map_context
 from ..device_dialogs import StatusCardEditorDialog
+from ..app_icons import apply_button_icon
 from ..srt_video import SrtVideoWidget, build_srt_url
 from ..widgets import STATUS_TEXT
 from ..styles import ThemeMode, ThemePalette, theme_palette
@@ -169,10 +170,13 @@ class DeviceDetailPage(QWidget):
         scroll.setWidget(content)
 
         header = QHBoxLayout()
-        back = QPushButton("返回设备列表")
-        back.setObjectName("backButton")
-        back.clicked.connect(self.back_requested)
-        header.addWidget(back)
+        self.back_button = QPushButton("返回")
+        self.back_button.setObjectName("backButton")
+        self.back_button.setAccessibleName("返回设备列表")
+        self.back_button.setToolTip("返回设备列表")
+        self.back_button.clicked.connect(self.back_requested)
+        apply_button_icon(self.back_button, "back", self.theme_palette, text="返回")
+        header.addWidget(self.back_button)
         header.addStretch()
         self.mqtt_card = QFrame()
         self.mqtt_card.setObjectName("mqttStatusCard")
@@ -586,6 +590,8 @@ class DeviceDetailPage(QWidget):
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
+        apply_button_icon(self.back_button, "back", palette, text="返回")
+        self.video_panel.set_theme(palette)
         for card in self.status_cards.values():
             card.set_theme(palette)
         self._render_logs()

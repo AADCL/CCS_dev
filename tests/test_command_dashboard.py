@@ -252,6 +252,7 @@ class CommandDashboardUiTests(unittest.TestCase):
         self.assertEqual(position_chart.y_axis.titleText(), "")
 
         page.device_panel.set_mode(DevicePanelMode.DETAIL)
+        self.assertEqual(page.device_panel.detail_button.property("appIconName"), "close")
         device_center_width = page.upper_splitter.sizes()[1]
         page.device_panel.toggle_collapsed()
         self.app.processEvents()
@@ -260,6 +261,7 @@ class CommandDashboardUiTests(unittest.TestCase):
         self.assertLessEqual(page.upper_splitter.sizes()[0], 38)
         self.assertGreaterEqual(page.upper_splitter.sizes()[1], device_center_width)
         self.assertFalse(page.device_panel.list.isVisible())
+        self.assertEqual(page.device_panel.collapse_button.property("appIconName"), "expand")
         self.window.set_current_page(0)
         self.window.set_current_page(4)
         self.assertEqual(page.device_panel.mode, DevicePanelMode.COLLAPSED)
@@ -270,12 +272,15 @@ class CommandDashboardUiTests(unittest.TestCase):
         page.console_panel.set_collapsed(True)
         self.app.processEvents()
         self.assertTrue(page.console_panel.collapsed)
+        self.assertEqual(page.console_panel.toggle_button.property("appIconName"), "close")
+        self.assertEqual(page.console_panel.toggle_button.property("appIconRotation"), 90)
         self.assertFalse(page.console_panel.content_widget.isVisible())
         self.assertEqual(page.console_panel.maximumHeight(), page.console_panel.COLLAPSED_HEIGHT)
         self.assertGreaterEqual(page.vertical_splitter.sizes()[0], expanded_upper)
         page.console_panel.set_collapsed(False)
         self.app.processEvents()
         self.assertFalse(page.console_panel.collapsed)
+        self.assertEqual(page.console_panel.toggle_button.property("appIconName"), "expand")
         self.assertTrue(page.console_panel.content_widget.isVisible())
 
 

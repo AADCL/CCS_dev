@@ -23,6 +23,7 @@ from ccs_monitor.pages.map_page import (
     height_rainbow_colors,
     transform_device_pose,
 )
+from ccs_monitor.styles import ThemeMode, theme_palette
 
 
 class MapDeviceOverlayMathTests(unittest.TestCase):
@@ -92,6 +93,9 @@ class MapOnlineDevicePanelTests(unittest.TestCase):
             datetime.now(timezone.utc), frame_id="lio_odom",
         )
         panel = MapOnlineDevicePanel()
+        panel.set_theme(theme_palette(ThemeMode.DAY))
+        self.assertEqual(panel.collapse_button.property("appIconMode"), "day")
+        self.assertEqual(panel.collapse_button.property("appIconName"), "close")
         panel.set_devices(devices, remote)
         self.assertEqual([item.device_id for item in panel.devices], ["B", "A"])
         self.assertEqual(set(panel.cards), {"A", "B"})
@@ -103,6 +107,8 @@ class MapOnlineDevicePanelTests(unittest.TestCase):
             stop_previous.assert_called_once_with()
         self.assertEqual(panel._active_video_id, "B")
         panel.stop_videos()
+        panel.toggle_collapsed()
+        self.assertEqual(panel.collapse_button.property("appIconName"), "expand")
         panel.deleteLater()
 
 

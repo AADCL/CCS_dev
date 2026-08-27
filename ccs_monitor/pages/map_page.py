@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..data_source import DeviceDataSource
+from ..app_icons import apply_button_icon
 from ..map_repository import MapRepository, MapRepositoryError
 from ..map_building import MapBuildingSessionSnapshot
 from ..map_building_v2 import RemoteMappingSnapshot
@@ -1399,6 +1400,7 @@ class MapDeviceCard(QFrame):
     def __init__(self, device: DeviceSnapshot) -> None:
         super().__init__()
         self.setObjectName("mapOnlineDeviceCard")
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.device = device
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 9, 10, 10)
@@ -1461,6 +1463,11 @@ class MapDeviceCard(QFrame):
         )
         layout.addWidget(self.video)
         self.update_snapshot(device, None)
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self.video.set_theme(palette)
+        self.update()
 
     def update_snapshot(
         self,
@@ -1544,6 +1551,7 @@ class MapOnlineDevicePanel(QFrame):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("mapOnlineDevicePanel")
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.devices: list[DeviceSnapshot] = []
         self.remote: RemoteMappingSnapshot | None = None
         self.selected_device_id: str | None = None
@@ -1564,9 +1572,10 @@ class MapOnlineDevicePanel(QFrame):
         self.title.setObjectName("panelTitle")
         self.count = QLabel("0")
         self.count.setObjectName("muted")
-        self.collapse_button = QPushButton("‹")
+        self.collapse_button = QPushButton()
         self.collapse_button.setObjectName("mapDeviceCollapseButton")
         self.collapse_button.setToolTip("收起在线设备")
+        self.collapse_button.setAccessibleName("收起在线设备")
         self.collapse_button.clicked.connect(self.toggle_collapsed)
         header.addWidget(self.title)
         header.addStretch()
@@ -1591,6 +1600,22 @@ class MapOnlineDevicePanel(QFrame):
         root.addWidget(self.empty)
         self.setMinimumWidth(360)
         self.setMaximumWidth(460)
+        self._refresh_collapse_icon()
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self._refresh_collapse_icon()
+        for card in self.cards.values():
+            card.set_theme(palette)
+        self.update()
+
+    def _refresh_collapse_icon(self) -> None:
+        apply_button_icon(
+            self.collapse_button,
+            "expand" if self._collapsed else "close",
+            self.theme_palette,
+            text="",
+        )
 
     def set_devices(
         self,
@@ -1626,6 +1651,7 @@ class MapOnlineDevicePanel(QFrame):
             card = self.cards.get(item.device_id)
             if card is None:
                 card = MapDeviceCard(item)
+                card.set_theme(self.theme_palette)
                 card.selected.connect(self.select_device)
                 card.video_requested.connect(self._on_video_requested)
                 card.map_download_requested.connect(self.map_download_requested)
@@ -1696,7 +1722,6 @@ class MapOnlineDevicePanel(QFrame):
             self.empty.setVisible(False)
             self.setMinimumWidth(36)
             self.setMaximumWidth(40)
-            self.collapse_button.setText("›")
             self.collapse_button.setToolTip("展开在线设备")
         else:
             self.title.setVisible(True)
@@ -1705,8 +1730,9 @@ class MapOnlineDevicePanel(QFrame):
             self.empty.setVisible(not self.devices)
             self.setMinimumWidth(360)
             self.setMaximumWidth(460)
-            self.collapse_button.setText("‹")
             self.collapse_button.setToolTip("收起在线设备")
+        self.collapse_button.setAccessibleName(self.collapse_button.toolTip())
+        self._refresh_collapse_icon()
         if isinstance(splitter, QSplitter):
             total = max(sum(splitter.sizes()), splitter.width())
             width = 38 if self._collapsed else min(self._expanded_width, 460)
@@ -2557,15 +2583,19 @@ class MapDetailPage(QWidget):
 
     def __init__(self, viewer_factory: Callable[[], PointCloudViewer] | None = None) -> None:
         super().__init__()
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.definition: MapDefinition | None = None
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 18, 22, 22)
         root.setSpacing(12)
         toolbar = QHBoxLayout()
-        back = QPushButton("返回地图列表")
-        back.setObjectName("backButton")
-        back.clicked.connect(self.back_requested)
-        toolbar.addWidget(back)
+        self.back_button = QPushButton("返回")
+        self.back_button.setObjectName("backButton")
+        self.back_button.setAccessibleName("返回地图列表")
+        self.back_button.setToolTip("返回地图列表")
+        self.back_button.clicked.connect(self.back_requested)
+        apply_button_icon(self.back_button, "back", self.theme_palette, text="返回")
+        toolbar.addWidget(self.back_button)
         self.title = QLabel("地图详情")
         self.title.setObjectName("pageTitle")
         toolbar.addWidget(self.title)
@@ -2656,6 +2686,9 @@ class MapDetailPage(QWidget):
         self._elapsed_timer.timeout.connect(self._refresh_elapsed)
 
     def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        apply_button_icon(self.back_button, "back", palette, text="返回")
+        self.device_panel.set_theme(palette)
         set_theme = getattr(self.viewer, "set_theme", None)
         if set_theme is not None:
             set_theme(palette)
