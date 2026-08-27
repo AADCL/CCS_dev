@@ -12,7 +12,8 @@ if DEPS:
 
     from ccs_monitor.models import FrameTransform, MapBounds, MapDefinition, PgmMapMetadata, PoseTelemetry
     from ccs_monitor.pages.map_page import (
-        PointCloudViewer, cursor_anchored_camera_center, pick_mode_zoom_distance,
+        MAP_VIEWER_SETTINGS, PointCloudViewer, cursor_anchored_camera_center,
+        fixed_width_font, pick_mode_zoom_distance,
         transform_pose_by_binding,
         unproject_screen_to_plane,
     )
@@ -54,6 +55,47 @@ class MapPickingTests(unittest.TestCase):
         viewer.set_relocalization_picker(True)
         self.assertEqual(viewer._camera.azimuth, 47.0)
         self.assertEqual(tuple(viewer._camera.center), (4.0, 5.0, 0.0))
+
+    def test_relocalization_grid_survives_empty_device_line_visuals(self):
+        viewer = PointCloudViewer()
+        original = (
+            MAP_VIEWER_SETTINGS.grid_visible,
+            MAP_VIEWER_SETTINGS.coordinates_visible,
+            MAP_VIEWER_SETTINGS.grid_spacing,
+            MAP_VIEWER_SETTINGS.tick_spacing,
+        )
+        try:
+            MAP_VIEWER_SETTINGS.grid_visible = True
+            MAP_VIEWER_SETTINGS.coordinates_visible = True
+            MAP_VIEWER_SETTINGS.grid_spacing = 1.0
+            MAP_VIEWER_SETTINGS.tick_spacing = 5.0
+            viewer.current_map = MapDefinition(
+                "relocalization-map", "relocalization-map",
+                bounds=MapBounds(-10.0, -8.0, -1.0, 12.0, 9.0, 2.0),
+            )
+            viewer.set_selected_device_pose(None)
+            viewer.set_device_trail([])
+            viewer._render_coordinate_grid()
+            viewer.set_relocalization_picker(True)
+
+            self.assertFalse(viewer._device_axis_visual.visible)
+            self.assertFalse(viewer._trail_visual.visible)
+            self.assertTrue(viewer._grid_visual.visible)
+            self.assertTrue(viewer._coordinate_visual.visible)
+            self.assertGreater(len(viewer._grid_visual.pos), 0)
+            self.assertGreater(len(viewer._coordinate_visual.text), 0)
+        finally:
+            (
+                MAP_VIEWER_SETTINGS.grid_visible,
+                MAP_VIEWER_SETTINGS.coordinates_visible,
+                MAP_VIEWER_SETTINGS.grid_spacing,
+                MAP_VIEWER_SETTINGS.tick_spacing,
+            ) = original
+            viewer.close()
+
+    def test_fixed_width_map_log_font_always_has_valid_size(self):
+        font = fixed_width_font()
+        self.assertTrue(font.pointSize() > 0 or font.pixelSize() > 0)
 
     def test_relocalization_reticle_overlays_map_viewport_and_tracks_resize(self):
         viewer = PointCloudViewer()

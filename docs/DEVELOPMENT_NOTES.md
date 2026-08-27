@@ -1,5 +1,28 @@
 # 开发笔记
 
+## v0.22.2 Scout 航点可达性与启动延迟
+
+- 导航栈在任务下发后已经常驻并完成 ready 握手，统一执行只需覆盖 UDP 调度传播；`group_start_delay_seconds` 从 30 秒改为 3 秒。
+- Scout 准备阶段按 `map.yaml` 的 origin/resolution/free threshold 读取 PGM。目标单元格必须是已知自由空间，未知、占用和地图外目标返回 `WAYPOINT_NOT_TRAVERSABLE`。
+- action 状态 4 且文本包含规划失败时返回 `NAVIGATION_PLAN_FAILED`，平台日志保留 `move_base` 原始状态文本。
+
+## epgeneral_task_control v0.4.2 TF 监听修复
+
+Scout 适配器的 `tf2_ros.Buffer` 必须与生命周期一致的 `tf2_ros.TransformListener` 配套。仅创建 buffer 不会订阅 `/tf` 或 `/tf_static`，即使系统 TF 树存在 `map<-odom`，适配器查询仍会永久失败。v0.4.2 创建并持有 listener，由实时定位预检继续决定导航准备状态。
+
+## v0.22.1 执行会话创建约束
+
+- “执行任务”不承担保存或下发职责，不得隐式增加 revision；当前子任务必须已 delivered 且 edge revision/status 为当前 revision/ready。
+- ready 检查必须先于 execution snapshot 和设备锁创建。检查失败只提示保存下发、导航准备中或端侧具体错误，不残留 `_device_execution`。
+- Scout 的 TF2 查询与位姿转换异常必须归一为 `LOCALIZATION_UNAVAILABLE` feedback，禁止异常逃出 ROS callback。
+
+## v0.22.0 Scout 导航准备与常驻生命周期
+
+- `task_commit` ACK 只确认文件已原子保存；端侧随后通过内部 `PREPARE` 启动导航，适配器反馈 ready 后才发送 `task_summary=ready`。
+- 平台分别维护 delivered revision 和 edge ready，不能因 commit ACK 提前发送 `execute_task`；多设备统一启动必须等待全部导航就绪。
+- 同地图新 revision 复用导航。完成、失败及常规停止取消目标并发零速度但保留导航；`UNLOAD`、删除、急停和关闭停止进程。
+- 定位暂时不可用和导航准备失败保留任务，端侧按 `preparation_retry_seconds` 自动重试；导航进程意外退出上报 `NAVIGATION_PROCESS_EXITED`。
+
 ## v0.21.2 主题化操作图标
 
 - 内置操作图标固定存放在仓库根目录 `icons/app_icons/`，运行时由 `ccs_monitor.app_icons` 相对模块位置解析，禁止依赖进程当前工作目录。
@@ -620,5 +643,5 @@ v0.20.1 任务页交互约束：设备列表使用约 280px 起步宽度的卡�
 
 - Scout 任务控制包为 v0.3.0；协议和 UDP 端口不变。适配器收到执行命令后按任务地图启动 `scout_navigation/navigation_teb.launch`，使用 `/fastlio_odom` 与 `map<-odom` TF 计算 map 位姿。
 - 任务地图必须同时匹配平台全局激活地图和端侧 `relocalization.json` 的 localized 地图；不一致时拒绝运动。
-- 目标通过 `/move_base/goal` 顺序执行；航点成功由 move_base action result 判定，状态和航点进度继续从 14564 回传。终止/急停取消目标、发布 `/cmd_vel` 零速度并停止导航进程。
-- Scout 一键启动常驻任务控制节点，但导航栈按任务启停。v0.21.0 只做静态安全验收，不宣称真实车辆运动已验收。
+- 目标通过 `/move_base/goal` 顺序执行；航点成功由 move_base action result 判定，状态和航点进度继续从 14564 回传。该段为 v0.21.0 历史行为，v0.22.0 已改为 commit 后准备并常驻导航。
+- Scout 一键启动常驻任务控制节点；v0.22.0 起导航栈随已提交任务保持运行，删除、急停或关闭时卸载。尚不宣称真实车辆运动已验收。

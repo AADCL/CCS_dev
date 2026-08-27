@@ -1,5 +1,51 @@
 # Scout Mini 部署日志
 
+## 2026-08-27 v0.4.3 航点可达性修复部署
+
+- 执行 `4111b255...` 从 08:22:16 接收命令至 08:22:46 发送首个 goal，30 秒延迟来自平台旧统一启动提前量；平台 v0.22.2 已改为 3 秒。
+- 前两个航点成功，第三个 waypoint 2 `(-0.5, 0.5)` 被 `move_base` 状态 4 中止，原始文本为 `Failed to find a valid plan. Even after executing recovery behaviors.`。该点 PGM 值为 205，属于未知区，而 GlobalPlanner 配置 `allow_unknown=false`。
+- 端侧 v0.4.3 在 ready 前按 map YAML/PGM 拒绝地图外、未知和占用目标，返回 `WAYPOINT_NOT_TRAVERSABLE`；运行期 action 失败保留状态文本并返回 `NAVIGATION_PLAN_FAILED` 等明确错误码。
+- 部署前备份位于 `~/.deployment_backups/20260827T083703Z_v043_waypoint_validation`。本地 30 项端侧测试及 10 项平台回归通过；Scout 29 项纯端侧测试、真实地图校验、版本检查和 Release catkin 构建通过。
+- 一键栈 PID `19617` 于 `2026-08-27T08:42:30Z` 启动成功，任务节点、适配器及 UDP 14563 在线。重启后重定位按安全规则进入 standby，未恢复导航或运动。
+- 本轮部署验收未发送航点或非零速度。重新执行前必须完成重定位，并将 waypoint 2 改选到 PGM 已知自由空间后重新保存下发。
+
+## 2026-08-27 v0.4.2 TF listener 修复部署
+
+- 根因：系统 `/fastlio_odom` 和实时 `map<-odom` 均正常，但 Scout 导航适配器只创建 `tf2_ros.Buffer`，没有创建并持有 `tf2_ros.TransformListener`；因此适配器未订阅 `/tf`、`/tf_static`，私有 TF buffer 永久为空。
+- 修复后 `/scout_navigation_task_adapter` 明确订阅 `/tf` 和 `/tf_static`，能够读取实时 map 位姿。端侧包升级为 v0.4.2，平台继续为 v0.22.1，任务 UDP 协议和端口不变。
+- 部署前备份位于 `~/.deployment_backups/20260827T074609Z_v042_tf_listener`。本地 28 项端侧测试及 10 项平台回归通过；Scout 上 28 项端侧测试、版本检查和 Release catkin 构建通过。依赖地面站 `ccs_monitor` 的契约测试不在 Scout 运行。
+- 为保留 15:38 完成的定位栈，仅热重启导航适配器。修复后导航进程和地图服务常驻，任务 revision 8 于 15:54:00 自动由 `received` 进入 `ready`。
+- 验收时没有 `mission/active_execution.json`，未发送 `/move_base/goal` 航点或非零速度，未执行真实车辆运动。
+
+## 2026-08-27 v0.4.1 执行会话修复部署
+
+- 根因确认：Scout 日志中不存在执行命令和 `mission/active_execution.json`；“设备已有执行会话”来自平台在端侧尚未 `ready` 时提前创建 `_device_execution` 内存锁。任务页执行按钮还会重复保存并增加 revision，使刚就绪的 revision 立即失效。
+- 平台 v0.22.1 改为仅对已下发且端侧 `ready` 的当前 revision 创建执行会话；执行按钮不再隐式保存。Scout 任务控制 v0.4.1 将 TF callback 异常转换为结构化失败，并将未定位状态归类为 `LOCALIZATION_UNAVAILABLE`。
+- 部署前备份位于 `~/.deployment_backups/20260827T072350Z_v041_execution_session_fix`。端侧 25 项初始增量测试及补丁后的 10 项 Scout 适配器测试通过，Python 编译、版本一致性检查和 Release catkin 增量构建通过。
+- 一键栈 PID `34654` 于 `2026-08-27T07:31:48Z` 启动成功；`/epgeneral_task_control`、`/scout_navigation_task_adapter` 在线，UDP 14563 正常监听，安装版本为 v0.4.1。
+- 历史任务恢复准备因当前未重新定位而返回 `LOCALIZATION_UNAVAILABLE`；最新任务控制和适配器日志无 `bad callback`、Traceback 或 TF2 未捕获异常。
+- 验收时不存在活动执行文件、`move_base`/TEB 节点和 `/move_base/goal`。本轮未发送生产非零目标，未执行真实车辆运动。
+
+## 2026-08-27 `epgeneral_map_stream` v0.11.0 增量部署
+
+- map-stream 增加 `scout_pointcloud_mapper` 四阶段流程；FAST-LIO 使用 `rviz:=false`，mapper 使用会话开始时固化的 `map_name:=YYYYMMDD_HHMMSS`，pose adapter 继续使用真机现有 `pose_adapter.launch`。
+- 部署前备份位于 `~/.deployment_backups/20260827T044122Z_map_stream_v011`；仅覆盖 `~/ccs_edge_ws/src/EPGeneral_map_stream` 和 `config/scout_mini/map_stream.yaml`，未修改 Scout 工具源码和一键脚本。
+- 端侧 Bash 语法、v0.11.0 版本一致性和 52 项受影响模块测试通过；2 项依赖地面站仓库的测试在端侧跳过。Python 3/Release `catkin_make --force-cmake` 构建成功。
+- 一键栈启动后 `/epgeneral_map_stream` 在线，UDP 14561/TCP 14600 正常监听；空闲状态无 FAST-LIO、mapper、TF 或 pose 重复节点。
+- 真机验收 `map_name=20260827_124539`：supervisor 严格按 `/laserMapping`、`/scout_pointcloud_mapper`、TF manager、pose adapter 就绪；mapper 参数输出路径为 `~/livox_fastlio/maps/20260827_124539/filtered_camera_init.pcd`。预览点云约 10 Hz，`/fastlio_odom` 约 20 Hz。
+- 正常停止耗时 4 秒，先退出 mapper 后 filtered PCD 从 924348 字节刷新为 1027596 字节；四阶段节点和 PID 文件全部清理，未调用 rosservice。
+- finalize 使用同一个 `map_name` 执行 `finalize_map.py 20260827_124539 --replace-raw`。metadata 中名称一致，filtered/raw PCD 均为 1027596 字节且 SHA-256 同为 `6ce568e457ab12d944020bf69a3fc58726b4ed5310821f625643365a8a328416`；`public_map.pcd`、PGM/YAML 和 metadata 均生成成功。
+- 验收结束后已停止一键烟测栈；epgeneral、Scout、D435i 节点、相关监听端口和运行态 PID 文件无残留。验收地图保留在 `~/livox_fastlio/maps/20260827_124539/`。
+
+## 2026-08-27 v0.4.0 源码增量
+
+- 仓库已完成任务 commit 后导航准备与常驻生命周期改造，平台版本 v0.22.0、任务控制包 v0.4.0。
+- 已部署至 `nvidia@192.168.50.120`；旧源码、profile、任务数据和 devel 产物备份于 `~/.deployment_backups/20260827T033036Z_v040_nav_resident`。
+- 上传 SHA-256 校验一致；端侧 24 项纯端侧测试、Python 编译、消息/launch 检查、隔离 catkin Release 构建及主工作区 Release 构建通过。依赖指控平台 `ccs_monitor` 的 `test_ground_contract` 不在端侧运行，已由地面站增量测试覆盖。
+- 一键栈启动成功：任务协调节点、Scout 导航适配器、重定位、地图、底盘和传感器节点在线，UDP 14563 正常监听，安装版本检查为 v0.4.0。
+- 历史任务恢复后因重定位为 `standby`、`/fastlio_odom` 无发布者且缺少 `map<-odom` TF，端侧按 5 秒周期安全重试准备并保持 failed；未启动 `navigation_teb`/`move_base`，`/move_base/goal` 不存在。
+- 本轮未发送生产非零目标，未执行真实车辆运动；需由操作人员重新定位后，再通过正常任务下发验证导航常驻和执行闭环。
+
 ## v0.21.1 任务失败修复
 
 - 根因：执行 `cd3533b6...` 时重定位状态文件仍为历史 `localized`，但 `/fastlio_odom` 无发布者且 `map` frame 不存在；`move_base` 未崩溃，只是在导航准备截止时被适配器停止。

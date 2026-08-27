@@ -8,7 +8,7 @@ from ccs_monitor import __version__
 
 class VersionTests(unittest.TestCase):
     def test_version_is_semantic_triplet(self):
-        self.assertEqual(__version__, "0.21.2")
+        self.assertEqual(__version__, "0.22.2")
         self.assertRegex(__version__, re.compile(r"^\d+\.\d+\.\d+$"))
 
     def test_relocalization_package_versions_match(self):
@@ -26,8 +26,8 @@ class VersionTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1] / "edge_side_pkg" / "EPGeneral_task_control"
         package_version = ET.parse(root / "package.xml").getroot().findtext("version")
         init_text = (root / "src" / "epgeneral_task_control" / "__init__.py").read_text(encoding="utf-8")
-        self.assertEqual(package_version, "0.3.1")
-        self.assertIn('__version__ = "0.3.1"', init_text)
+        self.assertEqual(package_version, "0.4.3")
+        self.assertIn('__version__ = "0.4.3"', init_text)
 
 
 if __name__ == "__main__":

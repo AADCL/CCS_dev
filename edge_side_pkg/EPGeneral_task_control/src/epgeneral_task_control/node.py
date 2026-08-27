@@ -43,8 +43,22 @@ class Execution(object):
         result = dict(self.identity)
         result.update({"revision": self.revision, "request_id": self.request_id,
                        "xml_path": self.trajectory["xml_path"], "frame_id": self.trajectory["frame_id"],
+                       "map_id": self.trajectory.get("map_id", ""),
                        "scheduled_at": self.scheduled_at, "state": self.state})
         return result
+
+
+class Preparation(object):
+    def __init__(self, record, request_id, now):
+        self.identity = {key: str(record.get(key, "")) for key in ("task_id", "subtask_id", "device_id")}
+        self.revision = int(record["revision"])
+        self.request_id = str(request_id)
+        self.record = dict(record)
+        self.state = "received"
+        self.last_feedback_at = now
+        self.last_publish_at = 0.0
+        self.error_code = ""
+        self.message = "task stored; navigation preparation pending"
 
 
 class RosTaskControlNode(object):
@@ -70,6 +84,8 @@ class RosTaskControlNode(object):
         self.status_publisher = None
         self.transfer = None
         self.execution = None
+        self.preparation = None
+        self.pending_cleanup = None
         self.pending_execute = None
         self.ack_cache = {}
         self.sequence = 0
@@ -99,6 +115,7 @@ class RosTaskControlNode(object):
             self._set_state(self.state)
         self.subscriber = self.rospy.Subscriber(self.config["feedback_topic"], self.feedback_class, self.feedback_callback, queue_size=20)
         self._recover_execution()
+        self._recover_preparation()
         self.running.set()
         self.thread = threading.Thread(target=self._control_loop, name="ros-task-control-udp")
         self.thread.daemon = True
@@ -119,6 +136,15 @@ class RosTaskControlNode(object):
             self.rospy.logwarn("recovered interrupted execution %s; published %s", record.get("execution_id"), action)
         finally:
             self.store.clear_execution()
+
+    def _recover_preparation(self):
+        record = self.mission_store.latest(self.config["device_id"])
+        if not isinstance(record, dict) or record.get("state") in ("no_task", "emergency_stop"):
+            return
+        metadata = self.store.load(record.get("task_id", ""), record.get("subtask_id", ""))
+        if metadata is None or int(metadata.get("revision", 0)) != int(record.get("revision", 0)):
+            return
+        self._begin_preparation(dict(metadata, map_id=record.get("map_id", "")), "recovery")
 
     def _control_loop(self):
         while self.running.is_set():
@@ -175,10 +201,12 @@ class RosTaskControlNode(object):
         if self.execution is not None:
             self._ack(command, False, "cannot delete an active execution", "BUSY")
             return
-        self.mission_store.delete(command["task_id"], command["device_id"])
-        self.store.delete(command["task_id"], command["subtask_id"])
-        self._set_state("no_task")
-        self._ack(command, True)
+        record = self._stored_record(command)
+        if record is not None:
+            self._cache(command, None)
+            self._begin_cleanup(command, record, "delete")
+            return
+        self._complete_cleanup(command, "delete")
 
     def _terminate(self, command):
         execution = self.execution
@@ -193,8 +221,8 @@ class RosTaskControlNode(object):
             self._ack(command, False, "execution is not active", "EXECUTION_CONFLICT")
 
     def _emergency_stop(self, command):
+        record = self.execution.persisted() if self.execution is not None else self._stored_record(command)
         if self.execution is not None:
-            self._publish_command("STOP", self.execution.persisted(), command["request_id"])
             self.execution = None
             self.store.clear_execution()
             self.pending_execute = None
@@ -204,13 +232,10 @@ class RosTaskControlNode(object):
             "error_code": None,
         })
         self._ack(command, True)
-        self.mission_store.delete(command["task_id"], command["device_id"])
-        self.store.delete(command["task_id"], command["subtask_id"])
-        self._set_state("no_task")
-        self._send(command, "task_status", {
-            "state": "no_task", "message": "emergency cleanup completed",
-            "error_code": None,
-        })
+        if record is not None:
+            self._begin_cleanup(command, record, "emergency")
+        else:
+            self._complete_cleanup(command, "emergency")
 
     def _repeat(self, command):
         cached = self.ack_cache.get(command["request_id"])
@@ -300,6 +325,9 @@ class RosTaskControlNode(object):
         if transfer is None:
             if existing and existing["revision"] == revision and existing["crc32"] == crc32:
                 self._ack(command, True)
+                if (self.preparation is None or self.preparation.revision != revision or
+                        not self._same_subtask(command, self.preparation.identity)):
+                    self._begin_preparation(existing, command["request_id"])
             else:
                 self._ack(command, False, "no matching transfer", "UNKNOWN_TASK")
             return
@@ -318,7 +346,7 @@ class RosTaskControlNode(object):
         try:
             trajectory = decode_trajectory(compressed, crc32, self.config, identity, transfer.raw_bytes)
             metadata = self.store.commit(trajectory, crc32)
-            self.mission_store.save(trajectory, "ready")
+            self.mission_store.save(trajectory, "received")
         except (StorageError, OSError) as exc:
             self._set_state("error")
             error_text = str(exc)
@@ -333,8 +361,9 @@ class RosTaskControlNode(object):
             self._set_state("ready" if existing else "no_task")
             return
         self.transfer = None
-        self._set_state("ready")
+        self._set_state("received")
         self._ack(command, True)
+        self._begin_preparation(metadata, command["request_id"])
         self.rospy.loginfo("trajectory XML committed revision=%d waypoints=%d path=%s",
                            revision, len(trajectory["waypoints"]), metadata["xml_path"])
 
@@ -365,6 +394,11 @@ class RosTaskControlNode(object):
             return
         if trajectory["revision"] != revision or trajectory["device_id"].casefold() != self.config["device_id"].casefold():
             self._ack(command, False, "stored trajectory revision does not match", "REVISION_MISMATCH")
+            return
+        preparation = self.preparation
+        if (preparation is None or preparation.state != "ready" or
+                preparation.revision != revision or not self._same_subtask(command, preparation.identity)):
+            self._ack(command, False, "navigation is not prepared for this trajectory", "NAVIGATION_NOT_READY")
             return
         if hasattr(self.publisher, "get_num_connections") and self.publisher.get_num_connections() < 1:
             self._ack(command, False, "ROS execution adapter is unavailable", "INTERNAL_ERROR")
@@ -403,8 +437,121 @@ class RosTaskControlNode(object):
         execution.adapter_request_ids.add(command["request_id"])
         self._ack(command, True)
 
+    def _begin_preparation(self, record, request_id):
+        record = dict(record)
+        payload = self.store.load_payload(record.get("task_id", ""), record.get("subtask_id", ""))
+        if payload is not None:
+            record["map_id"] = payload.get("map_id", record.get("map_id", ""))
+            if self.mission_store.load(record["task_id"], record["device_id"]) is None:
+                self.mission_store.save(payload, "received")
+        preparation = Preparation(record, request_id, self.clock())
+        self.preparation = preparation
+        self._set_state("received")
+        preparation.last_publish_at = self.clock()
+        self._publish_command("PREPARE", preparation.record, preparation.request_id)
+
+    def _stored_record(self, identity):
+        preparation = self.preparation
+        if preparation is not None and self._same_subtask(identity, preparation.identity):
+            return preparation.record
+        return self.store.load(identity["task_id"], identity["subtask_id"])
+
+    def _begin_cleanup(self, command, record, kind):
+        self.preparation = None
+        self.pending_cleanup = {
+            "command": command, "record": dict(record), "kind": kind,
+            "last_publish_at": self.clock(),
+        }
+        self._publish_command("UNLOAD", record, command["request_id"])
+
+    def _handle_cleanup_feedback(self, message):
+        cleanup = self.pending_cleanup
+        if cleanup is None or str(message.state).lower() != "unloaded":
+            return False
+        command = cleanup["command"]
+        record = cleanup["record"]
+        try:
+            matches = (
+                str(message.request_id) == command["request_id"] and
+                str(message.task_id).casefold() == command["task_id"].casefold() and
+                str(message.subtask_id).casefold() == command["subtask_id"].casefold() and
+                str(message.device_id).casefold() == command["device_id"].casefold() and
+                int(message.revision) == int(record.get("revision", 0))
+            )
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if not matches:
+            return False
+        self._complete_cleanup(command, cleanup["kind"])
+        return True
+
+    def _complete_cleanup(self, command, kind):
+        self.pending_cleanup = None
+        self.preparation = None
+        self.mission_store.delete(command["task_id"], command["device_id"])
+        self.store.delete(command["task_id"], command["subtask_id"])
+        self._set_state("no_task")
+        if kind == "delete":
+            self._ack(command, True)
+        else:
+            self._send(command, "task_status", {
+                "state": "no_task", "message": "emergency cleanup completed",
+                "error_code": None,
+            })
+
+    def _handle_preparation_feedback(self, message):
+        preparation = self.preparation
+        if preparation is None:
+            return False
+        try:
+            matches = (
+                str(message.request_id) == preparation.request_id and
+                not str(message.execution_id) and
+                str(message.task_id).casefold() == preparation.identity["task_id"].casefold() and
+                str(message.subtask_id).casefold() == preparation.identity["subtask_id"].casefold() and
+                str(message.device_id).casefold() == preparation.identity["device_id"].casefold() and
+                int(message.revision) == preparation.revision
+            )
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if not matches:
+            return False
+        state = str(message.state).lower()
+        if state not in ("preparing", "ready", "failed"):
+            return False
+        preparation.last_feedback_at = self.clock()
+        preparation.last_publish_at = preparation.last_feedback_at
+        preparation.message = str(message.message)
+        preparation.error_code = str(message.error_code)
+        if state == "ready":
+            preparation.state = "ready"
+            self.mission_store.update_state(
+                preparation.identity["task_id"], preparation.identity["device_id"], "ready")
+            self._set_state("ready")
+        elif state == "failed":
+            preparation.state = "failed"
+            self.mission_store.update_state(
+                preparation.identity["task_id"], preparation.identity["device_id"], "failed")
+            self._set_state("failed")
+        else:
+            preparation.state = "preparing"
+            self.mission_store.update_state(
+                preparation.identity["task_id"], preparation.identity["device_id"], "received")
+            self._set_state("received")
+        self._send(dict(preparation.identity, request_id=preparation.request_id), "task_summary", {
+            "state": "received" if state == "preparing" else state,
+            "revision": preparation.revision,
+            "message": preparation.message,
+            "error_code": preparation.error_code or None,
+        })
+        return True
+
     def feedback_callback(self, message):
         with self.lock:
+            if self._handle_cleanup_feedback(message):
+                return
+            if self._handle_preparation_feedback(message):
+                return
             execution = self.execution
             if execution is None or not self._feedback_matches(message, execution):
                 return
@@ -473,12 +620,23 @@ class RosTaskControlNode(object):
         for request_id, cached in list(self.ack_cache.items()):
             if cached["expires_at"] < now:
                 self.ack_cache.pop(request_id, None)
+        cleanup = self.pending_cleanup
+        if cleanup is not None and now - cleanup["last_publish_at"] >= self.config["preparation_retry_seconds"]:
+            cleanup["last_publish_at"] = now
+            self._publish_command("UNLOAD", cleanup["record"], cleanup["command"]["request_id"])
         transfer = self.transfer
         if transfer is not None and now - transfer.updated_at > self.config["transfer_seconds"]:
             self.rospy.logwarn("trajectory transfer timed out and was discarded")
             existing = self.store.load(transfer.identity["task_id"], transfer.identity["subtask_id"])
             self.transfer = None
             self._set_state("ready" if existing is not None else "no_task")
+        preparation = self.preparation
+        if preparation is not None and preparation.state != "ready":
+            if now - preparation.last_publish_at >= self.config["preparation_retry_seconds"]:
+                preparation.last_publish_at = now
+                preparation.state = "received"
+                self._set_state("received")
+                self._publish_command("PREPARE", preparation.record, preparation.request_id)
         execution = self.execution
         if execution is None:
             return
@@ -547,6 +705,7 @@ class RosTaskControlNode(object):
         message.revision = int(record.get("revision", 0))
         message.xml_path = str(record.get("xml_path", ""))
         message.frame_id = str(record.get("frame_id", ""))
+        message.map_id = str(record.get("map_id", ""))
         seconds = float(record.get("scheduled_at", 0.0))
         message.scheduled_at = self.rospy.Time.from_sec(seconds)
         self.publisher.publish(message)
@@ -597,7 +756,8 @@ class RosTaskControlNode(object):
         self.execution = None
         self.pending_execute = None
         self.store.clear_execution()
-        self._set_state("ready")
+        ready = self.preparation is not None and self.preparation.state == "ready"
+        self._set_state("ready" if ready else "received")
 
     def close(self):
         if not self.running.is_set():
@@ -606,6 +766,8 @@ class RosTaskControlNode(object):
         if self.execution is not None:
             action = "STOP" if self.execution.state == "running" else "CANCEL"
             self._publish_command(action, self.execution.persisted(), "shutdown")
+        if self.preparation is not None:
+            self._publish_command("UNLOAD", self.preparation.record, "shutdown-unload")
         if self.timer is not None:
             self.timer.shutdown()
             self.timer = None

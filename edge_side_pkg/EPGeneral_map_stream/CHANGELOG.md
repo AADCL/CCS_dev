@@ -1,6 +1,12 @@
 # 更新记录
 
-<!-- epgeneral_map_stream_VERSION: 0.10.0 -->
+<!-- epgeneral_map_stream_VERSION: 0.11.0 -->
+
+## v0.11.0 - 2026-08-27
+
+- Scout 启动流程新增 `scout_pointcloud_mapper`，FAST-LIO 固定关闭 RViz，mapper 使用会话开始时生成的秒级 `map_name`。
+- 正常停止先退出 mapper 刷新 `filtered_camera_init.pcd`，再停止 FAST-LIO、pose 和 TF；转换固定调用 `finalize_map.py MAP_NAME --replace-raw`。
+- mapper、filtered PCD、finalize 和 manifest 共享同一个已校验 `map_name`；最终目录增加 filtered PCD 完整性检查，ZIP 契约保持不变。
 
 ## v0.10.0 - 2026-08-24
 

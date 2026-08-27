@@ -86,6 +86,7 @@ def load_config(task_path, device_path):
         "transfer_seconds": _number(timeouts.get("transfer_seconds"), "timeouts.transfer_seconds", 0.1),
         "adapter_feedback_seconds": _number(timeouts.get("adapter_feedback_seconds"), "timeouts.adapter_feedback_seconds", 0.1),
         "execution_feedback_seconds": _number(timeouts.get("execution_feedback_seconds"), "timeouts.execution_feedback_seconds", 0.1),
+        "preparation_retry_seconds": _number(timeouts.get("preparation_retry_seconds"), "timeouts.preparation_retry_seconds", 0.5),
         "utc_tolerance_seconds": _number(timeouts.get("utc_tolerance_seconds"), "timeouts.utc_tolerance_seconds", 0.01),
         "max_waypoints": _number(limits.get("max_waypoints"), "limits.max_waypoints", 2, 500, True),
         "max_compressed_bytes": _number(limits.get("max_compressed_bytes"), "limits.max_compressed_bytes", 1024, integer=True),

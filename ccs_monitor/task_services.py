@@ -168,6 +168,14 @@ class TaskExecutionService(QObject):
             self._require_available_device(item.device_id)
             if item.device_id in self._device_execution:
                 raise RuntimeError(f"设备 {item.device_id} 已有执行会话")
+            if not item.edge_ready:
+                if not item.is_delivered:
+                    reason = "任务尚未保存下发当前 revision"
+                elif item.edge_status == EdgeTaskStatus.FAILED:
+                    reason = item.edge_message or "端侧导航准备失败"
+                else:
+                    reason = "端侧导航尚未准备完成"
+                raise RuntimeError(f"设备 {item.device_id} 不可执行：{reason}")
         execution_id = uuid.uuid4().hex
         snapshot = TaskExecutionSnapshot(
             execution_id, task.task_id, tuple(item.device_id for item in selected),
@@ -179,10 +187,7 @@ class TaskExecutionService(QObject):
         self._executions[execution_id] = snapshot
         for item in selected:
             self._device_execution[item.device_id] = execution_id
-            if item.is_delivered:
-                self._set_device_state(execution_id, item.device_id, "ready")
-            else:
-                self.deliver_subtask(task, item, execution_id)
+            self._set_device_state(execution_id, item.device_id, "ready")
         self._maybe_schedule(execution_id)
         return self._executions[execution_id]
 
@@ -254,13 +259,26 @@ class TaskExecutionService(QObject):
             edge_status = EdgeTaskStatus(state)
         except ValueError:
             edge_status = EdgeTaskStatus.FAILED
+        message = str(envelope.payload.get("message", ""))
+        error_code = str(envelope.payload.get("error_code") or "")
+        if error_code:
+            message = f"{message} ({error_code})" if message else error_code
         updated = replace(current, edge_status=edge_status,
                           edge_revision=int(envelope.payload["revision"]) if envelope.payload.get("revision") is not None else None,
-                          edge_message=str(envelope.payload.get("message", "")), edge_updated_at=utc_now())
+                          edge_message=message, edge_updated_at=utc_now())
         try:
             self.repository.update_edge_status(task.task_id, updated)
         except TaskRepositoryError:
             return
+        execution_id = self._device_execution.get(envelope.device_id)
+        snapshot = self._executions.get(execution_id or "")
+        if snapshot is not None and snapshot.task_id == task.task_id and updated.edge_ready:
+            self._set_device_state(snapshot.execution_id, envelope.device_id, "ready")
+            self._maybe_schedule(snapshot.execution_id)
+        if edge_status in {EdgeTaskStatus.RECEIVED, EdgeTaskStatus.FAILED}:
+            level = TaskEventLevel.ERROR if edge_status == EdgeTaskStatus.FAILED else TaskEventLevel.INFO
+            self._log(task.task_id, execution_id, "navigation_preparation", message or state,
+                      envelope.device_id, level)
         self.event_received.emit(envelope.device_id, envelope)
 
     def _handle_ack(self, envelope: TaskEnvelope) -> None:
@@ -316,7 +334,10 @@ class TaskExecutionService(QObject):
                     self.protocol_warning.emit(str(exc))
                 self.transfer_updated.emit(envelope.task_id, envelope.device_id, "delivered")
                 self._log(envelope.task_id, transfer.execution_id, "task_delivered", "子任务下发完成", envelope.device_id)
-                if transfer.execution_id:
+                refreshed = self.repository.task_by_id(envelope.task_id)
+                refreshed_subtask = next((item for item in refreshed.subtasks
+                                          if item.device_id == envelope.device_id), None) if refreshed else None
+                if transfer.execution_id and refreshed_subtask is not None and refreshed_subtask.edge_ready:
                     self._set_device_state(transfer.execution_id, envelope.device_id, "ready")
                     self._maybe_schedule(transfer.execution_id)
         elif command == "execute_task" and envelope.execution_id:

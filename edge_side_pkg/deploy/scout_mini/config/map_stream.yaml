@@ -67,13 +67,15 @@ integrations:
   scout:
     fast_lio_package: "scout_system_bringup"
     fast_lio_launch: "fastlio_mapping_scout.launch"
+    mapper_package: "scout_pointcloud_mapper"
+    mapper_launch: "pointcloud_mapper.launch"
     tf_package: "scout_tf_manager"
     tf_launch: "tf_manager.launch"
     pose_package: "scout_pose_adapter"
     pose_launch: "pose_adapter.launch"
     finalize_package: "scout_map_tools"
     finalize_executable: "finalize_map.py"
-    source_pcd_path: "/home/nvidia/livox_fastlio/src/FAST_LIO/PCD/scans.pcd"
+    filtered_pcd_filename: "filtered_camera_init.pcd"
     map_root: "/home/nvidia/livox_fastlio/maps"
 
 sync: {tolerance_seconds: 0.05, pose_buffer_size: 100, preview_transform_timeout_seconds: 0.20}

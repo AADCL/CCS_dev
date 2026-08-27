@@ -677,10 +677,16 @@ class TaskEditorPage(QWidget):
             QMessageBox.critical(self, "任务下发失败", str(exc))
 
     def _execute_current(self) -> None:
-        if not self._can_execute(require_active_map=True) or not self._save_current():
+        if not self._can_execute(require_active_map=True):
+            return
+        subtask = self._current()
+        if subtask is None or not subtask.edge_ready:
+            detail = subtask.edge_message if subtask is not None else ""
+            message = detail or "请先点击“保存下发”，并等待端侧导航准备完成"
+            QMessageBox.warning(self, "任务尚未就绪", message)
             return
         try:
-            snapshot = self.execution_service.execute_subtask(self.task, self._current().device_id)
+            snapshot = self.execution_service.execute_subtask(self.task, subtask.device_id)
             self.active_execution_id = snapshot.execution_id
         except Exception as exc:
             QMessageBox.critical(self, "任务执行失败", str(exc))
@@ -699,8 +705,8 @@ class TaskEditorPage(QWidget):
         if any(not item.is_valid for item in pending):
             QMessageBox.warning(self, "无法共同执行", "每台设备的子任务都必须包含 2 到 500 个任务点")
             return
-        if any(not item.is_delivered for item in pending):
-            QMessageBox.warning(self, "无法开始主任务", "所有设备子任务必须先保存并下发完成")
+        if any(not item.edge_ready for item in pending):
+            QMessageBox.warning(self, "无法开始主任务", "所有设备子任务必须完成下发且端侧导航已就绪")
             return
         try:
             task_id = self.task.task_id

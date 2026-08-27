@@ -27,7 +27,7 @@ class FakeSocket(object):
 
 
 class FakeCommand(object):
-    SCHEDULE, CANCEL, STOP = 1, 2, 3
+    SCHEDULE, CANCEL, STOP, PREPARE, UNLOAD = 1, 2, 3, 4, 5
 
     def __init__(self):
         self.scheduled_at = None
@@ -125,6 +125,17 @@ class NodeTests(unittest.TestCase):
             self.node.handle_datagram(pack(self.config, "task_chunk", "prepare", payload), self.config["ground_station_ip"])
         return crc32, len(chunks)
 
+    def prepare_ready(self, request_id="commit"):
+        preparation = self.node.preparation
+        feedback = SimpleNamespace(
+            request_id=request_id, task_id="task-1", subtask_id="sub-1",
+            device_id=self.config["device_id"], execution_id="", revision=1,
+            state="ready", waypoint_index=-1, waypoint_count=2, progress=0.0,
+            position=SimpleNamespace(x=0, y=0, z=0), error_code="", message="navigation ready",
+        )
+        self.assertIsNotNone(preparation)
+        self.node.feedback_callback(feedback)
+
     def test_transfer_missing_chunks_commit_and_duplicate(self):
         raw = json.dumps(task_payload(self.config["device_id"]), sort_keys=True, separators=(",", ":")).encode("utf-8")
         compressed = zlib.compress(raw)
@@ -151,6 +162,7 @@ class NodeTests(unittest.TestCase):
         crc32, count = self.deliver()
         self.node.handle_datagram(pack(self.config, "task_commit", "commit", {
             "revision": 1, "chunk_count": count, "crc32": crc32}), self.config["ground_station_ip"])
+        self.prepare_ready()
         before = len(self.node.socket.sent)
         schedule = time.time() + 5.0
         self.node.handle_datagram(pack(self.config, "execute_task", "execute", {
@@ -183,6 +195,7 @@ class NodeTests(unittest.TestCase):
         crc32, count = self.deliver()
         self.node.handle_datagram(pack(self.config, "task_commit", "commit", {
             "revision": 1, "chunk_count": count, "crc32": crc32}), self.config["ground_station_ip"])
+        self.prepare_ready()
         self.node.handle_datagram(pack(self.config, "execute_task", "execute", {
             "revision": 1, "scheduled_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + 5)) + "+00:00",
         }, execution_id="exec-timeout"), self.config["ground_station_ip"])
@@ -195,6 +208,7 @@ class NodeTests(unittest.TestCase):
         crc32, count = self.deliver()
         self.node.handle_datagram(pack(self.config, "task_commit", "commit", {
             "revision": 1, "chunk_count": count, "crc32": crc32}), self.config["ground_station_ip"])
+        self.prepare_ready()
         self.node.handle_datagram(pack(self.config, "execute_task", "execute", {
             "revision": 1, "scheduled_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + 8)) + "+00:00",
         }, execution_id="exec-stop"), self.config["ground_station_ip"])
@@ -234,15 +248,80 @@ class NodeTests(unittest.TestCase):
             "revision": 1, "chunk_count": count, "crc32": crc32,
         }), self.config["ground_station_ip"])
         self.assertIsNotNone(self.node.store.load("task-1", "sub-1"))
+
+    def test_commit_acknowledges_storage_then_prepares_navigation(self):
+        crc32, count = self.deliver()
+        before = len(self.node.socket.sent)
+        self.node.handle_datagram(pack(self.config, "task_commit", "commit", {
+            "revision": 1, "chunk_count": count, "crc32": crc32,
+        }), self.config["ground_station_ip"])
+        self.assertTrue(self.messages()[before]["payload"]["accepted"])
+        self.assertEqual(self.node.publisher.messages[-1].action, FakeCommand.PREPARE)
+        self.assertEqual(self.node.state, "received")
+        self.assertEqual(self.node.mission_store.status("task-1", self.config["device_id"])["state"], "received")
+        self.prepare_ready()
+        self.assertEqual(self.node.state, "ready")
+        self.assertEqual(self.messages()[-1]["message_type"], "task_summary")
+
+    def test_failed_preparation_is_retried_without_new_transfer(self):
+        crc32, count = self.deliver()
+        self.node.handle_datagram(pack(self.config, "task_commit", "commit", {
+            "revision": 1, "chunk_count": count, "crc32": crc32,
+        }), self.config["ground_station_ip"])
+        feedback = SimpleNamespace(
+            request_id="commit", task_id="task-1", subtask_id="sub-1",
+            device_id=self.config["device_id"], execution_id="", revision=1,
+            state="failed", waypoint_index=-1, waypoint_count=0, progress=0.0,
+            position=SimpleNamespace(x=0, y=0, z=0),
+            error_code="LOCALIZATION_UNAVAILABLE", message="pose unavailable",
+        )
+        self.node.feedback_callback(feedback)
+        self.assertEqual(self.node.state, "failed")
+        sent = len(self.node.publisher.messages)
+        self.node.preparation.last_publish_at -= self.config["preparation_retry_seconds"] + 1
+        self.node.watchdog()
+        self.assertEqual(len(self.node.publisher.messages), sent + 1)
+        self.assertEqual(self.node.publisher.messages[-1].action, FakeCommand.PREPARE)
         self.node.handle_datagram(pack(
             self.config, "emergency_stop", "emergency", {"reason": "test"}
         ), self.config["ground_station_ip"])
+        states = [item["payload"]["state"] for item in self.messages() if item["message_type"] == "task_status"]
+        self.assertEqual(states[-1], "emergency_stop")
+        self.assertIsNotNone(self.node.store.load("task-1", "sub-1"))
+        unload = SimpleNamespace(
+            request_id="emergency", task_id="task-1", subtask_id="sub-1",
+            device_id=self.config["device_id"], execution_id="", revision=1,
+            state="unloaded", waypoint_index=-1, waypoint_count=0, progress=0.0,
+            position=SimpleNamespace(x=0, y=0, z=0), error_code="", message="unloaded",
+        )
+        self.node.feedback_callback(unload)
         messages = self.messages()
         states = [item["payload"]["state"] for item in messages if item["message_type"] == "task_status"]
         self.assertEqual(states[-2:], ["emergency_stop", "no_task"])
         self.assertIsNone(self.node.store.load("task-1", "sub-1"))
         status = self.node.mission_store.status("task-1", self.config["device_id"])
         self.assertEqual(status["state"], "no_task")
+
+    def test_delete_waits_for_adapter_unload(self):
+        crc32, count = self.deliver()
+        self.node.handle_datagram(pack(self.config, "task_commit", "commit", {
+            "revision": 1, "chunk_count": count, "crc32": crc32,
+        }), self.config["ground_station_ip"])
+        before = len(self.node.socket.sent)
+        self.node.handle_datagram(pack(
+            self.config, "delete_task", "delete", {}
+        ), self.config["ground_station_ip"])
+        self.assertEqual(len(self.node.socket.sent), before)
+        self.assertEqual(self.node.publisher.messages[-1].action, FakeCommand.UNLOAD)
+        self.assertIsNotNone(self.node.store.load("task-1", "sub-1"))
+        self.node.feedback_callback(SimpleNamespace(
+            request_id="delete", task_id="task-1", subtask_id="sub-1",
+            device_id=self.config["device_id"], execution_id="", revision=1,
+            state="unloaded", waypoint_index=-1, waypoint_count=0, progress=0.0,
+            position=SimpleNamespace(x=0, y=0, z=0), error_code="", message="unloaded",
+        ))
+        self.assertTrue(self.messages()[-1]["payload"]["accepted"])
+        self.assertIsNone(self.node.store.load("task-1", "sub-1"))
 
 
 if __name__ == "__main__":
