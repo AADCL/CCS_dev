@@ -1,6 +1,27 @@
 # Changelog
 
-<!-- epgeneral_task_control_VERSION: 0.3.1 -->
+<!-- epgeneral_task_control_VERSION: 0.4.3 -->
+
+## [0.4.3] - 2026-08-27
+
+- 在导航准备阶段校验任务点对应的 PGM 栅格，拒绝地图外、障碍区和未知区目标。
+- 保留 `move_base` action 状态及文本，并区分规划失败、目标拒绝、抢占和其他 action 失败。
+
+## [0.4.2] - 2026-08-27
+
+- 创建并持有 `tf2_ros.TransformListener`，使 Scout 导航适配器实际订阅 `/tf` 和 `/tf_static`。
+- 修复系统存在实时 `map<-odom` 变换但适配器私有 TF buffer 始终为空的问题。
+
+## [0.4.1] - 2026-08-27
+
+- 捕获 `map<-odom` TF 查询和位姿转换异常并反馈 `LOCALIZATION_UNAVAILABLE`。
+- 防止导航准备失败以未捕获 ROS callback 异常结束，保证平台能够收到失败状态并释放执行等待。
+
+## [0.4.0] - 2026-08-27
+
+- 任务文件提交后异步启动并常驻 Scout 导航栈，导航就绪后才进入 `ready`。
+- 执行、完成、失败和常规停止复用导航进程；删除、急停及关闭执行安全卸载。
+- 增加内部 `PREPARE/UNLOAD` 命令、准备重试和导航进程退出监控。
 
 ## [0.3.1] - 2026-08-26
 

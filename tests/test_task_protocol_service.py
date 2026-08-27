@@ -13,7 +13,7 @@ DEPS = all(importlib.util.find_spec(name) is not None for name in ("PySide6", "m
 if DEPS:
     from ccs_monitor.models import DeviceSnapshot, MapCreatorDevice, MapDefinition, MapStatus
     from ccs_monitor.task_config import load_task_system_config
-    from ccs_monitor.task_models import TaskExecutionStatus, TaskWaypoint
+    from ccs_monitor.task_models import EdgeTaskStatus, TaskExecutionStatus, TaskWaypoint
     from ccs_monitor.task_protocol import TaskEnvelope, TaskProtocol
     from ccs_monitor.task_repository import TaskRepository
     from ccs_monitor.task_services import TaskExecutionService
@@ -48,6 +48,15 @@ class TaskProtocolServiceTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def mark_edge_ready(self):
+        subtask = self.task.subtasks[0]
+        self.repository.mark_delivered(self.task.task_id, subtask.device_id, subtask.revision)
+        refreshed = self.repository.task_by_id(self.task.task_id).subtasks[0]
+        self.repository.update_edge_status(self.task.task_id, replace(
+            refreshed, edge_status=EdgeTaskStatus.READY, edge_revision=refreshed.revision,
+        ))
+        self.task = self.repository.task_by_id(self.task.task_id)
+
     def test_subtask_encoding_round_trip(self):
         protocol = TaskProtocol(load_task_system_config())
         encoded = protocol.encode_subtask(self.task, self.task.subtasks[0])
@@ -56,7 +65,7 @@ class TaskProtocolServiceTests(unittest.TestCase):
         self.assertEqual(len(decoded["waypoints"]), 2)
 
     def test_group_start_delay_allows_navigation_startup(self):
-        self.assertEqual(load_task_system_config().group_start_delay_seconds, 30.0)
+        self.assertEqual(load_task_system_config().group_start_delay_seconds, 3.0)
 
     def test_execution_rejects_non_active_task_map(self):
         config = load_task_system_config()
@@ -70,6 +79,18 @@ class TaskProtocolServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "全局激活地图"):
             service.execute_subtask(self.task, self.device.device_id)
 
+    def test_execution_rejects_unready_device_without_leaving_session_lock(self):
+        service = TaskExecutionService(
+            load_task_system_config(), self.repository,
+            lambda value: self.device if value == self.device.device_id else None,
+        )
+        service.available = True
+        service.module_message = "test"
+        with self.assertRaisesRegex(RuntimeError, "尚未保存下发"):
+            service.execute_subtask(self.task, self.device.device_id)
+        self.assertFalse(service.device_active(self.device.device_id))
+        self.assertEqual(service._executions, {})
+
     def test_stop_waits_for_terminal_device_status(self):
         config = load_task_system_config()
         service = TaskExecutionService(
@@ -79,6 +100,7 @@ class TaskProtocolServiceTests(unittest.TestCase):
         service.available = True
         service.module_message = "test"
         service._socket = type("Socket", (), {"sendto": lambda *_args: None})()
+        self.mark_edge_ready()
         snapshot = service.execute_subtask(self.task, self.device.device_id)
         service.stop_execution(snapshot.execution_id)
         self.assertEqual(service._executions[snapshot.execution_id].status, TaskExecutionStatus.STOPPING)
@@ -101,6 +123,7 @@ class TaskProtocolServiceTests(unittest.TestCase):
         )
         service.available = True
         service._socket = type("Socket", (), {"sendto": lambda *_args: None})()
+        self.mark_edge_ready()
         snapshot = service.execute_subtask(self.task, self.device.device_id)
         service._handle_status(TaskEnvelope(
             self.task.task_id, self.task.subtasks[0].subtask_id, self.device.device_id,
@@ -124,7 +147,7 @@ class TaskProtocolServiceTests(unittest.TestCase):
         edge.bind(("127.0.0.1", control_port))
         edge.settimeout(2)
         service.start()
-        snapshot = service.execute_subtask(self.task, self.device.device_id)
+        service.deliver_subtask(self.task, self.task.subtasks[0])
 
         prepare_raw, _ = edge.recvfrom(4096)
         prepare = protocol.decode(prepare_raw)
@@ -151,6 +174,27 @@ class TaskProtocolServiceTests(unittest.TestCase):
             {"accepted": True, "command": "task_commit"},
         )), ("127.0.0.1", status_port))
 
+        edge.settimeout(0.2)
+        with self.assertRaises(socket.timeout):
+            edge.recvfrom(4096)
+        edge.sendto(protocol.encode(TaskEnvelope(
+            commit.task_id, commit.subtask_id, commit.device_id, "",
+            "task_summary", "prepare-ready", 102, time.time_ns(),
+            {"state": "ready", "revision": self.task.subtasks[0].revision,
+             "message": "navigation ready", "error_code": None},
+        )), ("127.0.0.1", status_port))
+        edge.settimeout(2)
+
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            refreshed = self.repository.task_by_id(self.task.task_id)
+            if refreshed and refreshed.subtasks[0].edge_ready:
+                break
+            time.sleep(0.02)
+        self.task = self.repository.task_by_id(self.task.task_id)
+        self.assertTrue(self.task.subtasks[0].edge_ready)
+        snapshot = service.execute_subtask(self.task, self.device.device_id)
+
         execute = None
         deadline = time.time() + 2
         while time.time() < deadline and execute is None:
@@ -161,7 +205,7 @@ class TaskProtocolServiceTests(unittest.TestCase):
         self.assertIsNotNone(execute)
         edge.sendto(protocol.encode(TaskEnvelope(
             execute.task_id, execute.subtask_id, execute.device_id, execute.execution_id,
-            "command_ack", execute.request_id, 102, time.time_ns(),
+            "command_ack", execute.request_id, 103, time.time_ns(),
             {"accepted": True, "command": "execute_task"},
         )), ("127.0.0.1", status_port))
         deadline = time.time() + 2

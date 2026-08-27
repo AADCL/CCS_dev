@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 from PySide6.QtCore import QEvent, QSettings, QTimer, Signal, Qt, QObject
-from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QMouseEvent, QPainter
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QLinearGradient, QMouseEvent, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
     QButtonGroup,
@@ -90,6 +90,13 @@ STATUS_TEXT = {
 }
 
 MAP_PAN_DRAG_SPEED = 3.0
+
+
+def fixed_width_font(point_size: int = 9) -> QFont:
+    font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+    if font.pointSize() <= 0:
+        font.setPointSize(max(1, int(point_size)))
+    return font
 
 RAINBOW_STOPS = np.asarray((
     (1.0, 0.0, 0.0, 1.0),
@@ -1939,11 +1946,18 @@ class PointCloudViewer(QWidget):
         self._marker_visual = scene.visuals.Markers(parent=self._view.scene)
         self._device_axis_visual = scene.visuals.Line(parent=self._view.scene)
         self._trail_visual = scene.visuals.Line(parent=self._view.scene)
+        self._device_axis_visual.visible = False
+        self._trail_visual.visible = False
         self._conflict_visual = scene.visuals.Markers(parent=self._view.scene)
         self._grid_visual = scene.visuals.Line(parent=self._view.scene)
         self._coordinate_visual = scene.visuals.Text(
             parent=self._view.scene, font_size=8, anchor_x="center", anchor_y="center"
         )
+        self._grid_visual.set_gl_state("translucent", depth_test=False)
+        self._grid_visual.order = 10
+        self._grid_visual.visible = False
+        self._coordinate_visual.order = 11
+        self._coordinate_visual.visible = False
         scene.visuals.XYZAxis(parent=self._view.scene)
 
     def load_map(self, definition: MapDefinition, pcd_path: str | Path) -> None:
@@ -2306,6 +2320,7 @@ class PointCloudViewer(QWidget):
         xy = xy or self._map_xy_bounds()
         if xy is None or not MAP_VIEWER_SETTINGS.grid_visible:
             self._grid_visual.set_data(pos=np.empty((0, 3), dtype=np.float32))
+            self._grid_visual.visible = False
             self._coordinate_visual.visible = False
             return
         min_x, max_x, min_y, max_y = xy
@@ -2331,6 +2346,7 @@ class PointCloudViewer(QWidget):
             pos=np.asarray(segments, dtype=np.float32), color=color,
             connect="segments", width=1.0,
         )
+        self._grid_visual.visible = bool(segments)
         if not MAP_VIEWER_SETTINGS.coordinates_visible:
             self._coordinate_visual.visible = False
             return
@@ -2443,9 +2459,11 @@ class PointCloudViewer(QWidget):
         for visual in self._shape_visuals:
             visual.visible = self.devices_visible
         if self._device_axis_visual is not None:
-            self._device_axis_visual.visible = self.devices_visible
+            self._device_axis_visual.visible = (
+                self.devices_visible and self.selected_device_pose is not None
+            )
         if self._trail_visual is not None:
-            self._trail_visual.visible = self.devices_visible
+            self._trail_visual.visible = self.devices_visible and len(self.device_trail) >= 2
 
     def _render_markers(self) -> None:
         if self._marker_visual is None:
@@ -2509,6 +2527,7 @@ class PointCloudViewer(QWidget):
             return
         if pose is None:
             self._device_axis_visual.set_data(pos=np.empty((0, 3), dtype=np.float32))
+            self._device_axis_visual.visible = False
             return
         roll, pitch, yaw = np.radians((pose.roll, pose.pitch, pose.yaw))
         cr, sr = math.cos(roll), math.sin(roll)
@@ -2540,10 +2559,11 @@ class PointCloudViewer(QWidget):
         if self._trail_visual is None:
             return
         points = np.asarray(self.device_trail, dtype=np.float32)
-        if len(points) < 2:
+        has_trail = len(points) >= 2
+        if not has_trail:
             points = np.empty((0, 3), dtype=np.float32)
         self._trail_visual.set_data(pos=points, color=self.theme_palette.primary_strong, width=2.0)
-        self._trail_visual.visible = self.devices_visible
+        self._trail_visual.visible = self.devices_visible and has_trail
 
     @staticmethod
     def _rgba(value: str) -> tuple[float, float, float, float]:
@@ -2649,7 +2669,7 @@ class MapDetailPage(QWidget):
         self.mapping_log.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.mapping_log.setMaximumBlockCount(200)
         self.mapping_log.setFixedHeight(112)
-        self.mapping_log.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self.mapping_log.setFont(fixed_width_font())
         self.mapping_log.setVisible(False)
         status_layout.addWidget(self.mapping_log)
         self.mapping_status.setVisible(False)
@@ -2664,7 +2684,7 @@ class MapDetailPage(QWidget):
         self.relocalization_log.setReadOnly(True)
         self.relocalization_log.setMaximumBlockCount(200)
         self.relocalization_log.setFixedHeight(96)
-        self.relocalization_log.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self.relocalization_log.setFont(fixed_width_font())
         self.relocalization_log.setVisible(False)
         root.addWidget(self.relocalization_log)
         self.content_splitter = QSplitter(Qt.Orientation.Horizontal)

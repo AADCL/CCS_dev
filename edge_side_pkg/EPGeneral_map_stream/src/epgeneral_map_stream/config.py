@@ -241,7 +241,7 @@ def load_config(mapping_path, device_path):
     return {
         "schema_version": 6,
         "protocol_id": protocol_id,
-        "capability_version": "0.9.1",
+        "capability_version": "0.11.0",
         "integration_backend": backend,
         "device_id": device_id,
         "device_ip": device_ip,
@@ -402,14 +402,16 @@ def load_config(mapping_path, device_path):
         "artifact_frame": str(artifacts.get("frame", map_frame)).strip(),
         "scout_fast_lio_package": str(scout.get("fast_lio_package", "")).strip(),
         "scout_fast_lio_launch": str(scout.get("fast_lio_launch", "")).strip(),
+        "scout_mapper_package": str(scout.get("mapper_package", "")).strip(),
+        "scout_mapper_launch": str(scout.get("mapper_launch", "")).strip(),
         "scout_tf_package": str(scout.get("tf_package", "")).strip(),
         "scout_tf_launch": str(scout.get("tf_launch", "")).strip(),
         "scout_pose_package": str(scout.get("pose_package", "")).strip(),
         "scout_pose_launch": str(scout.get("pose_launch", "")).strip(),
         "scout_finalize_package": str(scout.get("finalize_package", "")).strip(),
         "scout_finalize_executable": str(scout.get("finalize_executable", "")).strip(),
-        "scout_source_pcd_path": os.path.abspath(os.path.expanduser(
-            str(scout.get("source_pcd_path", "")))),
+        "scout_filtered_pcd_filename": str(
+            scout.get("filtered_pcd_filename", "")).strip(),
         "scout_map_root": os.path.abspath(os.path.expanduser(
             str(scout.get("map_root", "")))),
     }
@@ -433,33 +435,51 @@ def command_context(config, values):
     return context
 
 
+def scout_filtered_pcd_path(config, map_name):
+    if not isinstance(map_name, str) or not re.fullmatch(r"[0-9]{8}_[0-9]{6}", map_name):
+        raise ConfigError("Scout map_name must use YYYYMMDD_HHMMSS")
+    filename = config.get("scout_filtered_pcd_filename", "")
+    if (not filename or filename in (".", "..")
+            or filename != os.path.basename(filename)):
+        raise ConfigError("integrations.scout.filtered_pcd_filename must be a file name")
+    map_root = config.get("scout_map_root", "")
+    map_directory = os.path.abspath(os.path.join(map_root, map_name))
+    filtered_path = os.path.abspath(os.path.join(map_directory, filename))
+    if os.path.dirname(filtered_path) != map_directory:
+        raise ConfigError("Scout filtered PCD path escapes the map directory")
+    return filtered_path
+
+
 def build_integration_commands(config, values):
     context = command_context(config, values)
     if config["integration_backend"] == "scout_finalize":
         required = (
-            "scout_fast_lio_package", "scout_fast_lio_launch", "scout_tf_package",
+            "scout_fast_lio_package", "scout_fast_lio_launch", "scout_mapper_package",
+            "scout_mapper_launch", "scout_tf_package",
             "scout_tf_launch", "scout_pose_package", "scout_pose_launch",
             "scout_finalize_package", "scout_finalize_executable",
-            "scout_source_pcd_path", "scout_map_root",
+            "scout_filtered_pcd_filename", "scout_map_root",
         )
         missing = [name for name in required if not config.get(name)]
         if missing:
             raise ConfigError("Scout integration fields are missing: %s" % ", ".join(missing))
         launch_args = [
             config["scout_fast_lio_package"], config["scout_fast_lio_launch"],
+            config["scout_mapper_package"], config["scout_mapper_launch"],
             config["scout_tf_package"], config["scout_tf_launch"],
             config["scout_pose_package"], config["scout_pose_launch"],
         ]
+        scout_filtered_pcd_path(config, context.get("map_name"))
         return {
             "checks": [[config["scout_mapping_script"], "--check"] + launch_args, [
                 config["scout_finalize_script"], "--check",
                 config["scout_finalize_package"], config["scout_finalize_executable"],
-                config["scout_source_pcd_path"], config["scout_map_root"],
+                config["scout_map_root"],
             ]],
             "start_fast_lio": [
                 config["scout_mapping_script"], "--start", context["fast_lio_pid_path"],
                 context["fast_lio_log_path"], str(config["fast_lio_startup_timeout_seconds"]),
-                str(config["fast_lio_stop_timeout_seconds"]),
+                str(config["fast_lio_stop_timeout_seconds"]), context["map_name"],
             ] + launch_args,
             "stop_fast_lio": [
                 config["scout_mapping_script"], "--stop", context["fast_lio_pid_path"],
@@ -472,7 +492,7 @@ def build_integration_commands(config, values):
             "generate_pgm": [
                 config["scout_finalize_script"], config["scout_finalize_package"],
                 config["scout_finalize_executable"], context["map_name"],
-                config["scout_source_pcd_path"], config["scout_map_root"],
+                config["scout_map_root"],
                 context["pcd_path"], context["pgm_path"], context["yaml_path"],
                 context["pgm_log_path"], str(config["pgm_generation_timeout_seconds"]),
             ],

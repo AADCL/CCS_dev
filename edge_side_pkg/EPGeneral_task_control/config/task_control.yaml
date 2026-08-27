@@ -18,6 +18,7 @@ timeouts:
   transfer_seconds: 10.0
   adapter_feedback_seconds: 2.0
   execution_feedback_seconds: 5.0
+  preparation_retry_seconds: 5.0
   utc_tolerance_seconds: 2.0
 limits:
   max_waypoints: 500

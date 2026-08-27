@@ -16,6 +16,10 @@ STATES = frozenset(("no_task", "task_exists", "receiving", "received", "ready",
                     "running", "completed", "failed", "emergency_stop"))
 
 
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
 def _safe(value):
     value = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('._')
     if not value:
@@ -36,7 +40,7 @@ class MissionStore(object):
         return os.path.join(self.directory(task_id), "manifest.json")
 
     def subtask_path(self, task_id, device_id, timestamp=None):
-        stamp = timestamp or datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        stamp = timestamp or _utc_now().strftime("%Y%m%dT%H%M%SZ")
         return os.path.join(self.directory(task_id), "%s_%s.json" % (stamp, _safe(device_id)))
 
     def save(self, payload, state="ready"):
@@ -49,7 +53,7 @@ class MissionStore(object):
             os.makedirs(directory)
         record = dict(payload)
         record["state"] = state
-        record["saved_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+        record["saved_at"] = _utc_now().isoformat() + "Z"
         self._atomic_json(self.subtask_path(task_id, device_id), record)
         manifest = self.load_manifest(task_id) or {
             "schema_version": 2, "task_id": task_id, "state": "task_exists", "subtasks": {}
@@ -91,6 +95,54 @@ class MissionStore(object):
         if record is None:
             return {"state": "no_task", "revision": None}
         return {"state": record.get("state", "task_exists"), "revision": record.get("revision")}
+
+    def latest(self, device_id):
+        records = []
+        suffix = "_%s.json" % _safe(device_id)
+        if os.path.isdir(self.root):
+            for task_name in os.listdir(self.root):
+                directory = os.path.join(self.root, task_name)
+                if not os.path.isdir(directory):
+                    continue
+                for name in os.listdir(directory):
+                    path = os.path.join(directory, name)
+                    if name.endswith(suffix) and os.path.isfile(path):
+                        records.append(path)
+        records.sort(key=os.path.getmtime, reverse=True)
+        for path in records:
+            try:
+                with open(path, "r") as stream:
+                    value = json.load(stream)
+                if isinstance(value, dict):
+                    return value
+            except (IOError, OSError, ValueError):
+                continue
+        return None
+
+    def update_state(self, task_id, device_id, state):
+        if state not in STATES:
+            raise ValueError("invalid mission state")
+        record = self.load(task_id, device_id)
+        if record is None:
+            return None
+        record["state"] = state
+        record["updated_at"] = _utc_now().isoformat() + "Z"
+        directory = self.directory(task_id)
+        suffix = "_%s.json" % _safe(device_id)
+        candidates = [os.path.join(directory, name) for name in os.listdir(directory)
+                      if name.endswith(suffix) and os.path.isfile(os.path.join(directory, name))]
+        candidates.sort(key=os.path.getmtime, reverse=True)
+        if not candidates:
+            return None
+        self._atomic_json(candidates[0], record)
+        manifest = self.load_manifest(task_id)
+        if manifest is not None:
+            subtask = manifest.get("subtasks", {}).get(device_id)
+            if isinstance(subtask, dict):
+                subtask["state"] = state
+            manifest["state"] = state
+            self._atomic_json(self.manifest_path(task_id), manifest)
+        return record
 
     def delete(self, task_id, device_id=None):
         directory = self.directory(task_id)

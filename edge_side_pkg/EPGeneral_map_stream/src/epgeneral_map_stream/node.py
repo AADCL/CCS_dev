@@ -10,7 +10,9 @@ from .artifacts import (
     build_archive, file_fingerprint, require_fresh_file, wait_for_stable_artifacts,
     write_binary_pcd,
 )
-from .config import ConfigError, build_integration_commands, load_config
+from .config import (
+    ConfigError, build_integration_commands, load_config, scout_filtered_pcd_path,
+)
 from .processing import (
     PoseBuffer, PoseSample, ProcessingError, aggregate_window,
     extract_pointcloud2, map_points_to_sensor, preprocess_points, stamp_to_ns,
@@ -74,6 +76,7 @@ class MappingSession(object):
         self.accumulator_pcd_baseline = None
         self.mapping_started_at_ns = 0
         self.map_name = ""
+        self.filtered_pcd_path = ""
 
 
 class RosMapStreamNode(object):
@@ -489,13 +492,15 @@ class RosMapStreamNode(object):
         with self.lock:
             session.state = "starting"
             self.state = "starting"
-            source_pcd = (self.config["scout_source_pcd_path"]
-                          if self.config["integration_backend"] == "scout_finalize"
-                          else self.config["accumulator_pcd_path"])
-            session.accumulator_pcd_baseline = file_fingerprint(source_pcd)
-            session.mapping_started_at_ns = time.time_ns()
             session.map_name = time.strftime("%Y%m%d_%H%M%S")
             session.paths.values["map_name"] = session.map_name
+            source_pcd = self.config["accumulator_pcd_path"]
+            if self.config["integration_backend"] == "scout_finalize":
+                session.filtered_pcd_path = scout_filtered_pcd_path(
+                    self.config, session.map_name)
+                source_pcd = session.filtered_pcd_path
+            session.accumulator_pcd_baseline = file_fingerprint(source_pcd)
+            session.mapping_started_at_ns = time.time_ns()
         self._log_info(
             "mapping source baseline session=%s fingerprint=%s",
             session.identity["session_id"][:8],
@@ -511,7 +516,7 @@ class RosMapStreamNode(object):
                 raise RuntimeError("Scout map directory already exists: %s" % session.map_name)
             self._run_command(
                 "start_fast_lio", commands["start_fast_lio"],
-                timeout=self.config["fast_lio_startup_timeout_seconds"])
+                timeout=(self.config["fast_lio_startup_timeout_seconds"] * 4.0) + 6.0)
             self._wait_for_fast_lio_outputs()
             self._subscribe_session(session)
         except Exception as exc:
@@ -519,7 +524,7 @@ class RosMapStreamNode(object):
             try:
                 self._run_command(
                     "abort_after_start_failure", commands["abort_fast_lio"],
-                    timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+                    timeout=(self.config["fast_lio_stop_timeout_seconds"] * 4.0) + 6.0)
             except Exception:
                 pass
             with self.lock:
@@ -683,15 +688,21 @@ class RosMapStreamNode(object):
     def _generate_scout_artifact(self, session, commands):
         mapping_stack_stopped = False
         try:
+            expected_filtered_pcd = scout_filtered_pcd_path(
+                self.config, session.map_name)
+            if (not session.map_name
+                    or expected_filtered_pcd != session.filtered_pcd_path
+                    or session.paths.values.get("map_name") != session.map_name):
+                raise RuntimeError("Scout mapping session map_name is inconsistent")
             self._send_session_message(session, "artifact_status", {
                 "state": "generating", "message": "stopping Scout mapping processes",
                 "reason": ""})
             self._run_command(
                 "stop_scout_mapping", commands["stop_fast_lio"],
-                timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+                timeout=(self.config["fast_lio_stop_timeout_seconds"] * 4.0) + 6.0)
             mapping_stack_stopped = True
             fingerprint = require_fresh_file(
-                self.config["scout_source_pcd_path"],
+                session.filtered_pcd_path,
                 session.accumulator_pcd_baseline, session.mapping_started_at_ns)
             self._log_info(
                 "Scout PCD freshness passed session=%s map_name=%s fingerprint=%s",
@@ -710,7 +721,7 @@ class RosMapStreamNode(object):
                 try:
                     self._run_command(
                         "abort_after_scout_failure", commands["abort_fast_lio"],
-                        timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+                        timeout=(self.config["fast_lio_stop_timeout_seconds"] * 4.0) + 6.0)
                 except Exception as cleanup_exc:
                     self._log_error("Scout mapping cleanup also failed: %s", cleanup_exc)
             self._send_session_message(session, "artifact_status", {

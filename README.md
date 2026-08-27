@@ -1,8 +1,8 @@
 # 多异构智能体指挥与控制系统
 
-当前指控平台版本：**v0.21.2**
+当前指控平台版本：**v0.22.2**
 
-端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.4.0**、epgeneral_udp_telemetry **v0.3.0**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.10.0**、epgeneral_task_control **v0.3.1**、epgeneral_relocalization **v0.2.2**
+端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.4.0**、epgeneral_udp_telemetry **v0.3.0**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.11.0**、epgeneral_task_control **v0.4.3**、epgeneral_relocalization **v0.2.2**
 
 ## 功能介绍
 
@@ -40,7 +40,7 @@ CCS_dev/
 │   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.1
 │   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.3.0
-│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.9.1
+│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.11.0
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
 │   ├── EPGeneral_relocalization/           # ROS 地图下发与重定位协调包，v0.2.2
 │   ├── epgeneral_mqtav.zip                  # 端侧部署归档
@@ -87,7 +87,7 @@ CCS_dev/
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
-v0.18.3 配套端侧 `epgeneral_map_stream` v0.9.1；建图启动时拉起 map accumulator，停止建图再调用保存并校验新 PCD，随后停止建图进程并生成最终成果。
+当前配套端侧 `epgeneral_map_stream` v0.11.0。Scout 建图按 FAST-LIO、pointcloud mapper、TF manager、pose adapter 顺序启动；停止时由 mapper 刷新 filtered PCD，并以本次会话开始时生成的同一个 `map_name` 执行地图转换。Go2 继续使用 accumulator backend。
 
 地图详情页左侧显示可收起的在线设备栏，集中展示任务/建图状态、电量、坐标系和单路可控视频。设备位置直接复用 UDP `global_pose`，同坐标系直接显示，跨坐标系仅使用地图构建记录中与设备 ID 精确匹配的外参。所有地图点云按高度使用低红高紫的 rainbow 色谱。
 
@@ -280,7 +280,7 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 - 左侧显示 MQTT 在线设备，中间显示 PCD/PGM/叠加地图，右侧显示状态和位置/姿态趋势。
 - 下方控制台选择地图与任务，可共同开始或终止任务。
 
-Scout 执行任务前必须同时具备当前进程产生的 `localized` 状态、实时 `/fastlio_odom` 和 `map<-odom` TF。端侧进程重启后会使历史 `localized` 状态失效，必须重新完成重定位；定位不可用、地图不匹配和导航启动超时会通过任务状态返回明确错误码。
+Scout 在任务文件完整提交后校验当前进程产生的 `localized` 状态、实时 `/fastlio_odom` 和 `map<-odom` TF，并启动常驻导航栈；`/move_base` 就绪后端侧才报告任务 `ready`。执行、完成和常规停止复用该进程，删除、急停或节点关闭才卸载导航。定位暂时不可用时保留任务并自动重试准备。
 - 设备栏和控制台可收起；进入全屏后按 Esc 恢复。
 
 ## QA
@@ -347,7 +347,7 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 ### PGM 下载提示端侧版本不支持
 
-当前端侧 `epgeneral_map_stream` v0.9.1 已实现 `odom` 坐标实时 PCD 分片、map accumulator 随建图链启动和主动保存、最终 PCD/PGM/YAML 成果 ZIP 和短期令牌 HTTP 服务。
+当前端侧 `epgeneral_map_stream` v0.11.0 已实现实时 PCD 分片、最终 PCD/PGM/YAML 成果 ZIP 和短期令牌 HTTP 服务。Scout 使用本地时间 `YYYYMMDD_HHMMSS` 作为固定 `map_name`，同一名称贯穿 pointcloud mapper、`filtered_camera_init.pcd`、`finalize_map.py --replace-raw` 和成果 manifest；Go2 继续使用 accumulator backend。
 
 ### 融合算法无法导入或执行失败
 

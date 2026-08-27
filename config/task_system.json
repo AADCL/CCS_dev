@@ -12,7 +12,7 @@
     "retry_seconds": 0.5,
     "max_attempts": 5,
     "heartbeat_timeout_seconds": 5.0,
-    "group_start_delay_seconds": 30.0,
+    "group_start_delay_seconds": 3.0,
     "group_ack_deadline_seconds": 1.0
   },
   "limits": {

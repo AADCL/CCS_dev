@@ -71,9 +71,9 @@ Ubuntu 22.04 + ROS2 Humble 和 Ubuntu 24.04 + ROS2 Jazzy 在本阶段只完成�
 
 **验收**：参考设备能连续上传点云和同步位姿；话题超时发送 session error；缺片/CRC/非有限点不会产生半帧；重启和重复命令幂等。
 
-## 6. `epgeneral_task_control` v0.1.0
+## 6. `epgeneral_task_control` v0.4.0
 
-**当前状态**：UDP 14563/14564、任务分片、CRC/zlib、XML 原子保存、UTC 调度、ACK/心跳/状态、强类型 ROS 消息和状态机已实现；真实运动控制适配器缺失。
+**当前状态**：UDP 14563/14564、任务分片、CRC/zlib、XML 原子保存、UTC 调度、ACK/心跳/状态和 Scout `/move_base` 适配器已实现。任务 commit 后准备并常驻导航，执行与常规停止复用进程；真实车辆运动仍需现场验收。
 
 **Alpha 任务**：
 

@@ -39,25 +39,26 @@ cd ~/ccs_edge_ws
 ./start_ccs_edge_dev.sh
 ```
 
-脚本依次启动 Scout 底盘、Mid-360 Livox 驱动、D435i、MQTT、UDP 遥测、SRT、常驻 `epgeneral_map_stream`、`epgeneral_relocalization` v0.2.2 和 v0.3.1 `epgeneral_task_control`。导航栈不会常驻，只在收到任务执行命令后启动 `scout_navigation/navigation_teb.launch`。按 `Ctrl+C` 会停止脚本自身管理的 ROS launch、节点和 ROS Master；不会发送运动目标。
+脚本依次启动 Scout 底盘、Mid-360 Livox 驱动、D435i、MQTT、UDP 遥测、SRT、常驻 `epgeneral_map_stream`、`epgeneral_relocalization` v0.2.2 和 v0.4.3 `epgeneral_task_control`。任务文件 commit 后启动 `scout_navigation/navigation_teb.launch` 并保持到任务删除、急停或节点关闭；执行和常规停止不会重复启停导航。任务适配器通过常驻 TF listener 接收 TF，并在 ready 前校验全部目标点属于 PGM 已知自由空间。按 `Ctrl+C` 会停止脚本自身管理的 ROS launch、节点和 ROS Master；不会自动恢复或发送运动目标。
 
 重定位地图保存到 `~/livox_fastlio/maps/ccs_download/<map_id>/`。确认防火墙允许端侧 UDP 14565、地面站 UDP 14566/TCP 14601；重定位日志位于 `~/.ros/ccs_edge_dev/log/relocalization.log`。真实发布前必须验证地图下载、六阶段启动、`/initialpose`、稳定 `map <- odom` TF、重复重定位和反序清理。
 
 建图启动顺序固定为：
 
 ```bash
-roslaunch scout_system_bringup fastlio_mapping_scout.launch
+roslaunch scout_system_bringup fastlio_mapping_scout.launch rviz:=false
+roslaunch scout_pointcloud_mapper pointcloud_mapper.launch map_name:="$map_name"
 roslaunch scout_tf_manager tf_manager.launch
 roslaunch scout_pose_adapter pose_adapter.launch
 ```
 
-三个命令继承一键脚本环境，不额外 source 工作空间。停止时按 pose adapter、TF manager、FAST-LIO 反序发送 SIGINT，不调用 rosservice。FAST-LIO 退出写出本次 `scans.pcd` 后执行：
+四个命令继承一键脚本环境，不额外 source 工作空间。`map_name` 仅在收到开始建图指令时生成一次，并同时用于 mapper 输出目录、finalize 和 ZIP manifest。停止时先向 pointcloud mapper 发送 SIGINT，等待它刷新 `filtered_camera_init.pcd`，再停止 FAST-LIO、pose adapter 和 TF manager，不调用 rosservice。随后执行：
 
 ```bash
-rosrun scout_map_tools finalize_map.py "$map_name"
+rosrun scout_map_tools finalize_map.py "$map_name" --replace-raw
 ```
 
-`map_name` 为开始时间 `YYYYMMDD_HHMMSS`，成果保存在 `~/livox_fastlio/maps/$map_name/`；指控终端通过 UDP 14561/14562 和 TCP 14600 保持既有预览、ACK 与成果下载流程。
+`map_name` 为开始时间 `YYYYMMDD_HHMMSS`，停止和转换阶段不得重新计算，也不得使用平台 `map_id` 或 `session_id` 代替。成果保存在 `~/livox_fastlio/maps/$map_name/`，包括 `filtered_camera_init.pcd`、`raw_camera_init.pcd`、`public_map.pcd`、PGM/YAML 和元数据；指控终端通过 UDP 14561/14562 和 TCP 14600 保持既有预览、ACK 与成果下载流程，filtered PCD 不加入下载 ZIP。
 
 如需只启动三个 CCS 功能包，可在 ROS Master 和传感器栈已运行时执行：
 
@@ -106,7 +107,7 @@ ss -lunp | grep ':9000'
 gst-inspect-1.0 srtsink
 ```
 
-地面站应收到 `mqtav/UGV_001/{presence,heartbeat,status}`、UDP 14560 heartbeat/telemetry 和任务状态/心跳，并可使用 SRT Caller 连接端侧 `192.168.50.120:9000`。任务执行前需确认端侧 `relocalization.json` 为本次进程产生的 `localized`、任务地图匹配，并确认 `/fastlio_odom` 有实时发布者、`map<-odom` TF、`/cmd_vel` 订阅者和 `/move_base` action server 正常。端侧重启后历史 `localized` 会自动降级，必须重新执行重定位。
+地面站应收到 `mqtav/UGV_001/{presence,heartbeat,status}`、UDP 14560 heartbeat/telemetry 和任务状态/心跳，并可使用 SRT Caller 连接端侧 `192.168.50.120:9000`。任务下发后需确认端侧依次报告 `received` 和 `ready`，且只有一个与任务地图匹配的导航进程持续运行。任务执行前仍需确认本进程的 localized 状态、实时 `/fastlio_odom`、`map<-odom` TF 和 `/cmd_vel` 订阅者；端侧重启后必须重新定位，且不会恢复历史运动目标。
 
 ## 故障排查
 
@@ -116,5 +117,5 @@ gst-inspect-1.0 srtsink
 - 视频无流：检查 `/camera/color/image_raw`、`gst-inspect-1.0 srtsink`、UDP 9000 和地面站 Caller。
 - `/scout_status` 或 `/BMS_status` 无数据：检查 `can0`、`scout_livox_base.launch` 日志和 Scout 底盘电源。`/BMS_status` 由 Scout 驱动从 SDK 的 `GetCommonSensorState().bms_basic_state` 填充 SOC、SOH、电压、电流和温度；旧驱动曾把引用不存在的 `state.*` 代码注释掉，因此只发布默认值。
 - 电量 MQTT 映射来自 `/BMS_status` 的 `battery_voltage`；Scout Mini 当前协议只可靠提供系统电压，SOC、电流、温度不可用时保持 `null`，不会把默认零值伪造成有效电量。
-- 建图启动失败：检查 map stream session 下的 `scout_mapping.log`，确认节点严格按 `/laserMapping`、`/scout_tf_manager`、`/scout_geometry_tf_publisher`、`/scout_pose_adapter` 就绪。
-- 成果生成失败：确认 `FAST_LIO/PCD/scans.pcd` 为本次退出后更新，且 `~/livox_fastlio/maps` 可写、剩余空间满足 profile 限制。
+- 建图启动失败：检查 map stream session 下的 `scout_mapping.log`，确认节点严格按 `/laserMapping`、`/scout_pointcloud_mapper`、`/scout_tf_manager`、`/scout_geometry_tf_publisher`、`/scout_pose_adapter` 就绪，并确认 FAST-LIO 参数为 `rviz:=false`、mapper 参数为当前会话 `map_name:=...`。
+- 成果生成失败：确认 `~/livox_fastlio/maps/$map_name/filtered_camera_init.pcd` 由本次 mapper 正常退出后更新，finalize 日志使用同一个 `map_name` 和 `--replace-raw`，且地图目录可写、剩余空间满足 profile 限制。
