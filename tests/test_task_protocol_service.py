@@ -135,6 +135,29 @@ class TaskProtocolServiceTests(unittest.TestCase):
         self.assertIn("实时定位不可用", record.message)
         self.assertIn("LOCALIZATION_UNAVAILABLE", record.message)
 
+    def test_all_task_summary_states_are_logged(self):
+        service = TaskExecutionService(
+            load_task_system_config(), self.repository,
+            lambda value: self.device if value == self.device.device_id else None,
+        )
+        for sequence, (state, message) in enumerate((
+            ("ready", "navigation ready"),
+            ("no_task", "task missing"),
+            ("failed", "invalid route"),
+        ), start=1):
+            service._handle_summary(TaskEnvelope(
+                self.task.task_id, self.task.subtasks[0].subtask_id, self.device.device_id,
+                "", "task_summary", f"summary-{sequence}", sequence, time.time_ns(),
+                {"state": state, "revision": self.task.subtasks[0].revision, "message": message},
+            ))
+        events = [event for event in self.repository.audit_events(self.task.task_id)
+                  if event.event_type == "task_summary"]
+        self.assertEqual([event.message for event in events[-3:]], [
+            "ready: navigation ready", "no_task: task missing", "failed: invalid route",
+        ])
+        self.assertEqual(events[-1].level.value, "error")
+        self.assertTrue(all(event.device_id == self.device.device_id for event in events[-3:]))
+
     def test_localhost_prepare_commit_and_execute(self):
         status_port, control_port = free_port(), free_port()
         config = replace(
@@ -193,6 +216,10 @@ class TaskProtocolServiceTests(unittest.TestCase):
             time.sleep(0.02)
         self.task = self.repository.task_by_id(self.task.task_id)
         self.assertTrue(self.task.subtasks[0].edge_ready)
+        self.assertTrue(any(
+            event.event_type == "task_summary" and "navigation ready" in event.message
+            for event in self.repository.audit_events(self.task.task_id)
+        ))
         snapshot = service.execute_subtask(self.task, self.device.device_id)
 
         execute = None
