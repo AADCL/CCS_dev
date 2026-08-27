@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from .data_source import DeviceDataSource, simulated_overview
+from .app_icons import apply_button_icon
 from .map_repository import MapRepository
 from .models import SystemOverview
 from .pages import CommandDashboardPage, DevicesPage, HomePage, MapPage, TaskPage
@@ -113,6 +114,7 @@ class MainWindow(QMainWindow):
         nav_layout.addStretch()
         self.theme_toggle_button = QPushButton()
         self.theme_toggle_button.setObjectName("themeToggleButton")
+        self.theme_toggle_button.setAccessibleName("切换主题")
         self.theme_toggle_button.clicked.connect(self._toggle_theme)
         nav_layout.addWidget(self.theme_toggle_button)
         version = QLabel(f"v{__version__}")
@@ -173,13 +175,15 @@ class MainWindow(QMainWindow):
             set_theme = getattr(page, "set_theme", None)
             if set_theme is not None:
                 set_theme(self.theme_palette)
-        self.theme_toggle_button.setText(
-            "切换夜间" if self.theme_mode == ThemeMode.DAY else "切换日间"
-        )
+        icon_name = "indoor" if self.theme_mode == ThemeMode.DAY else "outdoor"
+        apply_button_icon(self.theme_toggle_button, icon_name, self.theme_mode, text="")
         self.theme_toggle_button.setToolTip(
             "当前为日间主题，点击切换至夜间主题"
             if self.theme_mode == ThemeMode.DAY
             else "当前为夜间主题，点击切换至日间主题"
+        )
+        self.theme_toggle_button.setAccessibleName(
+            "切换至夜间主题" if self.theme_mode == ThemeMode.DAY else "切换至日间主题"
         )
         if persist:
             save_theme_mode(self.theme_mode, self._theme_settings)

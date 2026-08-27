@@ -17,6 +17,7 @@ from ccs_monitor.srt_video import (
     SrtVideoWidget, build_srt_url, load_srt_video_config, protocols_include_srt,
     resolve_ffmpeg_executable,
 )
+from ccs_monitor.styles import ThemeMode, theme_palette
 
 
 class FakeReceiver(QObject):
@@ -139,6 +140,10 @@ class SrtVideoTests(unittest.TestCase):
         widget.set_device(DeviceSnapshot("A", "One", "UGV", ip_address="192.168.1.10"))
         widget.set_collapsed(True)
         self.assertTrue(widget._collapsed)
+        self.assertEqual(widget.collapse_button.property("appIconName"), "expand")
+        self.assertEqual(widget.collapse_button.property("appIconRotation"), 90)
+        widget.set_theme(theme_palette(ThemeMode.DAY))
+        self.assertEqual(widget.collapse_button.property("appIconMode"), "day")
         self.assertTrue(widget.video_body.isHidden())
         widget.start_stream()
         self.assertFalse(widget._collapsed)

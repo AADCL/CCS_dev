@@ -392,8 +392,11 @@ QLabel#navVersion {
     font-family: Consolas, monospace;
 }
 QPushButton#themeToggleButton {
-    min-width: 84px;
-    padding: 7px 10px;
+    min-width: 34px;
+    max-width: 34px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0;
     color: #8de2c7;
     background: #101923;
     border: 1px solid #2b6359;

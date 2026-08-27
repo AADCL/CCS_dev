@@ -82,6 +82,9 @@ class UiTests(unittest.TestCase):
         self.window.apply_theme(ThemeMode.NIGHT, persist=False)
         self.app.processEvents()
         self.assertEqual(self.window.theme_mode, ThemeMode.NIGHT)
+        self.assertEqual(self.window.theme_toggle_button.text(), "")
+        self.assertEqual(self.window.theme_toggle_button.property("appIconName"), "outdoor")
+        self.assertEqual(self.window.theme_toggle_button.property("appIconMode"), "night")
         self.assertEqual(
             self.app.palette().color(QPalette.ColorRole.Base).name(),
             theme_palette(ThemeMode.NIGHT).input_background.lower(),
@@ -97,7 +100,18 @@ class UiTests(unittest.TestCase):
             theme_palette(ThemeMode.DAY).input_background.lower(),
         )
         self.assertEqual(self.window.current_page_index, 4)
-        self.assertEqual(self.window.theme_toggle_button.text(), "切换夜间")
+        self.assertEqual(self.window.theme_toggle_button.text(), "")
+        self.assertEqual(self.window.theme_toggle_button.property("appIconName"), "indoor")
+        self.assertEqual(self.window.theme_toggle_button.property("appIconMode"), "day")
+        for button in (
+            self.window.devices_page.detail_page.back_button,
+            self.window.map_page.detail_page.back_button,
+            self.window.task_page.editor.back_button,
+        ):
+            self.assertEqual(button.text(), "返回")
+            self.assertFalse(button.icon().isNull())
+            self.assertEqual(button.property("appIconName"), "back")
+            self.assertEqual(button.property("appIconMode"), "day")
         self.window.theme_toggle_button.click()
         self.assertEqual(self.window.theme_mode, ThemeMode.NIGHT)
 
