@@ -16,7 +16,9 @@ class AppIconTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_required_theme_icons_exist_and_load(self):
-        for name in ("back", "expand", "close"):
+        for name in (
+            "back", "expand", "close", "home", "device", "map", "mission", "bev", "upload",
+        ):
             for mode in (ThemeMode.DAY, ThemeMode.NIGHT):
                 self.assertTrue(icon_path(name, mode).is_file())
                 self.assertFalse(app_icon(name, mode).isNull())
@@ -27,7 +29,8 @@ class AppIconTests(unittest.TestCase):
         original = os.getcwd()
         try:
             os.chdir(tempfile.gettempdir())
-            self.assertTrue(icon_path("back", ThemeMode.DAY).is_file())
+            self.assertTrue(icon_path("home", ThemeMode.DAY).is_file())
+            self.assertFalse(app_icon("upload", ThemeMode.NIGHT).isNull())
             self.assertFalse(app_icon("expand", ThemeMode.NIGHT, rotation=90).isNull())
         finally:
             os.chdir(original)

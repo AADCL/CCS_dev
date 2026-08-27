@@ -300,6 +300,9 @@ class TaskEditorPage(QWidget):
         self.pick_toggle.setCheckable(True)
         self.pick_toggle.toggled.connect(self._pick_toggled)
         self.deliver_button = QPushButton("保存下发")
+        apply_button_icon(
+            self.deliver_button, "upload", self.theme_palette, text="保存下发",
+        )
         self.deliver_button.clicked.connect(self._deliver_current)
         self.run_one = QPushButton("执行任务")
         self.run_one.clicked.connect(self._execute_current)
@@ -355,6 +358,7 @@ class TaskEditorPage(QWidget):
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
         apply_button_icon(self.back_button, "back", palette, text="返回")
+        apply_button_icon(self.deliver_button, "upload", palette, text="保存下发")
         self.viewer.set_theme(palette)
         self.update()
 
