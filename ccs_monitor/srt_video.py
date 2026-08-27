@@ -16,7 +16,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from .app_icons import apply_button_icon
 from .models import DeviceSnapshot
+from .styles import ThemeMode, ThemePalette, theme_palette
 
 
 class SrtVideoConfigError(ValueError):
@@ -432,6 +434,7 @@ class SrtVideoWidget(QFrame):
         self._stream_started = False
         self._collapsible = False
         self._collapsed = False
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self._build()
         self.receiver.frame_ready.connect(self._show_frame)
         self.receiver.state_changed.connect(self._on_state)
@@ -456,9 +459,10 @@ class SrtVideoWidget(QFrame):
         self.stream_switch.setEnabled(False)
         self.stream_switch.toggled.connect(self._toggle_stream)
         header.addWidget(self.stream_switch)
-        self.collapse_button = QPushButton("⌃")
+        self.collapse_button = QPushButton()
         self.collapse_button.setObjectName("videoCollapseButton")
         self.collapse_button.setToolTip("收起视频")
+        self.collapse_button.setAccessibleName("收起视频")
         self.collapse_button.setVisible(False)
         self.collapse_button.clicked.connect(self.toggle_collapsed)
         header.addWidget(self.collapse_button)
@@ -488,6 +492,21 @@ class SrtVideoWidget(QFrame):
         self.url_label.setWordWrap(True)
         body_layout.addWidget(self.url_label)
         layout.addWidget(self.video_body, 1)
+        self._refresh_collapse_icon()
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self._refresh_collapse_icon()
+        self.update()
+
+    def _refresh_collapse_icon(self) -> None:
+        apply_button_icon(
+            self.collapse_button,
+            "expand" if self._collapsed else "close",
+            self.theme_palette,
+            rotation=90,
+            text="",
+        )
 
     def set_collapsible(self, enabled: bool) -> None:
         self._collapsible = bool(enabled)
@@ -499,8 +518,9 @@ class SrtVideoWidget(QFrame):
         collapsed = bool(collapsed) and self._collapsible and not self.stream_switch.isChecked()
         self._collapsed = collapsed
         self.video_body.setVisible(not collapsed)
-        self.collapse_button.setText("⌄" if collapsed else "⌃")
         self.collapse_button.setToolTip("展开视频" if collapsed else "收起视频")
+        self.collapse_button.setAccessibleName(self.collapse_button.toolTip())
+        self._refresh_collapse_icon()
         self.setMinimumHeight(0 if collapsed else 250)
         self.setMaximumHeight(self.sizeHint().height() if collapsed else 16777215)
 

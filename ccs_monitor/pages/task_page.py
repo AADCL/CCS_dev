@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..data_source import DeviceDataSource
+from ..app_icons import apply_button_icon
 from ..map_repository import MapRepository, MapRepositoryError
 from ..models import DeviceMapMarker, MapDefinition, MapMarkerShape, MapStatus
 from ..task_conflicts import TaskConflictDetector
@@ -22,6 +23,7 @@ from ..task_models import (
     TaskSafetySettings, TaskWaypoint,
 )
 from ..task_repository import TaskRepository, TaskRepositoryError, map_fingerprint
+from ..styles import ThemeMode, ThemePalette, theme_palette
 from ..widgets import NoButtonDoubleSpinBox
 from .map_page import PointCloudViewer, bound_map_pose
 
@@ -183,6 +185,7 @@ class TaskEditorPage(QWidget):
         self.map_collapsed = False
         self.map_reviewed = True
         self.active_execution_id: str | None = None
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.viewer = viewer_factory() if viewer_factory else PointCloudViewer()
         self.detector = TaskConflictDetector()
         self._build()
@@ -203,8 +206,12 @@ class TaskEditorPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 14, 18, 18)
         header = QHBoxLayout()
-        back = QPushButton("返回任务列表")
-        back.clicked.connect(self.back_requested)
+        self.back_button = QPushButton("返回")
+        self.back_button.setObjectName("backButton")
+        self.back_button.setAccessibleName("返回任务列表")
+        self.back_button.setToolTip("返回任务列表")
+        self.back_button.clicked.connect(self.back_requested)
+        apply_button_icon(self.back_button, "back", self.theme_palette, text="返回")
         self.title = QLabel("任务编辑")
         self.title.setObjectName("pageTitle")
         self.run_all = QPushButton("开始主任务")
@@ -218,7 +225,7 @@ class TaskEditorPage(QWidget):
         self.emergency_button.setObjectName("dangerButton")
         self.emergency_button.setEnabled(False)
         self.emergency_button.clicked.connect(self._emergency_stop)
-        header.addWidget(back)
+        header.addWidget(self.back_button)
         header.addWidget(self.title)
         header.addStretch()
         header.addWidget(self.run_all)
@@ -344,6 +351,12 @@ class TaskEditorPage(QWidget):
         control.setValue(value)
         control.setSuffix(suffix)
         return control
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        apply_button_icon(self.back_button, "back", palette, text="返回")
+        self.viewer.set_theme(palette)
+        self.update()
 
     def set_task(self, task: TaskDefinition) -> None:
         self.task = task
@@ -792,6 +805,7 @@ class TaskPage(QWidget):
         self.map_repository = map_repository
         self.repository = task_repository
         self.execution_service = execution_service
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.tasks = task_repository.tasks()
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -847,6 +861,11 @@ class TaskPage(QWidget):
     def _active_map_changed(self, _definition: object) -> None:
         self._render()
         self.editor.refresh_active_map_state()
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self.editor.set_theme(palette)
+        self.update()
 
     def set_active(self, active: bool) -> None:
         if not active:

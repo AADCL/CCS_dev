@@ -1,5 +1,12 @@
 # 开发笔记
 
+## v0.21.2 主题化操作图标
+
+- 内置操作图标固定存放在仓库根目录 `icons/app_icons/`，运行时由 `ccs_monitor.app_icons` 相对模块位置解析，禁止依赖进程当前工作目录。
+- 通用图标使用 `<name>_day.svg` / `<name>_night.svg`；主题按钮按当前主题分别使用 `indoor_day.svg` 和 `outdoor_night.svg`，图标表达点击后的目标主题。
+- 返回按钮保留“返回”文字；主题和展开/收起按钮为纯图标，但必须维护 Tooltip 与 accessibleName。
+- 纵向折叠控件复用 expand/close 图标并旋转 90 度。所有控件在 `set_theme` 中只刷新图标，不得重置导航、地图、任务、视频、全屏或折叠状态。
+
 ## v0.19.2 初始位姿选择器修复
 
 - `RelocalizationReticle` 与地图内容通过 `QStackedLayout.StackAll` 共享视口几何，透明且不接收鼠标事件；不要再将覆盖控件作为 `QStackedWidget` 的非托管子控件。
