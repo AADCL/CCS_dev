@@ -1,6 +1,8 @@
 import importlib.util
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -46,6 +48,34 @@ class MapPickingTests(unittest.TestCase):
             cursor_anchored_camera_center((10.0, 20.0, 3.0), (4.0, 8.0), (3.0, 6.0)),
             (11.0, 22.0, 3.0),
         )
+
+    def test_cursor_coordinates_can_be_disabled_per_viewer(self):
+        viewer = PointCloudViewer()
+        self.assertTrue(viewer.cursor_coordinates_enabled)
+        self.assertFalse(viewer.cursor_check.isHidden())
+        viewer.cursor_coordinate.setVisible(True)
+        viewer.set_cursor_coordinates_enabled(False)
+        self.assertFalse(viewer.cursor_coordinates_enabled)
+        self.assertTrue(viewer.cursor_check.isHidden())
+        self.assertTrue(viewer.cursor_coordinate.isHidden())
+
+    def test_loaded_pgm_remains_below_device_visuals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "map.pgm").write_text("P2\n2 2\n255\n0 255\n255 0\n", encoding="ascii")
+            yaml_path = root / "map.yaml"
+            yaml_path.write_text(
+                "image: map.pgm\nresolution: 0.1\norigin: [0, 0, 0]\n"
+                "negate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.2\n",
+                encoding="utf-8",
+            )
+            metadata = PgmMapMetadata(
+                "map.pgm", "map.yaml", 0.1, 0, 0, 0, 2, 2, False, 0.65, 0.2
+            )
+            viewer = PointCloudViewer()
+            viewer.load_pgm_layer(MapDefinition("map-1", "Map", pgm=metadata), yaml_path)
+            self.assertEqual(viewer._pgm_visual.order, viewer.MAP_LAYER_ORDER)
+            self.assertLess(viewer._pgm_visual.order, viewer._marker_visual.order)
 
     def test_relocalization_picker_refresh_does_not_reset_direction(self):
         viewer = PointCloudViewer()
