@@ -1,0 +1,75 @@
+schema_version: 6
+protocol_id: "ccs-map-stream-v2"
+
+network: {bind_host: "0.0.0.0", control_port: 14561, ground_station_ip: "192.168.50.101", data_port: 14562, max_datagram_bytes: 1400}
+http: {bind_host: "0.0.0.0", port: 14600, token_ttl_seconds: 900.0}
+
+ros:
+  inputs:
+    lidar: {topic: "/livox/lidar", message_type: "livox_ros_driver2/CustomMsg", frame: "livox_frame"}
+    imu: {topic: "/livox/imu", message_type: "sensor_msgs/Imu", frame: "livox_frame"}
+  stream:
+    cloud: {topic: "/cloud_registered_body", message_type: "sensor_msgs/PointCloud2", frame: "body", coordinates: "sensor"}
+    pose: {topic: "/fastlio_odom", message_type: "nav_msgs/Odometry", position_path: "pose.pose.position", orientation_path: "pose.pose.orientation"}
+  frames: {map: "odom", preview: "odom", body: "base_link", sensor: "body"}
+  # Inverse of base_link -> body: [0.10, 0, 0.15], pitch +20 degrees.
+  body_from_sensor: {x: -0.042666, y: 0.0, z: -0.175156, qx: 0.0, qy: -0.173648, qz: 0.0, qw: 0.984808}
+
+integrations:
+  backend: "managed_finalize"
+  mapping_prerequisites:
+    setup_file: "/home/nrc19/livox_fastlio/devel/setup.bash"
+    launch_file: "mapping_prerequisites.launch"
+    extrinsics_file: "/home/nrc19/livox_fastlio/src/wheeltec_tf_manager/config/extrinsics.yaml"
+    startup_timeout_seconds: 15.0
+  fast_lio:
+    setup_file: "/home/nrc19/livox_fastlio/devel/setup.bash"
+    package: "wheeltec_system_bringup"
+    launch_file: "fastlio_mapping_wheeltec.launch"
+    launch_args: []
+    startup_timeout_seconds: 30.0
+    stop_timeout_seconds: 30.0
+    pid_path: "{session_dir}/wheeltec_mapping.pid"
+    log_path: "{session_dir}/wheeltec_mapping.log"
+  map_accumulator: {setup_file: "/home/nrc19/livox_fastlio/devel/setup.bash", service: "/unused_wheeltec_map_service", save_timeout_seconds: 60.0}
+  pgm:
+    setup_file: "/home/nrc19/livox_fastlio/devel/setup.bash"
+    package: "wheeltec_map_tools"
+    launch_file: "unused.launch"
+    launch_args: []
+    generation_timeout_seconds: 300.0
+    log_path: "{session_dir}/finalize_map.log"
+  managed:
+    fast_lio_package: "wheeltec_system_bringup"
+    fast_lio_launch: "fastlio_mapping_wheeltec.launch"
+    fast_lio_node: "/laserMapping"
+    mapper_package: "wheeltec_pointcloud_mapper"
+    mapper_launch: "pointcloud_mapper.launch"
+    mapper_node: "/wheeltec_pointcloud_mapper"
+    tf_package: "wheeltec_tf_manager"
+    tf_launch: "tf_manager.launch"
+    tf_node: "/wheeltec_tf_manager"
+    geometry_tf_node: "/wheeltec_geometry_tf_publisher"
+    pose_package: "wheeltec_pose_adapter"
+    pose_launch: "pose_adapter.launch"
+    pose_node: "/wheeltec_pose_adapter"
+    finalize_package: "wheeltec_map_tools"
+    finalize_executable: "finalize_map.py"
+    filtered_pcd_filename: "filtered_camera_init.pcd"
+    map_root: "/home/nrc19/livox_fastlio/maps"
+
+sync: {tolerance_seconds: 0.05, pose_buffer_size: 100, preview_transform_timeout_seconds: 0.20}
+preprocess: {sample_window_seconds: 1.0, preview_transport: "pcd_fragment_http", min_range_m: 0.30, max_range_m: 100.0, voxel_size_m: 0.05}
+timeouts: {prepare_probe_timeout_seconds: 1.5, integration_check_timeout_seconds: 8.0, ready_timeout_seconds: 60.0, input_timeout_seconds: 3.0, command_cache_seconds: 60.0, artifact_poll_seconds: 0.5, artifact_stable_polls: 2}
+limits: {max_frame_points: 200000, max_window_points: 1000000, max_decompressed_bytes: 2400000, max_artifact_bytes: 4294967296, min_free_bytes: 5368709120, command_output_bytes: 16384, max_preview_fragment_bytes: 8388608, max_pending_preview_fragments: 4, max_unacked_preview_fragments: 16}
+artifacts:
+  frame: "map"
+  workspace_root: "/home/nrc19/.ros/ccs_edge_dev_wheeltec_r550p/map_stream"
+  accumulator_pcd_path: "/home/nrc19/livox_fastlio/maps/current/filtered_camera_init.pcd"
+  source_pcd_path: "/home/nrc19/livox_fastlio/maps/current/public_map.pcd"
+  source_pgm_path: "/home/nrc19/livox_fastlio/maps/current/map.pgm"
+  source_yaml_path: "/home/nrc19/livox_fastlio/maps/current/map.yaml"
+  archive_root: "/home/nrc19/livox_fastlio/maps/archive"
+  pcd_path: "{session_dir}/map.pcd"
+  pgm_path: "{session_dir}/map.pgm"
+  yaml_path: "{session_dir}/map.yaml"

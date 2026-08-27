@@ -69,7 +69,11 @@ def resolve_device_map_context(source, relocalization_service, telemetry, device
     profile = source.profile(device_id)
     if profile is None:
         return DeviceMapContext(None, "未知空间", None, None, "设备配置不存在")
-    local_source = "vision_pose" if profile.relocalization_profile == "scout_mini" else "global_pose"
+    local_source = (
+        "vision_pose"
+        if profile.relocalization_profile in {"scout_mini", "wheeltec_r550p"}
+        else "global_pose"
+    )
     local_pose = getattr(telemetry, local_source, None) if telemetry is not None else None
     if local_pose is not None and local_pose.sample_age_seconds > 2.0:
         local_pose = None

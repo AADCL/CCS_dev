@@ -147,7 +147,8 @@ class RelocalizationNode(object):
                     self.state = "standby"
             self.identity = new_identity
             self.map_dir = os.path.join(os.path.expanduser(self.config["map_root"]), message["map_id"])
-            if not self.config["enabled"] or self.config["backend"] != "scout_mini":
+            if not self.config["enabled"] or self.config["backend"] not in (
+                    "scout_mini", "wheeltec_r550p"):
                 self.state = "standby"
                 self._write_active_state(message["map_id"], "unsupported")
                 self._reply(message, "negotiation_status", {
@@ -278,7 +279,8 @@ class RelocalizationNode(object):
             self._reply(message, "download_status", {"state": "error", "reason": str(exc)})
 
     def _start_stack(self, message):
-        if not self.config["enabled"] or self.config["backend"] != "scout_mini":
+        if not self.config["enabled"] or self.config["backend"] not in (
+                "scout_mini", "wheeltec_r550p"):
             self._write_active_state(message["map_id"], "unsupported")
             self._reply(message, "command_error", {
                 "state": "error", "reason": "UNSUPPORTED_BACKEND"})
@@ -324,7 +326,8 @@ class RelocalizationNode(object):
             self._reply(message, "stack_status", {"state": "error", "reason": str(exc)})
 
     def _initial_pose(self, message):
-        if not self.config["enabled"] or self.config["backend"] != "scout_mini":
+        if not self.config["enabled"] or self.config["backend"] not in (
+                "scout_mini", "wheeltec_r550p"):
             self._write_active_state(message["map_id"], "unsupported")
             self._reply(message, "command_error", {
                 "state": "error", "reason": "UNSUPPORTED_BACKEND"})

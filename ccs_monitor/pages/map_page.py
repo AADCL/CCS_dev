@@ -1431,6 +1431,9 @@ class MapDeviceCard(QFrame):
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
         self.download_map_button = QPushButton("下发地图")
+        apply_button_icon(
+            self.download_map_button, "upload", self.theme_palette, text="下发地图",
+        )
         self.download_map_button.clicked.connect(
             lambda: self.map_download_requested.emit(self.device.device_id)
         )
@@ -1473,6 +1476,9 @@ class MapDeviceCard(QFrame):
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
+        apply_button_icon(
+            self.download_map_button, "upload", palette, text="下发地图",
+        )
         self.video.set_theme(palette)
         self.update()
 

@@ -38,6 +38,7 @@ from .version import __version__
 
 class MainWindow(QMainWindow):
     PAGE_NAMES = ("首页", "设备", "地图", "任务", "指控大屏")
+    PAGE_ICON_NAMES = ("home", "device", "map", "mission", "bev")
     theme_changed = Signal(object)
 
     def __init__(
@@ -103,11 +104,12 @@ class MainWindow(QMainWindow):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons: list[QPushButton] = []
-        for index, name in enumerate(self.PAGE_NAMES):
+        for index, (name, icon_name) in enumerate(zip(self.PAGE_NAMES, self.PAGE_ICON_NAMES)):
             button = QPushButton(name)
             button.setObjectName("navButton")
             button.setCheckable(True)
             button.setProperty("pageIndex", index)
+            apply_button_icon(button, icon_name, self.theme_mode, text=name)
             self.nav_group.addButton(button, index)
             self.nav_buttons.append(button)
             nav_layout.addWidget(button)
@@ -175,6 +177,10 @@ class MainWindow(QMainWindow):
             set_theme = getattr(page, "set_theme", None)
             if set_theme is not None:
                 set_theme(self.theme_palette)
+        for button, name, icon_name in zip(
+            self.nav_buttons, self.PAGE_NAMES, self.PAGE_ICON_NAMES,
+        ):
+            apply_button_icon(button, icon_name, self.theme_mode, text=name)
         icon_name = "indoor" if self.theme_mode == ThemeMode.DAY else "outdoor"
         apply_button_icon(self.theme_toggle_button, icon_name, self.theme_mode, text="")
         self.theme_toggle_button.setToolTip(
