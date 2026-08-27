@@ -108,6 +108,20 @@
       "relocalization_profile": "disabled",
       "active_map_id": null,
       "map_bindings": []
+    },
+    {
+      "device_id": "UGV_003",
+      "device_name": "轮趣WheelTech R550P",
+      "device_type": "UGV",
+      "ip_address": "192.168.50.122",
+      "availability": "available",
+      "last_tested_at": "2026-08-27T10:43:50.974737+00:00",
+      "status_cards": null,
+      "srt_port": 9000,
+      "srt_latency_ms": 120,
+      "relocalization_profile": "scout_mini",
+      "active_map_id": "667a95eb-b449-499f-bae6-aceb647ef21c",
+      "map_bindings": []
     }
   ]
 }

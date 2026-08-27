@@ -158,8 +158,9 @@ def load_config(mapping_path, device_path):
     frames = _mapping(ros, "frames", "ros.frames")
     integrations = _mapping(mapping, "integrations")
     backend = integrations.get("backend", "go2_accumulator")
-    if backend not in ("go2_accumulator", "scout_finalize"):
-        raise ConfigError("integrations.backend must be go2_accumulator or scout_finalize")
+    if backend not in ("go2_accumulator", "scout_finalize", "managed_finalize"):
+        raise ConfigError(
+            "integrations.backend must be go2_accumulator, scout_finalize or managed_finalize")
     prerequisites = _mapping(
         integrations, "mapping_prerequisites",
         "integrations.mapping_prerequisites")
@@ -167,9 +168,11 @@ def load_config(mapping_path, device_path):
     map_accumulator = _mapping(
         integrations, "map_accumulator", "integrations.map_accumulator")
     pgm = _mapping(integrations, "pgm", "integrations.pgm")
-    scout = integrations.get("scout", {})
-    if backend == "scout_finalize" and not isinstance(scout, dict):
-        raise ConfigError("integrations.scout must be a mapping")
+    integration_profile = integrations.get(
+        "scout" if backend == "scout_finalize" else "managed", {})
+    if backend in ("scout_finalize", "managed_finalize") and not isinstance(
+            integration_profile, dict):
+        raise ConfigError("managed finalize integration must be a mapping")
     sync = _mapping(mapping, "sync")
     preprocess = _mapping(mapping, "preprocess")
     timeouts = _mapping(mapping, "timeouts")
@@ -400,20 +403,30 @@ def load_config(mapping_path, device_path):
         "yaml_template": _template(
             artifacts.get("yaml_path"), "artifacts.yaml_path", True),
         "artifact_frame": str(artifacts.get("frame", map_frame)).strip(),
-        "scout_fast_lio_package": str(scout.get("fast_lio_package", "")).strip(),
-        "scout_fast_lio_launch": str(scout.get("fast_lio_launch", "")).strip(),
-        "scout_mapper_package": str(scout.get("mapper_package", "")).strip(),
-        "scout_mapper_launch": str(scout.get("mapper_launch", "")).strip(),
-        "scout_tf_package": str(scout.get("tf_package", "")).strip(),
-        "scout_tf_launch": str(scout.get("tf_launch", "")).strip(),
-        "scout_pose_package": str(scout.get("pose_package", "")).strip(),
-        "scout_pose_launch": str(scout.get("pose_launch", "")).strip(),
-        "scout_finalize_package": str(scout.get("finalize_package", "")).strip(),
-        "scout_finalize_executable": str(scout.get("finalize_executable", "")).strip(),
+        "scout_fast_lio_package": str(integration_profile.get("fast_lio_package", "")).strip(),
+        "scout_fast_lio_launch": str(integration_profile.get("fast_lio_launch", "")).strip(),
+        "scout_mapper_package": str(integration_profile.get("mapper_package", "")).strip(),
+        "scout_mapper_launch": str(integration_profile.get("mapper_launch", "")).strip(),
+        "scout_tf_package": str(integration_profile.get("tf_package", "")).strip(),
+        "scout_tf_launch": str(integration_profile.get("tf_launch", "")).strip(),
+        "scout_pose_package": str(integration_profile.get("pose_package", "")).strip(),
+        "scout_pose_launch": str(integration_profile.get("pose_launch", "")).strip(),
+        "scout_finalize_package": str(integration_profile.get("finalize_package", "")).strip(),
+        "scout_finalize_executable": str(integration_profile.get("finalize_executable", "")).strip(),
         "scout_filtered_pcd_filename": str(
-            scout.get("filtered_pcd_filename", "")).strip(),
+            integration_profile.get("filtered_pcd_filename", "")).strip(),
         "scout_map_root": os.path.abspath(os.path.expanduser(
-            str(scout.get("map_root", "")))),
+            str(integration_profile.get("map_root", "")))),
+        "managed_fast_lio_node": str(
+            integration_profile.get("fast_lio_node", "/laserMapping")).strip(),
+        "managed_mapper_node": str(integration_profile.get(
+            "mapper_node", "/scout_pointcloud_mapper")).strip(),
+        "managed_tf_node": str(integration_profile.get(
+            "tf_node", "/scout_tf_manager")).strip(),
+        "managed_geometry_tf_node": str(integration_profile.get(
+            "geometry_tf_node", "/scout_geometry_tf_publisher")).strip(),
+        "managed_pose_node": str(integration_profile.get(
+            "pose_node", "/scout_pose_adapter")).strip(),
     }
 
 
@@ -452,7 +465,7 @@ def scout_filtered_pcd_path(config, map_name):
 
 def build_integration_commands(config, values):
     context = command_context(config, values)
-    if config["integration_backend"] == "scout_finalize":
+    if config["integration_backend"] in ("scout_finalize", "managed_finalize"):
         required = (
             "scout_fast_lio_package", "scout_fast_lio_launch", "scout_mapper_package",
             "scout_mapper_launch", "scout_tf_package",
@@ -462,16 +475,25 @@ def build_integration_commands(config, values):
         )
         missing = [name for name in required if not config.get(name)]
         if missing:
-            raise ConfigError("Scout integration fields are missing: %s" % ", ".join(missing))
+            raise ConfigError("managed finalize fields are missing: %s" % ", ".join(missing))
         launch_args = [
             config["scout_fast_lio_package"], config["scout_fast_lio_launch"],
             config["scout_mapper_package"], config["scout_mapper_launch"],
             config["scout_tf_package"], config["scout_tf_launch"],
             config["scout_pose_package"], config["scout_pose_launch"],
         ]
+        node_args = []
+        if config["integration_backend"] == "managed_finalize":
+            node_args = [
+                config["managed_fast_lio_node"], config["managed_mapper_node"],
+                config["managed_tf_node"], config["managed_geometry_tf_node"],
+                config["managed_pose_node"],
+            ]
+            if any(not re.match(r"^/[A-Za-z0-9_/]+$", name) for name in node_args):
+                raise ConfigError("managed finalize node names must be absolute ROS names")
         scout_filtered_pcd_path(config, context.get("map_name"))
         return {
-            "checks": [[config["scout_mapping_script"], "--check"] + launch_args, [
+            "checks": [[config["scout_mapping_script"], "--check"] + launch_args + node_args, [
                 config["scout_finalize_script"], "--check",
                 config["scout_finalize_package"], config["scout_finalize_executable"],
                 config["scout_map_root"],
@@ -480,7 +502,7 @@ def build_integration_commands(config, values):
                 config["scout_mapping_script"], "--start", context["fast_lio_pid_path"],
                 context["fast_lio_log_path"], str(config["fast_lio_startup_timeout_seconds"]),
                 str(config["fast_lio_stop_timeout_seconds"]), context["map_name"],
-            ] + launch_args,
+            ] + launch_args + node_args,
             "stop_fast_lio": [
                 config["scout_mapping_script"], "--stop", context["fast_lio_pid_path"],
                 str(config["fast_lio_stop_timeout_seconds"]),

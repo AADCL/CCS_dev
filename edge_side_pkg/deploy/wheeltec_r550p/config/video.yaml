@@ -1,0 +1,14 @@
+# The R550P has no RGB/depth camera. This profile is installed for future use,
+# but start_ccs_edge_dev.sh deliberately does not launch the video node.
+enabled: false
+camera_model: "not installed"
+image_topic: "/camera/image_raw"
+image_message_type: "sensor_msgs/Image"
+output_width: 640
+output_height: 480
+framerate: 30
+srt_bind_address: "0.0.0.0"
+srt_port: 9000
+srt_latency_ms: 120
+bitrate_kbps: 2500
+frame_timeout_seconds: 5.0

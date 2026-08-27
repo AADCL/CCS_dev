@@ -495,7 +495,7 @@ class RosMapStreamNode(object):
             session.map_name = time.strftime("%Y%m%d_%H%M%S")
             session.paths.values["map_name"] = session.map_name
             source_pcd = self.config["accumulator_pcd_path"]
-            if self.config["integration_backend"] == "scout_finalize":
+            if self.config["integration_backend"] in ("scout_finalize", "managed_finalize"):
                 session.filtered_pcd_path = scout_filtered_pcd_path(
                     self.config, session.map_name)
                 source_pcd = session.filtered_pcd_path
@@ -510,7 +510,7 @@ class RosMapStreamNode(object):
             "error_code": ""})
         commands = build_integration_commands(self.config, session.paths.values)
         try:
-            if (self.config["integration_backend"] == "scout_finalize"
+            if (self.config["integration_backend"] in ("scout_finalize", "managed_finalize")
                     and os.path.exists(os.path.join(
                         self.config["scout_map_root"], session.map_name))):
                 raise RuntimeError("Scout map directory already exists: %s" % session.map_name)
@@ -631,7 +631,7 @@ class RosMapStreamNode(object):
 
     def _generate_artifact(self, session):
         commands = build_integration_commands(self.config, session.paths.values)
-        if self.config["integration_backend"] == "scout_finalize":
+        if self.config["integration_backend"] in ("scout_finalize", "managed_finalize"):
             self._generate_scout_artifact(session, commands)
             return
         mapping_stack_stopped = False

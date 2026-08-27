@@ -580,3 +580,8 @@ class ScoutNavigationAdapter(object):
         if self.monitor_timer is not None:
             self.monitor_timer.shutdown()
             self.monitor_timer = None
+
+
+# The implementation is device-neutral; retain the historical name for Scout
+# deployments while exposing a generic name to new device profiles.
+NavigationAdapter = ScoutNavigationAdapter

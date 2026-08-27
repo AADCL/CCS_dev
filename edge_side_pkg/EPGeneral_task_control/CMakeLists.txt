@@ -15,7 +15,8 @@ add_message_files(FILES TaskExecutionCommand.msg TaskExecutionFeedback.msg)
 generate_messages(DEPENDENCIES geometry_msgs)
 catkin_package(CATKIN_DEPENDS message_runtime rospy geometry_msgs std_msgs nav_msgs actionlib move_base_msgs tf2_ros tf2_geometry_msgs epgeneral_device_config)
 
-catkin_install_python(PROGRAMS scripts/epgeneral_task_control_node.py scripts/scout_navigation_adapter_node.py scripts/check_version.py
+catkin_install_python(PROGRAMS scripts/epgeneral_task_control_node.py
+  scripts/navigation_adapter_node.py scripts/scout_navigation_adapter_node.py scripts/check_version.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 install(DIRECTORY config launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 if(CATKIN_ENABLE_TESTING)
