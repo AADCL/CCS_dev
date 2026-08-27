@@ -61,8 +61,13 @@ def load_config(telemetry_path, device_path):
             raise ConfigError("descriptor name is empty or duplicated: %s" % name)
         if data_type not in ALLOWED_TYPES or level not in LEVEL_RATES:
             raise ConfigError("descriptor %s has invalid type or level" % name)
-        if not isinstance(item.get("display_name"), str) or not isinstance(source, dict) or not source.get("topic"):
-            raise ConfigError("descriptor %s requires display_name and source.topic" % name)
+        file_source = isinstance(source, dict) and source.get("kind") == "pgm_file"
+        if not isinstance(item.get("display_name"), str) or not isinstance(source, dict) or (
+                not file_source and not source.get("topic")):
+            raise ConfigError("descriptor %s requires display_name and a valid source" % name)
+        if file_source and (data_type != "availability" or not source.get("state_file")
+                            or not source.get("map_root")):
+            raise ConfigError("descriptor %s pgm_file source is invalid" % name)
         if data_type in {"pose", "imu", "text_status"} and not source.get("message_type"):
             raise ConfigError("descriptor %s requires source.message_type" % name)
         names.add(name)

@@ -1,0 +1,368 @@
+"""Scout Mini navigation adapter for the v2 task execution messages.
+
+The protocol coordinator remains responsible for UDP, persistence and state
+transitions.  This module owns only Scout ROS navigation and is deliberately
+structured so its trajectory and map checks can be tested without ROS.
+"""
+from __future__ import absolute_import
+
+import json
+import math
+import os
+import signal
+import subprocess
+import threading
+import time
+
+from .storage import TrajectoryStore
+
+
+class ScoutAdapterError(ValueError):
+    pass
+
+
+def load_localized_map_state(path):
+    try:
+        with open(os.path.abspath(os.path.expanduser(path)), "r") as stream:
+            value = json.load(stream)
+    except (IOError, OSError, TypeError, ValueError):
+        raise ScoutAdapterError("relocalization state is unavailable")
+    if not isinstance(value, dict) or value.get("schema_version") != 2:
+        raise ScoutAdapterError("relocalization state schema is invalid")
+    if value.get("status") != "localized" or not isinstance(value.get("map_id"), str):
+        raise ScoutAdapterError("Scout is not localized on a usable map")
+    transform = value.get("map_from_odom")
+    required = ("x", "y", "z", "qx", "qy", "qz", "qw")
+    if not isinstance(transform, dict) or any(key not in transform for key in required):
+        raise ScoutAdapterError("localized map<-odom transform is missing")
+    try:
+        values = [float(transform[key]) for key in required]
+    except (TypeError, ValueError):
+        raise ScoutAdapterError("localized map<-odom transform is invalid")
+    if not all(math.isfinite(value) for value in values):
+        raise ScoutAdapterError("localized map<-odom transform is non-finite")
+    return value
+
+
+def validate_trajectory(payload, task_id, subtask_id, device_id, map_frame):
+    if not isinstance(payload, dict):
+        raise ScoutAdapterError("trajectory is invalid")
+    for key, expected in (("task_id", task_id), ("subtask_id", subtask_id), ("device_id", device_id)):
+        if payload.get(key) != expected:
+            raise ScoutAdapterError("trajectory %s does not match execution" % key)
+    if payload.get("frame_id") != map_frame or not isinstance(payload.get("map_id"), str):
+        raise ScoutAdapterError("trajectory frame or map is invalid")
+    waypoints = payload.get("waypoints")
+    if not isinstance(waypoints, list) or len(waypoints) < 2:
+        raise ScoutAdapterError("trajectory needs at least two waypoints")
+    for index, point in enumerate(waypoints):
+        if not isinstance(point, dict) or point.get("index") != index:
+            raise ScoutAdapterError("trajectory waypoint order is invalid")
+        if not all(math.isfinite(float(point[key])) for key in ("x", "y", "z")):
+            raise ScoutAdapterError("trajectory waypoint is non-finite")
+    delay = float(payload.get("start_delay_seconds", 0.0))
+    if not math.isfinite(delay) or delay < 0.0:
+        raise ScoutAdapterError("trajectory start delay is invalid")
+    return payload
+
+
+def waypoint_yaws(waypoints, current_x, current_y):
+    """Return planar yaw: current pose -> first point, then previous -> current."""
+    result = []
+    for index, point in enumerate(waypoints):
+        if index == 0:
+            origin = (current_x, current_y)
+        else:
+            origin = (waypoints[index - 1]["x"], waypoints[index - 1]["y"])
+        result.append(math.atan2(point["y"] - origin[1], point["x"] - origin[0]))
+    return result
+
+
+def navigation_ready_deadline(now, scheduled_at, startup_timeout_seconds):
+    """Navigation must be ready both within its timeout and before group start."""
+    return min(float(scheduled_at), float(now) + float(startup_timeout_seconds))
+
+
+def execution_error_code(error):
+    message = str(error).lower()
+    if "move_base action server did not become ready" in message:
+        return "NAVIGATION_STARTUP_TIMEOUT"
+    if "localized map does not match" in message or "trajectory frame or map" in message:
+        return "MAP_FRAME_MISMATCH"
+    if any(token in message for token in ("relocalization", "fastlio", "map<-odom", "map pose", "tf")):
+        return "LOCALIZATION_UNAVAILABLE"
+    if "map yaml" in message or "navigation map" in message:
+        return "MAP_FRAME_MISMATCH"
+    return "INTERNAL_ERROR"
+
+
+class ScoutNavigationAdapter(object):
+    def __init__(self, rospy, config, command_class, feedback_class,
+                 process_factory=subprocess.Popen, action_client_factory=None):
+        self.rospy = rospy
+        self.config = config
+        self.command_class = command_class
+        self.feedback_class = feedback_class
+        self.process_factory = process_factory
+        self.action_client_factory = action_client_factory
+        self.lock = threading.RLock()
+        self.stop_event = threading.Event()
+        self.worker = None
+        self.execution = None
+        self.navigation_process = None
+        self.latest_odom = None
+        self.latest_odom_at = 0.0
+        self.feedback_pub = None
+        self.zero_pub = None
+        self.tf_buffer = None
+        self.tf_converter = None
+        self.client = None
+
+    def start(self):
+        from geometry_msgs.msg import Twist
+        from nav_msgs.msg import Odometry
+        import tf2_ros
+        import tf2_geometry_msgs
+
+        self.feedback_pub = self.rospy.Publisher(
+            self.config["feedback_topic"], self.feedback_class, queue_size=20)
+        self.zero_pub = self.rospy.Publisher(
+            self.config["zero_velocity_topic"], Twist, queue_size=10)
+        self.tf_buffer = tf2_ros.Buffer(cache_time=self.rospy.Duration(10.0))
+        self.tf_converter = tf2_geometry_msgs
+        self.rospy.Subscriber(
+            self.config["command_topic"], self.command_class, self._command_callback, queue_size=10)
+        self.rospy.Subscriber(
+            self.config["odom_topic"], Odometry, self._odom_callback, queue_size=20)
+        self.rospy.on_shutdown(self.close)
+
+    def _odom_callback(self, message):
+        with self.lock:
+            self.latest_odom = message
+            self.latest_odom_at = time.monotonic()
+
+    def _command_callback(self, command):
+        if command.action == self.command_class.SCHEDULE:
+            self._schedule(command)
+        elif command.action in (self.command_class.CANCEL, self.command_class.STOP):
+            self._stop(command)
+
+    def _schedule(self, command):
+        with self.lock:
+            if self.execution is not None:
+                return
+            try:
+                store = TrajectoryStore(self.config["storage_directory"])
+                payload = store.load_payload(command.task_id, command.subtask_id)
+                validate_trajectory(payload, command.task_id, command.subtask_id,
+                                    self.config["device_id"], self.config["map_frame"])
+                if payload is None or int(payload.get("revision", 0)) != int(command.revision):
+                    raise ScoutAdapterError("trajectory revision does not match execution")
+                state = load_localized_map_state(self.config["active_map_state_file"])
+                if state["map_id"] != payload["map_id"]:
+                    raise ScoutAdapterError("localized map does not match task map")
+                map_dir = os.path.join(os.path.expanduser(self.config["navigation_map_root"]), payload["map_id"])
+                map_yaml = os.path.join(map_dir, self.config["navigation_map_yaml"])
+                if not os.path.isfile(map_yaml):
+                    raise ScoutAdapterError("navigation map yaml is missing")
+                self._map_pose()
+                scheduled_at = command.scheduled_at.to_sec()
+                if scheduled_at <= time.time():
+                    raise ScoutAdapterError("scheduled time is in the past")
+                self.stop_event.clear()
+                self.navigation_process = self._start_navigation(payload["map_id"])
+                self.execution = {
+                    "command": command, "payload": payload, "scheduled_at": scheduled_at,
+                    "request_id": command.request_id, "waypoint_index": -1,
+                }
+                self._feedback(command, "scheduled", -1, 0.0, "navigation startup scheduled")
+                self.worker = threading.Thread(target=self._run, name="scout-task-execution")
+                self.worker.daemon = True
+                self.worker.start()
+            except (ScoutAdapterError, IOError, OSError, ValueError) as exc:
+                self._feedback(command, "failed", -1, 0.0, str(exc), execution_error_code(exc))
+
+    def _start_navigation(self, map_id):
+        map_dir = os.path.join(os.path.expanduser(self.config["navigation_map_root"]), map_id)
+        map_yaml = os.path.join(map_dir, self.config["navigation_map_yaml"])
+        command = ["roslaunch", self.config["navigation_launch_package"],
+                   self.config["navigation_launch_file"], "map_name:=" + map_id,
+                   "map_dir:=" + map_dir, "nav_map_yaml:=" + map_yaml,
+                   "odom_topic:=" + self.config["odom_topic"],
+                   "cmd_vel_topic:=" + self.config["zero_velocity_topic"]]
+        self.rospy.loginfo("starting Scout navigation: %s", " ".join(command))
+        return self.process_factory(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                                    universal_newlines=True, preexec_fn=os.setsid)
+
+    def _run(self):
+        execution = self.execution
+        command = execution["command"]
+        payload = execution["payload"]
+        try:
+            client = self._make_action_client()
+            self.client = client
+            deadline = navigation_ready_deadline(
+                time.time(), execution["scheduled_at"],
+                self.config["navigation_startup_timeout_seconds"])
+            next_feedback_at = time.monotonic()
+            while time.time() < deadline and not self.stop_event.is_set():
+                if self._process_exited():
+                    raise ScoutAdapterError("navigation process exited during startup")
+                if client.wait_for_server(self.rospy.Duration(0.2)):
+                    break
+                if time.monotonic() >= next_feedback_at:
+                    self._feedback(command, "scheduled", -1, 0.0,
+                                   "waiting for navigation startup")
+                    next_feedback_at = time.monotonic() + 1.0
+            else:
+                raise ScoutAdapterError("move_base action server did not become ready")
+            start_at = execution["scheduled_at"] + float(payload["start_delay_seconds"])
+            while time.time() < start_at and not self.stop_event.is_set():
+                self._feedback(command, "scheduled", -1, 0.0, "waiting for scheduled start")
+                time.sleep(1.0)
+            if self.stop_event.is_set():
+                return
+            current = self._map_pose()
+            yaws = waypoint_yaws(payload["waypoints"], current[0], current[1])
+            from move_base_msgs.msg import MoveBaseGoal
+            for index, (point, yaw) in enumerate(zip(payload["waypoints"], yaws)):
+                goal = MoveBaseGoal()
+                goal.target_pose.header.stamp = self.rospy.Time.now()
+                goal.target_pose.header.frame_id = self.config["map_frame"]
+                goal.target_pose.pose.position.x = point["x"]
+                goal.target_pose.pose.position.y = point["y"]
+                goal.target_pose.pose.position.z = 0.0
+                goal.target_pose.pose.orientation.z = math.sin(yaw / 2.0)
+                goal.target_pose.pose.orientation.w = math.cos(yaw / 2.0)
+                client.send_goal(goal)
+                waypoint_deadline = time.monotonic() + float(
+                    self.config["waypoint_timeout_seconds"])
+                while not client.wait_for_result(self.rospy.Duration(0.2)):
+                    if self.stop_event.is_set():
+                        return
+                    if self._process_exited():
+                        raise ScoutAdapterError("navigation process exited")
+                    if time.monotonic() >= waypoint_deadline:
+                        client.cancel_goal()
+                        raise ScoutAdapterError("waypoint %d timed out" % index)
+                    if time.monotonic() - self.latest_odom_at > float(self.config["pose_timeout_seconds"]):
+                        raise ScoutAdapterError("/fastlio_odom or map<-odom pose timed out")
+                    self._feedback(command, "running", index - 1,
+                                   float(index) / len(payload["waypoints"]), "moving to waypoint")
+                state = client.get_state()
+                if state != 3:
+                    raise ScoutAdapterError("move_base rejected or failed waypoint %d" % index)
+                self._feedback(command, "running", index,
+                               float(index + 1) / len(payload["waypoints"]), "waypoint reached")
+            self._finish(command, "completed", len(payload["waypoints"]) - 1, 1.0, "task completed")
+        except (ScoutAdapterError, IOError, OSError, ValueError) as exc:
+            if not self.stop_event.is_set():
+                self._finish(command, "failed", execution["waypoint_index"], 0.0, str(exc), execution_error_code(exc))
+
+    def _make_action_client(self):
+        if self.action_client_factory is not None:
+            return self.action_client_factory()
+        import actionlib
+        from move_base_msgs.msg import MoveBaseAction
+        return actionlib.SimpleActionClient(self.config["navigation_action"], MoveBaseAction)
+
+    def _map_pose(self):
+        with self.lock:
+            message = self.latest_odom
+            received_at = self.latest_odom_at
+        if message is None:
+            raise ScoutAdapterError("/fastlio_odom has not published a pose")
+        if time.monotonic() - received_at > float(self.config["pose_timeout_seconds"]):
+            raise ScoutAdapterError("/fastlio_odom pose timed out")
+        transform = self.tf_buffer.lookup_transform(
+            self.config["map_frame"], message.header.frame_id,
+            self.rospy.Time(0), self.rospy.Duration(self.config["pose_timeout_seconds"]))
+        from geometry_msgs.msg import PoseStamped
+        stamped = PoseStamped()
+        stamped.header = message.header
+        stamped.pose = message.pose.pose
+        pose = self.tf_converter.do_transform_pose(stamped, transform).pose
+        values = (pose.position.x, pose.position.y, pose.position.z)
+        if not all(math.isfinite(float(value)) for value in values):
+            raise ScoutAdapterError("map pose is non-finite")
+        return values
+
+    def _process_exited(self):
+        return self.navigation_process is None or self.navigation_process.poll() is not None
+
+    def _stop(self, command):
+        with self.lock:
+            execution = self.execution
+            self.stop_event.set()
+            client = getattr(self, "client", None)
+        if client is not None:
+            client.cancel_all_goals()
+        self._publish_zero()
+        self._stop_navigation()
+        if execution is not None:
+            self._finish(command, "stopped", execution["waypoint_index"], 0.0, "task stopped")
+
+    def _publish_zero(self):
+        if self.zero_pub is None:
+            return
+        from geometry_msgs.msg import Twist
+        for unused_index in range(int(self.config["zero_velocity_count"])):
+            self.zero_pub.publish(Twist())
+            time.sleep(1.0 / float(self.config["zero_velocity_hz"]))
+
+    def _stop_navigation(self):
+        process, self.navigation_process = self.navigation_process, None
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGINT)
+            process.wait(timeout=5.0)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            except OSError:
+                pass
+
+    def _feedback(self, command, state, waypoint_index, progress, message, error_code=""):
+        if self.feedback_pub is None:
+            return
+        feedback = self.feedback_class()
+        feedback.request_id = command.request_id
+        feedback.task_id = command.task_id
+        feedback.subtask_id = command.subtask_id
+        feedback.device_id = command.device_id
+        feedback.execution_id = command.execution_id
+        feedback.revision = command.revision
+        feedback.state = state
+        feedback.waypoint_index = int(waypoint_index)
+        feedback.waypoint_count = len(self.execution["payload"]["waypoints"]) if self.execution else 0
+        feedback.progress = float(progress)
+        feedback.error_code = error_code
+        feedback.message = str(message)
+        try:
+            x, y, z = self._map_pose()
+        except Exception:
+            x = y = z = 0.0
+        feedback.position.x, feedback.position.y, feedback.position.z = x, y, z
+        self.feedback_pub.publish(feedback)
+
+    def _finish(self, command, state, waypoint_index, progress, message, error_code=""):
+        with self.lock:
+            if self.execution is None and state != "failed":
+                return
+            if self.execution is not None:
+                self.execution["waypoint_index"] = waypoint_index
+            self._feedback(command, state, waypoint_index, progress, message, error_code)
+            self._stop_navigation()
+            self.execution = None
+            self.client = None
+            self.stop_event.set()
+
+    def close(self):
+        self.stop_event.set()
+        client = getattr(self, "client", None)
+        if client is not None:
+            client.cancel_all_goals()
+        self._publish_zero()
+        self._stop_navigation()
+        self.client = None

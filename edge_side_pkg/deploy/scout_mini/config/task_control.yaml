@@ -1,0 +1,40 @@
+schema_version: 2
+protocol_id: "ccs-task-control-v2"
+network:
+  bind_host: "0.0.0.0"
+  control_port: 14563
+  ground_station_ip: "192.168.50.101"
+  status_port: 14564
+  max_datagram_bytes: 1400
+storage:
+  directory: "~/ccs_edge_ws/mission"
+ros:
+  command_topic: "/epgeneral_task_control/execution_command"
+  feedback_topic: "/epgeneral_task_control/execution_feedback"
+  status_topic: "/epgeneral_task_control/task_status"
+  map_frame: "map"
+timeouts:
+  ack_cache_seconds: 60.0
+  transfer_seconds: 10.0
+  adapter_feedback_seconds: 2.0
+  execution_feedback_seconds: 5.0
+  utc_tolerance_seconds: 2.0
+limits:
+  max_waypoints: 500
+  max_compressed_bytes: 1048576
+  max_raw_bytes: 8388608
+  max_chunks: 2048
+adapter:
+  active_map_state_file: "~/.ros/ccs_edge_dev/state/relocalization.json"
+  navigation_launch_package: "scout_navigation"
+  navigation_launch_file: "navigation_teb.launch"
+  navigation_map_root: "/home/nvidia/livox_fastlio/maps/ccs_download"
+  navigation_map_yaml: "map.yaml"
+  navigation_action: "/move_base"
+  odom_topic: "/fastlio_odom"
+  zero_velocity_topic: "/cmd_vel"
+  navigation_startup_timeout_seconds: 25.0
+  waypoint_timeout_seconds: 300.0
+  pose_timeout_seconds: 2.0
+  zero_velocity_hz: 20.0
+  zero_velocity_count: 10

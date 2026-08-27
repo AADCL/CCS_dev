@@ -4,7 +4,7 @@ import uuid
 from dataclasses import replace
 from typing import Callable
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
@@ -23,11 +23,11 @@ from ..task_models import (
 )
 from ..task_repository import TaskRepository, TaskRepositoryError, map_fingerprint
 from ..widgets import NoButtonDoubleSpinBox
-from .map_page import PointCloudViewer
+from .map_page import PointCloudViewer, bound_map_pose
 
 
 class NewTaskDialog(QDialog):
-    def __init__(self, maps: list[MapDefinition], devices: list, parent=None) -> None:
+    def __init__(self, maps: list[MapDefinition], devices: list, active_map_id: str | None = None, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("新建任务")
         self.setMinimumSize(620, 520)
@@ -40,7 +40,11 @@ class NewTaskDialog(QDialog):
         self.map_combo = QComboBox()
         for definition in maps:
             if definition.status == MapStatus.READY and (definition.pcd_path or definition.pgm):
-                self.map_combo.addItem(definition.name, definition.map_id)
+                label = definition.name + ("  · 当前激活地图" if definition.map_id == active_map_id else "")
+                self.map_combo.addItem(label, definition.map_id)
+        active_index = self.map_combo.findData(active_map_id)
+        if active_index >= 0:
+            self.map_combo.setCurrentIndex(active_index)
         root.addWidget(self.map_combo)
         root.addWidget(QLabel("选择设备（可多选，离线设备仍可选择）"))
         scroll = QScrollArea()
@@ -51,7 +55,7 @@ class NewTaskDialog(QDialog):
         container.setObjectName("mapDeviceSelector")
         layout = QVBoxLayout(container)
         self.device_checks: dict[str, QCheckBox] = {}
-        for device in devices:
+        for device in sorted(devices, key=lambda item: (item.connection_status.value != "online", item.device_name.casefold())):
             check = QCheckBox(
                 f"{device.device_name}  ·  {device.device_id}  ·  {device.device_type}  ·  {device.connection_status.value}"
             )
@@ -87,7 +91,7 @@ class TaskCard(QFrame):
     open_requested = Signal(str)
     delete_requested = Signal(str)
 
-    def __init__(self, task: TaskDefinition, parent=None) -> None:
+    def __init__(self, task: TaskDefinition, active_map: bool = False, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("deviceCard")
         layout = QVBoxLayout(self)
@@ -100,7 +104,8 @@ class TaskCard(QFrame):
         header.addStretch()
         header.addWidget(status)
         layout.addLayout(header)
-        layout.addWidget(QLabel(f"地图 {task.map_name}  ·  设备 {len(task.subtasks)} 台"))
+        map_state = "当前激活地图" if active_map else "非激活地图"
+        layout.addWidget(QLabel(f"地图 {task.map_name}  ·  {map_state}  ·  设备 {len(task.subtasks)} 台"))
         layout.addWidget(QLabel(
             f"有效子任务 {sum(item.is_valid for item in task.subtasks)} / {len(task.subtasks)}  ·  "
             f"更新 {task.updated_at.astimezone().strftime('%Y-%m-%d %H:%M')}"
@@ -116,6 +121,48 @@ class TaskCard(QFrame):
         actions.addWidget(delete)
         actions.addWidget(open_button)
         layout.addLayout(actions)
+
+
+class TaskDeviceCard(QFrame):
+    selected = Signal(int)
+    action_requested = Signal(int, str)
+
+    def __init__(self, row: int, subtask: DeviceSubtask, selected: bool = False, parent=None) -> None:
+        super().__init__(parent)
+        self.row = row
+        self.setObjectName("taskDeviceCard")
+        self.setProperty("selected", bool(selected))
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 9, 10, 9)
+        root.setSpacing(5)
+        header = QHBoxLayout()
+        name = QLabel(subtask.device_name)
+        name.setObjectName("cardTitle")
+        header.addWidget(name, 1)
+        status = QLabel(subtask.edge_status.value)
+        status.setObjectName("taskDeviceStatus")
+        status.setProperty("state", subtask.edge_status.value)
+        header.addWidget(status)
+        root.addLayout(header)
+        detail = QLabel(f"{subtask.device_id}  ·  {subtask.device_type}\n任务点 {len(subtask.waypoints)}  ·  revision {subtask.revision}  ·  {subtask.edge_message or '待协商'}")
+        detail.setObjectName("muted")
+        detail.setWordWrap(True)
+        root.addWidget(detail)
+        buttons = QHBoxLayout()
+        for label, action in (("创建子任务", "create"), ("读取子任务", "read"), ("删除子任务", "delete")):
+            button = QPushButton(label)
+            button.setObjectName("taskDeviceAction")
+            if action == "read":
+                button.setEnabled(subtask.is_delivered and subtask.edge_revision == subtask.revision)
+            elif action == "delete":
+                button.setEnabled(subtask.edge_status.value not in {"no_task", "failed"})
+            button.clicked.connect(lambda _checked=False, value=action: self.action_requested.emit(self.row, value))
+            buttons.addWidget(button)
+        root.addLayout(buttons)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        self.selected.emit(self.row)
+        super().mousePressEvent(event)
 
 
 class TaskEditorPage(QWidget):
@@ -145,6 +192,7 @@ class TaskEditorPage(QWidget):
         if execution_service is not None:
             execution_service.transfer_updated.connect(self._transfer_updated)
             execution_service.execution_updated.connect(self._execution_updated)
+        self.repository.tasks_updated.connect(self._repository_tasks_updated)
         self.set_execution_available(
             bool(execution_service and getattr(execution_service, "available", False)),
             getattr(execution_service, "module_message", "UDP 任务服务未配置"),
@@ -159,30 +207,43 @@ class TaskEditorPage(QWidget):
         back.clicked.connect(self.back_requested)
         self.title = QLabel("任务编辑")
         self.title.setObjectName("pageTitle")
-        self.map_toggle = QPushButton("收起地图")
-        self.map_toggle.clicked.connect(self._toggle_map)
-        self.run_all = QPushButton("共同执行")
+        self.run_all = QPushButton("开始主任务")
         self.run_all.setObjectName("primaryButton")
         self.run_all.clicked.connect(self._execute_all)
-        self.stop_button = QPushButton("终止执行")
+        self.stop_button = QPushButton("终止主任务")
         self.stop_button.setObjectName("dangerButton")
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self._stop_execution)
+        self.emergency_button = QPushButton("急停")
+        self.emergency_button.setObjectName("dangerButton")
+        self.emergency_button.setEnabled(False)
+        self.emergency_button.clicked.connect(self._emergency_stop)
         header.addWidget(back)
         header.addWidget(self.title)
         header.addStretch()
-        header.addWidget(self.map_toggle)
         header.addWidget(self.run_all)
         header.addWidget(self.stop_button)
+        header.addWidget(self.emergency_button)
         root.addLayout(header)
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_splitter.setObjectName("taskEditorMainSplitter")
-        self.device_list = QListWidget()
-        self.device_list.setObjectName("taskDeviceList")
-        self.device_list.setMinimumWidth(190)
-        self.device_list.currentRowChanged.connect(self._device_changed)
-        self.main_splitter.addWidget(self.device_list)
+        left_panel = QFrame()
+        left_panel.setMinimumWidth(280)
+        left_panel.setObjectName("taskEditorPanel")
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.addWidget(QLabel("任务设备"))
+        self.device_scroll = QScrollArea()
+        self.device_scroll.setWidgetResizable(True)
+        self.device_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.device_cards_container = QWidget()
+        self.device_cards_layout = QVBoxLayout(self.device_cards_container)
+        self.device_cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.device_scroll.setWidget(self.device_cards_container)
+        left_layout.addWidget(self.device_scroll, 1)
+        self.device_cards: list[TaskDeviceCard] = []
+        self.selected_row: int | None = None
+        self.main_splitter.addWidget(left_panel)
 
         self.map_panel = QFrame()
         self.map_panel.setObjectName("taskEditorPanel")
@@ -192,11 +253,7 @@ class TaskEditorPage(QWidget):
         self.layer_combo.addItem("点云选点", "pointcloud")
         self.layer_combo.addItem("栅格选点", "grid")
         self.layer_combo.currentIndexChanged.connect(self._selection_layer_changed)
-        self.pick_toggle = QPushButton("开始选点")
-        self.pick_toggle.setCheckable(True)
-        self.pick_toggle.toggled.connect(self._pick_toggled)
         map_toolbar.addWidget(self.layer_combo)
-        map_toolbar.addWidget(self.pick_toggle)
         map_toolbar.addStretch()
         map_layout.addLayout(map_toolbar)
         map_layout.addWidget(self.viewer, 1)
@@ -232,17 +289,19 @@ class TaskEditorPage(QWidget):
             actions.addWidget(button)
         right_layout.addLayout(actions)
         save_row = QHBoxLayout()
-        self.deliver_button = QPushButton("下发当前设备")
+        self.pick_toggle = QPushButton("开始选点")
+        self.pick_toggle.setCheckable(True)
+        self.pick_toggle.toggled.connect(self._pick_toggled)
+        self.deliver_button = QPushButton("保存下发")
         self.deliver_button.clicked.connect(self._deliver_current)
-        self.run_one = QPushButton("执行当前设备")
+        self.run_one = QPushButton("执行任务")
         self.run_one.clicked.connect(self._execute_current)
-        save = QPushButton("保存子任务")
-        save.setObjectName("primaryButton")
-        save.clicked.connect(self._save_current)
         save_row.addWidget(self.deliver_button)
+        save_row.addWidget(self.pick_toggle)
         save_row.addWidget(self.run_one)
-        save_row.addWidget(save)
         right_layout.addLayout(save_row)
+        self.right_panel = right
+        self.right_panel.setVisible(False)
         self.main_splitter.addWidget(right)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setSizes([200, 700, 350])
@@ -290,36 +349,91 @@ class TaskEditorPage(QWidget):
         self.task = task
         self.drafts = {item.subtask_id: item for item in task.subtasks}
         self.title.setText(f"{task.name}  ·  {task.map_name}")
+        active_suffix = "当前激活地图" if self.map_repository.active_map_id() == task.map_id else "非当前激活地图"
+        self.title.setText(f"{task.name}  ·  {task.map_name}  ·  {active_suffix}")
         self.horizontal_clearance.setValue(task.safety.horizontal_distance_m)
         self.vertical_clearance.setValue(task.safety.vertical_distance_m)
         self.time_margin.setValue(task.safety.time_margin_seconds)
-        self.device_list.clear()
-        for item in task.subtasks:
-            self.device_list.addItem(f"{item.device_name}\n{len(item.waypoints)} 点 · r{item.revision}")
+        while self.device_cards_layout.count():
+            item = self.device_cards_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.device_cards = []
+        self.selected_row = None
+        self.current_subtask_id = None
+        self.right_panel.setVisible(False)
+        for row, item in enumerate(task.subtasks):
+            card = TaskDeviceCard(row, item)
+            card.selected.connect(self._device_changed)
+            card.action_requested.connect(self._device_action)
+            self.device_cards.append(card)
+            self.device_cards_layout.addWidget(card)
         self._load_map(task)
         self._load_logs()
-        if self.device_list.count():
-            self.device_list.setCurrentRow(0)
+        for item in task.subtasks:
+            if self.execution_service and getattr(self.execution_service, "available", False):
+                try:
+                    self.execution_service.negotiate_subtask(task, item)
+                except Exception:
+                    pass
         self._recalculate_conflicts()
+
+    def _repository_tasks_updated(self, tasks: object) -> None:
+        if self.task is None:
+            return
+        updated = next((item for item in tasks if item.task_id == self.task.task_id), None)
+        if updated is None:
+            return
+        self.task = updated
+        for item in updated.subtasks:
+            draft = self.drafts.get(item.subtask_id)
+            if draft is not None:
+                self.drafts[item.subtask_id] = replace(
+                    draft,
+                    delivered_revision=item.delivered_revision,
+                    edge_status=item.edge_status,
+                    edge_revision=item.edge_revision,
+                    edge_message=item.edge_message,
+                    edge_updated_at=item.edge_updated_at,
+                )
+        selected = self.selected_row
+        while self.device_cards_layout.count():
+            layout_item = self.device_cards_layout.takeAt(0)
+            if layout_item.widget():
+                layout_item.widget().deleteLater()
+        self.device_cards = []
+        for row, item in enumerate(updated.subtasks):
+            card = TaskDeviceCard(row, self.drafts.get(item.subtask_id, item), row == selected)
+            card.selected.connect(self._device_changed)
+            card.action_requested.connect(self._device_action)
+            self.device_cards.append(card)
+            self.device_cards_layout.addWidget(card)
 
     def set_map_reviewed(self, reviewed: bool) -> None:
         self.map_reviewed = bool(reviewed)
         self._update_execution_controls()
 
+    def refresh_active_map_state(self) -> None:
+        if self.task:
+            suffix = "当前激活地图" if self.map_repository.active_map_id() == self.task.map_id else "非当前激活地图"
+            self.title.setText(f"{self.task.name}  ·  {self.task.map_name}  ·  {suffix}")
+
     def set_execution_available(self, available: bool, message: str = "") -> None:
         self.execution_service_available = bool(available)
         tooltip = message or "UDP 任务服务不可用"
-        for button in (self.deliver_button, self.run_one, self.run_all):
+        for button in (self.deliver_button, self.run_one, self.run_all, self.emergency_button):
             button.setEnabled(bool(available) and self.map_reviewed)
             button.setToolTip("" if available else tooltip)
+        self.pick_toggle.setEnabled(bool(available) and self.map_reviewed and self.current_subtask_id is not None)
 
     def _update_execution_controls(self) -> None:
         available = bool(self.execution_service and getattr(self.execution_service, "available", False))
         enabled = available and self.map_reviewed
         for button in (self.deliver_button, self.run_one, self.run_all):
             button.setEnabled(enabled)
+        self.pick_toggle.setEnabled(enabled and self.current_subtask_id is not None)
         if not self.map_reviewed:
-            for button in (self.deliver_button, self.run_one, self.run_all):
+            for button in (self.deliver_button, self.run_one, self.run_all, self.emergency_button):
                 button.setToolTip("地图图层已变化，需要人工复核后才能下发或执行")
 
     def _load_map(self, task: TaskDefinition) -> None:
@@ -344,6 +458,11 @@ class TaskEditorPage(QWidget):
     def _device_changed(self, row: int) -> None:
         if not self.task or not 0 <= row < len(self.task.subtasks):
             return
+        self.selected_row = row
+        for index, card in enumerate(self.device_cards):
+            card.setProperty("selected", index == row)
+            card.style().unpolish(card)
+            card.style().polish(card)
         previous = self._current()
         if previous is not None:
             self.drafts[previous.subtask_id] = replace(
@@ -362,6 +481,30 @@ class TaskEditorPage(QWidget):
         self.layer_combo.setCurrentIndex(max(0, index))
         self._render_waypoints(subtask)
         self._render_paths()
+        self.right_panel.setVisible(True)
+        self.pick_toggle.setEnabled(bool(self.execution_service_available and self.map_reviewed))
+
+    def _device_action(self, row: int, action: str) -> None:
+        self._device_changed(row)
+        subtask = self._current()
+        if self.task is None or subtask is None:
+            return
+        if action == "read" and self.execution_service:
+            self.execution_service.read_subtask(self.task, subtask)
+        elif action == "delete" and self.execution_service:
+            self.execution_service.delete_subtask(self.task, subtask)
+        elif action == "create":
+            self.pick_toggle.setChecked(False)
+
+    def _read_current(self) -> None:
+        subtask = self._current()
+        if self.task and subtask and self.execution_service:
+            self.execution_service.read_subtask(self.task, subtask)
+
+    def _delete_current_remote(self) -> None:
+        subtask = self._current()
+        if self.task and subtask and self.execution_service:
+            self.execution_service.delete_subtask(self.task, subtask)
 
     def _render_waypoints(self, subtask: DeviceSubtask) -> None:
         self.waypoints.blockSignals(True)
@@ -503,7 +646,8 @@ class TaskEditorPage(QWidget):
             self.repository.update_safety(self.task.task_id, self._settings())
             self.task = self.repository.task_by_id(self.task.task_id)
             self.drafts = {item.subtask_id: item for item in self.task.subtasks}
-            self._device_changed(self.device_list.currentRow())
+            if self.selected_row is not None:
+                self._device_changed(self.selected_row)
             self._load_logs()
             return True
         except TaskRepositoryError as exc:
@@ -520,7 +664,7 @@ class TaskEditorPage(QWidget):
             QMessageBox.critical(self, "任务下发失败", str(exc))
 
     def _execute_current(self) -> None:
-        if not self._can_execute() or not self._save_current():
+        if not self._can_execute(require_active_map=True) or not self._save_current():
             return
         try:
             snapshot = self.execution_service.execute_subtask(self.task, self._current().device_id)
@@ -529,7 +673,7 @@ class TaskEditorPage(QWidget):
             QMessageBox.critical(self, "任务执行失败", str(exc))
 
     def _execute_all(self) -> None:
-        if not self._can_execute() or not self.task:
+        if not self._can_execute(require_active_map=True) or not self.task:
             return
         current = self._current()
         if current is not None:
@@ -541,6 +685,9 @@ class TaskEditorPage(QWidget):
         pending = tuple(self.drafts[item.subtask_id] for item in self.task.subtasks)
         if any(not item.is_valid for item in pending):
             QMessageBox.warning(self, "无法共同执行", "每台设备的子任务都必须包含 2 到 500 个任务点")
+            return
+        if any(not item.is_delivered for item in pending):
+            QMessageBox.warning(self, "无法开始主任务", "所有设备子任务必须先保存并下发完成")
             return
         try:
             task_id = self.task.task_id
@@ -575,12 +722,15 @@ class TaskEditorPage(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "共同执行失败", str(exc))
 
-    def _can_execute(self) -> bool:
+    def _can_execute(self, require_active_map: bool = False) -> bool:
         if not self.execution_service:
             QMessageBox.warning(self, "任务服务不可用", "UDP 任务服务未配置")
             return False
         if not self.map_reviewed:
             QMessageBox.warning(self, "地图需要复核", "地图图层已更新，请重新打开任务并确认复核。")
+            return False
+        if require_active_map and self.task and self.map_repository.active_map_id() != self.task.map_id:
+            QMessageBox.warning(self, "地图不一致", "任务绑定地图不是当前全局激活地图，无法开始执行。")
             return False
         return True
 
@@ -588,10 +738,10 @@ class TaskEditorPage(QWidget):
         if self.execution_service and self.active_execution_id:
             self.execution_service.stop_execution(self.active_execution_id)
 
-    def _toggle_map(self) -> None:
-        self.map_collapsed = not self.map_collapsed
-        self.map_panel.setVisible(not self.map_collapsed)
-        self.map_toggle.setText("展开地图" if self.map_collapsed else "收起地图")
+    def _emergency_stop(self) -> None:
+        if self.execution_service and self.task:
+            self.execution_service.emergency_stop(self.task)
+            self.log_list.addItem("已向全部任务设备发送急停")
 
     def _load_logs(self) -> None:
         self.log_list.clear()
@@ -606,9 +756,10 @@ class TaskEditorPage(QWidget):
 
     def _execution_updated(self, snapshot) -> None:
         if self.task and snapshot.task_id == self.task.task_id:
-            active = snapshot.status.value in {"preparing", "scheduled", "running"}
+            active = snapshot.status.value in {"preparing", "scheduled", "running", "stopping"}
             self.active_execution_id = snapshot.execution_id if active else None
-            self.stop_button.setEnabled(active)
+            self.stop_button.setEnabled(active and snapshot.status.value != "stopping")
+            self.emergency_button.setEnabled(active)
             self.log_list.addItem(f"执行 {snapshot.execution_id[:8]}：{snapshot.message}")
 
     def _telemetry_updated(self, device_id, telemetry) -> None:
@@ -617,7 +768,9 @@ class TaskEditorPage(QWidget):
         markers = []
         for subtask in self.task.subtasks:
             snapshot = self.telemetry_store.telemetry(subtask.device_id)
-            pose = snapshot.global_pose
+            pose = bound_map_pose(
+                self.source, snapshot, subtask.device_id, self.task.map_id
+            ) or snapshot.global_pose
             if pose is not None and (pose.sample_age_seconds is None or pose.sample_age_seconds <= 2.0):
                 device = self.source.device(subtask.device_id)
                 markers.append(DeviceMapMarker(
@@ -659,6 +812,11 @@ class TaskPage(QWidget):
         header.addWidget(title)
         header.addStretch()
         header.addWidget(self.search)
+        self.compact_button = QPushButton("紧凑列表")
+        self.compact_button.setCheckable(True)
+        self.compact_button.setChecked(QSettings("CCS", "CCS").value("tasks/compact", False, type=bool))
+        self.compact_button.toggled.connect(self._compact_toggled)
+        header.addWidget(self.compact_button)
         header.addWidget(new_button)
         layout.addLayout(header)
         self.scroll = QScrollArea()
@@ -678,12 +836,17 @@ class TaskPage(QWidget):
         self.editor.back_requested.connect(self.show_list)
         self.stack.addWidget(self.editor)
         self.repository.tasks_updated.connect(self._tasks_updated)
+        self.map_repository.active_map_changed.connect(self._active_map_changed)
         if execution_service is not None:
             execution_service.availability_changed.connect(self.set_execution_available)
         self._render()
 
     def set_execution_available(self, available: bool, message: str = "") -> None:
         self.editor.set_execution_available(available, message)
+
+    def _active_map_changed(self, _definition: object) -> None:
+        self._render()
+        self.editor.refresh_active_map_state()
 
     def set_active(self, active: bool) -> None:
         if not active:
@@ -696,9 +859,9 @@ class TaskPage(QWidget):
                 item.widget().deleteLater()
         query = self.search.text().strip().casefold()
         filtered = [item for item in self.tasks if not query or query in item.name.casefold()]
-        columns = 3 if self.width() >= 1180 else 2 if self.width() >= 760 else 1
+        columns = 1 if self.compact_button.isChecked() else (3 if self.width() >= 1180 else 2 if self.width() >= 760 else 1)
         for index, task in enumerate(filtered):
-            card = TaskCard(task)
+            card = TaskCard(task, task.map_id == self.map_repository.active_map_id())
             card.open_requested.connect(self.show_task)
             card.delete_requested.connect(self._delete)
             self.grid.addWidget(card, index // columns, index % columns)
@@ -708,8 +871,14 @@ class TaskPage(QWidget):
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.grid.addWidget(empty, 0, 0, 1, columns)
 
+    def _compact_toggled(self, enabled: bool) -> None:
+        QSettings("CCS", "CCS").setValue("tasks/compact", bool(enabled))
+        self._render()
+
     def _create(self) -> None:
-        dialog = NewTaskDialog(self.map_repository.maps(), self.source.snapshots(), self)
+        dialog = NewTaskDialog(
+            self.map_repository.maps(), self.source.snapshots(), self.map_repository.active_map_id(), self
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         map_definition = self.map_repository.map_by_id(str(dialog.map_combo.currentData()))

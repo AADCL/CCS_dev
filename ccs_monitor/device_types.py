@@ -147,7 +147,10 @@ class DeviceTypeTemplateRepository:
                     display_name=item["display_name"],
                     icon_path=icon_path,
                     map_marker_shape=MapMarkerShape(item.get("map_marker_shape", "sphere")),
-                    default_status_card_ids=tuple(item.get("default_status_cards", DEFAULT_DEVICE_STATUS_CARDS)),
+                    default_status_card_ids=tuple(
+                        card for card in item.get("default_status_cards", DEFAULT_DEVICE_STATUS_CARDS)
+                        if card not in {"octomap_mapping", "occupancy_grid_mapping"}
+                    ),
                 ))
             except (KeyError, TypeError, ValueError) as exc:
                 raise ValueError(f"device_types[{index}] 字段无效：{exc}") from exc

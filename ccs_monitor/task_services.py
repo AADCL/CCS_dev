@@ -13,7 +13,7 @@ from PySide6.QtCore import QObject, Signal
 from .models import DeviceSnapshot, utc_now
 from .task_config import TaskSystemConfig
 from .task_models import (
-    DeviceSubtask, TaskDefinition, TaskEventLevel, TaskExecutionSnapshot, TaskExecutionStatus,
+    DeviceSubtask, EdgeTaskStatus, TaskDefinition, TaskEventLevel, TaskExecutionSnapshot, TaskExecutionStatus,
 )
 from .task_protocol import EncodedSubtask, TaskEnvelope, TaskProtocol, TaskProtocolError
 from .task_repository import TaskRepository, TaskRepositoryError
@@ -52,6 +52,7 @@ class TaskExecutionService(QObject):
         repository: TaskRepository,
         device_lookup: Callable[[str], DeviceSnapshot | None],
         *,
+        active_map_id_getter: Callable[[], str | None] | None = None,
         clock: Callable[[], float] = time.monotonic,
         socket_factory: Callable[..., socket.socket] = socket.socket,
         parent: QObject | None = None,
@@ -60,6 +61,7 @@ class TaskExecutionService(QObject):
         self.config = config
         self.repository = repository
         self.device_lookup = device_lookup
+        self.active_map_id_getter = active_map_id_getter
         self.protocol = TaskProtocol(config)
         self.clock = clock
         self.socket_factory = socket_factory
@@ -133,6 +135,23 @@ class TaskExecutionService(QObject):
         self.transfer_updated.emit(task.task_id, subtask.device_id, "preparing")
         self._log(task.task_id, execution_id, "task_prepare", "开始下发子任务", subtask.device_id)
 
+    def negotiate_subtask(self, task: TaskDefinition, subtask: DeviceSubtask) -> None:
+        self._require_available_device(subtask.device_id)
+        self._queue(self._envelope(task, subtask, "negotiate_task", uuid.uuid4().hex, "", {"revision": subtask.revision}), subtask.ip_address, None)
+
+    def read_subtask(self, task: TaskDefinition, subtask: DeviceSubtask) -> None:
+        self._require_available_device(subtask.device_id)
+        self._queue(self._envelope(task, subtask, "read_task", uuid.uuid4().hex, "", {}), subtask.ip_address, None)
+
+    def delete_subtask(self, task: TaskDefinition, subtask: DeviceSubtask) -> None:
+        self._require_available_device(subtask.device_id)
+        self._queue(self._envelope(task, subtask, "delete_task", uuid.uuid4().hex, "", {}), subtask.ip_address, None)
+
+    def emergency_stop(self, task: TaskDefinition) -> None:
+        for subtask in task.subtasks:
+            if subtask.ip_address:
+                self._queue(self._envelope(task, subtask, "emergency_stop", uuid.uuid4().hex, "", {"reason": "指控平台急停"}), subtask.ip_address, None)
+
     def execute_devices(
         self,
         task: TaskDefinition,
@@ -140,6 +159,8 @@ class TaskExecutionService(QObject):
         *,
         forced_conflict_reason: str | None = None,
     ) -> TaskExecutionSnapshot:
+        if self.active_map_id_getter is not None and self.active_map_id_getter() != task.map_id:
+            raise RuntimeError("任务绑定地图不是当前全局激活地图")
         selected = tuple(item for item in task.subtasks if item.device_id in device_ids)
         if not selected or len(selected) != len(set(device_ids)):
             raise ValueError("执行设备不属于任务")
@@ -178,12 +199,16 @@ class TaskExecutionService(QObject):
         for subtask in task.subtasks:
             if subtask.device_id not in snapshot.device_ids:
                 continue
-            message_type = "cancel_execution" if snapshot.status in {TaskExecutionStatus.PREPARING, TaskExecutionStatus.SCHEDULED} else "stop_task"
+            message_type = "terminate_task"
             request_id = uuid.uuid4().hex
             envelope = self._envelope(task, subtask, message_type, request_id, execution_id, {"reason": reason})
             self._queue(envelope, subtask.ip_address, execution_id)
-        self._update_execution(snapshot, TaskExecutionStatus.STOPPED, reason)
-        self._release_execution(snapshot)
+        for device_id in snapshot.device_ids:
+            self._set_device_state(execution_id, device_id, "stopping")
+            self._last_heartbeat[(execution_id, device_id)] = self.clock()
+        current = self._executions.get(execution_id)
+        if current is not None:
+            self._update_execution(current, TaskExecutionStatus.STOPPING, reason)
 
     def _run(self) -> None:
         while self._running.is_set():
@@ -212,8 +237,31 @@ class TaskExecutionService(QObject):
         with self._lock:
             if envelope.message_type == "command_ack":
                 self._handle_ack(envelope)
+            elif envelope.message_type == "task_summary":
+                self._handle_summary(envelope)
             elif envelope.message_type in {"task_status", "waypoint_progress", "task_heartbeat"}:
                 self._handle_status(envelope)
+
+    def _handle_summary(self, envelope: TaskEnvelope) -> None:
+        task = self.repository.task_by_id(envelope.task_id)
+        if task is None:
+            return
+        current = next((item for item in task.subtasks if item.device_id.casefold() == envelope.device_id.casefold()), None)
+        if current is None:
+            return
+        state = str(envelope.payload.get("state", "no_task"))
+        try:
+            edge_status = EdgeTaskStatus(state)
+        except ValueError:
+            edge_status = EdgeTaskStatus.FAILED
+        updated = replace(current, edge_status=edge_status,
+                          edge_revision=int(envelope.payload["revision"]) if envelope.payload.get("revision") is not None else None,
+                          edge_message=str(envelope.payload.get("message", "")), edge_updated_at=utc_now())
+        try:
+            self.repository.update_edge_status(task.task_id, updated)
+        except TaskRepositoryError:
+            return
+        self.event_received.emit(envelope.device_id, envelope)
 
     def _handle_ack(self, envelope: TaskEnvelope) -> None:
         pending = self._pending.pop(envelope.request_id, None)
@@ -334,7 +382,16 @@ class TaskExecutionService(QObject):
             snapshot = self._executions[execution_id]
             states = dict(snapshot.device_states)
             if any(value == "failed" for value in states.values()):
-                self._fail_execution(execution_id, "设备报告任务失败")
+                message = str(envelope.payload.get("message", "设备报告任务失败"))
+                error_code = str(envelope.payload.get("error_code") or "")
+                detail = f"设备 {envelope.device_id} 任务失败：{message}"
+                if error_code:
+                    detail += f"（{error_code}）"
+                self._fail_execution(execution_id, detail)
+            elif snapshot.status == TaskExecutionStatus.STOPPING:
+                if all(value in {"stopped", "completed"} for value in states.values()):
+                    self._update_execution(snapshot, TaskExecutionStatus.STOPPED, "所有设备已停止")
+                    self._release_execution(snapshot)
             elif all(value == "completed" for value in states.values()):
                 self._update_execution(snapshot, TaskExecutionStatus.COMPLETED, "任务执行完成")
                 self._release_execution(snapshot)
@@ -356,7 +413,10 @@ class TaskExecutionService(QObject):
                     continue
                 self._send_pending(pending)
             for execution_id, snapshot in list(self._executions.items()):
-                if snapshot.status not in {TaskExecutionStatus.SCHEDULED, TaskExecutionStatus.RUNNING}:
+                if snapshot.status not in {
+                    TaskExecutionStatus.SCHEDULED, TaskExecutionStatus.RUNNING,
+                    TaskExecutionStatus.STOPPING,
+                }:
                     continue
                 for device_id, state in snapshot.device_states:
                     last = self._last_heartbeat.get((execution_id, device_id))

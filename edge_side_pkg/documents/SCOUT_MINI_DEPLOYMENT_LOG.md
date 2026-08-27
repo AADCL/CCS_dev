@@ -1,5 +1,42 @@
 # Scout Mini 部署日志
 
+## v0.21.1 任务失败修复
+
+- 根因：执行 `cd3533b6...` 时重定位状态文件仍为历史 `localized`，但 `/fastlio_odom` 无发布者且 `map` frame 不存在；`move_base` 未崩溃，只是在导航准备截止时被适配器停止。
+- 修复：任务控制 v0.3.1 增加实时里程计/TF/地图文件预检并返回明确错误码；重定位 v0.2.2 在进程重启时清除历史 `localized`；平台 v0.21.1 保留端侧失败详情。
+- 部署验收必须先重新完成 Scout 重定位；本轮不向生产 `/move_base/goal` 发送非零目标。
+- 2026-08-26 18:20 UTC 已完成部署前备份：`~/.deployment_backups/20260826T102034Z_v0211_task_fix`。
+- 端侧增量测试通过：任务控制 Scout 适配器 6 项、重定位核心 13 项；Release `catkin_make --force-cmake -DCMAKE_BUILD_TYPE=Release` 遍历 7 个包成功。
+- 重启一键栈后确认任务控制/重定位/Scout 适配器在线、UDP 14563 监听、`/move_base/goal` 未创建；状态文件已自动降级为 `standby`。当前 `/fastlio_odom` 和 `map<-odom` 不存在，符合未重新定位的安全状态。
+
+## v0.21.0 Scout task adapter deployment
+
+- 目标设备：`UGV_001` / `192.168.50.120`；端侧任务包：`epgeneral_task_control v0.3.0`。
+- 部署前备份已保存到 `~/.deployment_backups/20260826T080048Z_task_control_v030`；日志未记录 SSH 密码。
+- 新任务包和 Scout profile 已上传到 `~/ccs_edge_ws`；任务包 18 项端侧增量测试、版本检查、Python 语法检查和 Release catkin 增量构建通过。
+- Scout navigation 工作区的 Release 配置在 ROS2 `livox_ros_driver2` 处缺少 `ament_cmake_auto`；运行时不使用该工作区内未构建的同名底盘/雷达包。一键脚本改为先 source navigation、再 source `livox_fastlio`，由后者覆盖 `scout_base`、`livox_ros_driver2` 和运行时 `scout_navigation`，并增加两个节点的可执行文件预检。
+- 增量验收：纯 Python 测试、版本检查、catkin 构建、launch 解析、`/fastlio_odom`/TF/`/cmd_vel`/`/move_base` 检查和隔离 action server 目标截获。
+- 已确认重定位状态 schema 2、`localized`、活动地图 `d0ad7c7f-b391-48c5-8f24-c5059e9a1a01`；`scout_navigation/navigation_teb.launch` 在既有 devel 环境中可发现并解析，`/fastlio_odom` 类型为 `nav_msgs/Odometry`，`/cmd_vel` 类型为 `geometry_msgs/Twist`。
+- 修复任务入口脚本手工前置源码目录导致 `epgeneral_task_control.msg` 被遮蔽的问题；catkin devel relay 现在可同时加载业务代码和生成消息。
+- 2026-08-26 17:40 一键栈启动成功：底盘、Livox、D435i、七个 CCS/适配器节点在线，任务包版本检查通过，UDP 14563 正常监听。按需导航未启动，`/move_base/goal` 不存在。
+- 启动修复备份位于 `~/.deployment_backups/20260826T093431Z_scout_startup_overlay_fix`。关键故障日志归档于 `~/.ros/ccs_edge_dev_scout_mini/log/archive/20260826_startup_repair/`；清理 266 个历史 ROS 日志项后，`~/.ros/log` 从 64 MiB 降至 5.7 MiB，仅保留当前运行目录、`latest` 和当前 mqtav 日志目录。
+- 本次未向生产 `/move_base/goal` 发送目标，未发送非零 `/cmd_vel`，未执行真实车辆运动。
+
+## 2026-08-25 v0.19.1 重复重定位增量部署
+
+- `epgeneral_relocalization 0.2.1` 的 12 项端侧测试、Python 3.6 语法检查和 catkin 增量构建通过；部署前备份位于 `~/.deployment_backups/20260825_214615_v0191_relocalization`。
+- 一键栈已重启，`/epgeneral_relocalization`、`/epgeneral_udp_telemetry` 和 UDP 14565 在线；`/Odometry`、`/scout/odom`、`/livox/imu` 均可用。
+- 活动地图 `d0ad7c7f-b391-48c5-8f24-c5059e9a1a01` 的 PCD、PGM、YAML 完整。使用现有单位绑定和当前原点 odom 执行真实重复重定位，依次收到 `map_ready`、`starting`、`awaiting_pose`、`relocalizing`、`succeeded`。
+- 端侧 schema 2 状态和地面站 schema 6 绑定均已覆盖为单位 `map <- odom`，frame 为 `map/odom`，更新时间约为 `2026-08-25T13:54:07Z`；两端数值逐字段一致。
+- 部署后日志中没有新增启动或重定位错误；检查到的 XmlRpc/Bad file descriptor 记录发生在本次部署前的 21:20 旧进程退出阶段。
+
+## 2026-08-25 v0.19.0 遥测与活动地图增量部署
+
+- `epgeneral_udp_telemetry 0.3.0`、`epgeneral_relocalization 0.2.0` 的 23 项端侧测试、Python 编译和 catkin 构建通过；备份位于 `~/.deployment_backups/20260825_194552_v019_telemetry`，脚本备份位于 `20260825_195419_v019_scripts`。
+- 一键栈已重启，两个常驻节点和 UDP 14565 正常；`/scout/odom`、`/livox/imu` 可用。重启后尚未启动重定位 FAST_LIO 栈，因此 `/Odometry` 和 FAST_LIO2 状态当前不可用，符合状态定义。
+- 地面站已写入 `data/battery_history/UGV_001.json`，现场分钟电压中位数为 `24.9 V`；曲线未标定，界面保持“待标定”。
+- PGM 状态将在下一次地图协商写入活动 map ID 后验收；本次未执行完整放电或真实重复重定位，不宣称这两项已完成。
+
 ## 2026-08-24 计划与环境盘点
 
 - 目标设备：`UGV_001` / `192.168.50.120`

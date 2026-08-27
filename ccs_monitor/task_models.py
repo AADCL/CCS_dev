@@ -18,10 +18,23 @@ class TaskExecutionStatus(str, Enum):
     PREPARING = "preparing"
     SCHEDULED = "scheduled"
     RUNNING = "running"
+    STOPPING = "stopping"
     COMPLETED = "completed"
     STOPPED = "stopped"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class EdgeTaskStatus(str, Enum):
+    NO_TASK = "no_task"
+    TASK_EXISTS = "task_exists"
+    RECEIVING = "receiving"
+    RECEIVED = "received"
+    READY = "ready"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    EMERGENCY_STOP = "emergency_stop"
 
 
 class TaskEventLevel(str, Enum):
@@ -52,6 +65,10 @@ class DeviceSubtask:
     start_delay_seconds: float = 0.0
     revision: int = 0
     delivered_revision: int | None = None
+    edge_status: EdgeTaskStatus = EdgeTaskStatus.NO_TASK
+    edge_revision: int | None = None
+    edge_message: str = ""
+    edge_updated_at: datetime | None = None
 
     @property
     def is_valid(self) -> bool:
@@ -60,6 +77,10 @@ class DeviceSubtask:
     @property
     def is_delivered(self) -> bool:
         return self.delivered_revision == self.revision and self.revision > 0
+
+    @property
+    def edge_ready(self) -> bool:
+        return self.is_delivered and self.edge_revision == self.revision and self.edge_status == EdgeTaskStatus.READY
 
 
 @dataclass(frozen=True)
@@ -129,4 +150,3 @@ class TaskExecutionSnapshot:
     message: str = ""
     device_states: tuple[tuple[str, str], ...] = ()
     forced_conflict_reason: str | None = None
-

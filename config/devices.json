@@ -1,24 +1,6 @@
 {
-  "schema_version": 4,
+  "schema_version": 6,
   "devices": [
-    {
-      "device_id": "UAV_001",
-      "device_name": "测试无人机01",
-      "device_type": "UAV",
-      "ip_address": "192.168.151.250",
-      "availability": "available",
-      "last_tested_at": "2026-07-31T13:24:57.466250+00:00",
-      "status_cards": [
-        "livox_driver",
-        "fastlio2",
-        "pgm_mapping",
-        "octomap_mapping",
-        "occupancy_grid_mapping",
-        "mapping_mode"
-      ],
-      "srt_port": 9000,
-      "srt_latency_ms": 120
-    },
     {
       "device_id": "UGV_001",
       "device_name": "松灵 Scout Mini",
@@ -26,12 +8,29 @@
       "ip_address": "192.168.50.120",
       "availability": "available",
       "last_tested_at": "2026-08-17T15:19:03.094356+00:00",
-      "status_cards": [
-        "livox_driver",
-        "fastlio2"
-      ],
+      "status_cards": null,
       "srt_port": 9000,
-      "srt_latency_ms": 120
+      "srt_latency_ms": 120,
+      "relocalization_profile": "scout_mini",
+      "active_map_id": "d0ad7c7f-b391-48c5-8f24-c5059e9a1a01",
+      "map_bindings": [
+        {
+          "map_id": "d0ad7c7f-b391-48c5-8f24-c5059e9a1a01",
+          "map_frame": "map",
+          "odom_frame": "odom",
+          "pose_source": "vision_pose",
+          "localized_at": "2026-08-26T10:33:34.964123+00:00",
+          "map_from_odom": {
+            "x": 0.02618307007482722,
+            "y": 0.04619060746576941,
+            "z": 0.010509000318460148,
+            "qx": 0.0007813219600010448,
+            "qy": 0.0003749237004933895,
+            "qz": 0.0036392937368215556,
+            "qw": 0.999993002230171
+          }
+        }
+      ]
     },
     {
       "device_id": "QRD_001",
@@ -42,21 +41,57 @@
       "last_tested_at": "2026-08-18T15:33:04.470063+00:00",
       "status_cards": [
         "livox_driver",
-        "fastlio2"
+        "fastlio2",
+        "pgm_mapping",
+        "mapping_mode"
       ],
       "srt_port": 9000,
-      "srt_latency_ms": 120
+      "srt_latency_ms": 120,
+      "relocalization_profile": "go2_edu",
+      "active_map_id": "d0ad7c7f-b391-48c5-8f24-c5059e9a1a01",
+      "map_bindings": []
+    },
+    {
+      "device_id": "UAV_001",
+      "device_name": "金城涵道无人机",
+      "device_type": "UAV",
+      "ip_address": "192.168.50.150",
+      "availability": "unavailable",
+      "last_tested_at": "2026-08-26T10:14:58.187898+00:00",
+      "status_cards": null,
+      "srt_port": 9000,
+      "srt_latency_ms": 120,
+      "relocalization_profile": "disabled",
+      "active_map_id": null,
+      "map_bindings": []
     },
     {
       "device_id": "AGV_001",
-      "device_name": "测试空地车01",
+      "device_name": "金城空地无人机",
       "device_type": "AGV",
-      "ip_address": "192.168.50.110",
+      "ip_address": "192.168.50.200",
       "availability": "unavailable",
-      "last_tested_at": "2026-08-19T01:58:30.608369+00:00",
+      "last_tested_at": "2026-08-26T10:15:23.693467+00:00",
       "status_cards": null,
       "srt_port": 9000,
-      "srt_latency_ms": 120
+      "srt_latency_ms": 120,
+      "relocalization_profile": "disabled",
+      "active_map_id": null,
+      "map_bindings": []
+    },
+    {
+      "device_id": "FGV_001",
+      "device_name": "NRC履带车",
+      "device_type": "FGV",
+      "ip_address": "192.168.50.180",
+      "availability": "unavailable",
+      "last_tested_at": "2026-08-26T10:15:54.186419+00:00",
+      "status_cards": null,
+      "srt_port": 9000,
+      "srt_latency_ms": 120,
+      "relocalization_profile": "disabled",
+      "active_map_id": null,
+      "map_bindings": []
     }
   ]
 }

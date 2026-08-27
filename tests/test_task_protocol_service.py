@@ -13,7 +13,7 @@ DEPS = all(importlib.util.find_spec(name) is not None for name in ("PySide6", "m
 if DEPS:
     from ccs_monitor.models import DeviceSnapshot, MapCreatorDevice, MapDefinition, MapStatus
     from ccs_monitor.task_config import load_task_system_config
-    from ccs_monitor.task_models import TaskWaypoint
+    from ccs_monitor.task_models import TaskExecutionStatus, TaskWaypoint
     from ccs_monitor.task_protocol import TaskEnvelope, TaskProtocol
     from ccs_monitor.task_repository import TaskRepository
     from ccs_monitor.task_services import TaskExecutionService
@@ -54,6 +54,63 @@ class TaskProtocolServiceTests(unittest.TestCase):
         decoded = protocol.decode_subtask(encoded.compressed, encoded.crc32)
         self.assertEqual(decoded["revision"], 1)
         self.assertEqual(len(decoded["waypoints"]), 2)
+
+    def test_group_start_delay_allows_navigation_startup(self):
+        self.assertEqual(load_task_system_config().group_start_delay_seconds, 30.0)
+
+    def test_execution_rejects_non_active_task_map(self):
+        config = load_task_system_config()
+        service = TaskExecutionService(
+            config, self.repository,
+            lambda value: self.device if value == self.device.device_id else None,
+            active_map_id_getter=lambda: "another-map",
+        )
+        service.available = True
+        service.module_message = "test"
+        with self.assertRaisesRegex(RuntimeError, "全局激活地图"):
+            service.execute_subtask(self.task, self.device.device_id)
+
+    def test_stop_waits_for_terminal_device_status(self):
+        config = load_task_system_config()
+        service = TaskExecutionService(
+            config, self.repository,
+            lambda value: self.device if value == self.device.device_id else None,
+        )
+        service.available = True
+        service.module_message = "test"
+        service._socket = type("Socket", (), {"sendto": lambda *_args: None})()
+        snapshot = service.execute_subtask(self.task, self.device.device_id)
+        service.stop_execution(snapshot.execution_id)
+        self.assertEqual(service._executions[snapshot.execution_id].status, TaskExecutionStatus.STOPPING)
+        service._handle_status(TaskEnvelope(
+            self.task.task_id, self.task.subtasks[0].subtask_id, self.device.device_id,
+            snapshot.execution_id, "task_status", "status-stop", 200, time.time_ns(),
+            {"state": "stopped", "message": "stopped"},
+        ))
+        self.assertNotIn(snapshot.execution_id, service._executions)
+        self.assertEqual(
+            self.repository.executions(self.task.task_id)[0].status,
+            TaskExecutionStatus.STOPPED,
+        )
+
+    def test_failed_status_preserves_device_message_and_error_code(self):
+        config = load_task_system_config()
+        service = TaskExecutionService(
+            config, self.repository,
+            lambda value: self.device if value == self.device.device_id else None,
+        )
+        service.available = True
+        service._socket = type("Socket", (), {"sendto": lambda *_args: None})()
+        snapshot = service.execute_subtask(self.task, self.device.device_id)
+        service._handle_status(TaskEnvelope(
+            self.task.task_id, self.task.subtasks[0].subtask_id, self.device.device_id,
+            snapshot.execution_id, "task_status", "status-failed", 201, time.time_ns(),
+            {"state": "failed", "message": "实时定位不可用", "error_code": "LOCALIZATION_UNAVAILABLE"},
+        ))
+        record = self.repository.executions(self.task.task_id)[0]
+        self.assertIn("UAV-1", record.message)
+        self.assertIn("实时定位不可用", record.message)
+        self.assertIn("LOCALIZATION_UNAVAILABLE", record.message)
 
     def test_localhost_prepare_commit_and_execute(self):
         status_port, control_port = free_port(), free_port()

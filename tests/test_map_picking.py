@@ -10,9 +10,11 @@ DEPS = all(importlib.util.find_spec(name) is not None for name in ("numpy", "PyS
 if DEPS:
     from PySide6.QtWidgets import QApplication
 
-    from ccs_monitor.models import MapBounds, MapDefinition, PgmMapMetadata
+    from ccs_monitor.models import FrameTransform, MapBounds, MapDefinition, PgmMapMetadata, PoseTelemetry
     from ccs_monitor.pages.map_page import (
-        PointCloudViewer, pick_mode_zoom_distance, unproject_screen_to_plane,
+        PointCloudViewer, cursor_anchored_camera_center, pick_mode_zoom_distance,
+        transform_pose_by_binding,
+        unproject_screen_to_plane,
     )
 
 
@@ -37,6 +39,93 @@ class MapPickingTests(unittest.TestCase):
         self.assertLess(pick_mode_zoom_distance(100.0, 120), 100.0)
         self.assertGreater(pick_mode_zoom_distance(100.0, -120), 100.0)
         self.assertEqual(pick_mode_zoom_distance(0.1, 120), 0.1)
+
+    def test_cursor_anchor_compensates_camera_center(self):
+        self.assertEqual(
+            cursor_anchored_camera_center((10.0, 20.0, 3.0), (4.0, 8.0), (3.0, 6.0)),
+            (11.0, 22.0, 3.0),
+        )
+
+    def test_relocalization_picker_refresh_does_not_reset_direction(self):
+        viewer = PointCloudViewer()
+        viewer.set_relocalization_picker(True)
+        viewer._camera.azimuth = 47.0
+        viewer._camera.center = (4.0, 5.0, 0.0)
+        viewer.set_relocalization_picker(True)
+        self.assertEqual(viewer._camera.azimuth, 47.0)
+        self.assertEqual(tuple(viewer._camera.center), (4.0, 5.0, 0.0))
+
+    def test_relocalization_reticle_overlays_map_viewport_and_tracks_resize(self):
+        viewer = PointCloudViewer()
+        viewer.resize(800, 600)
+        viewer.show()
+        self.app.processEvents()
+        self.assertTrue(viewer._relocalization_reticle.isHidden())
+        viewer.set_relocalization_picker(True)
+        self.app.processEvents()
+        self.assertFalse(viewer._relocalization_reticle.isHidden())
+        self.assertEqual(viewer._relocalization_reticle.size(), viewer._map_overlay.size())
+        self.assertGreater(viewer._relocalization_reticle.width(), 0)
+        self.assertGreater(viewer._relocalization_reticle.height(), 0)
+        image = viewer._map_overlay.grab().toImage()
+        color = image.pixelColor(image.width() // 2 - 10, image.height() // 2)
+        self.assertGreater(color.red(), 200)
+        self.assertGreater(color.red(), color.green() + 40)
+        self.assertGreater(color.red(), color.blue() + 40)
+
+        viewer.resize(960, 720)
+        self.app.processEvents()
+        self.assertEqual(viewer._relocalization_reticle.size(), viewer._map_overlay.size())
+        viewer.set_relocalization_picker(False)
+        self.assertTrue(viewer._relocalization_reticle.isHidden())
+        viewer.close()
+
+    def test_binding_composes_translation_and_full_orientation(self):
+        half = math.sqrt(0.5)
+        transformed = transform_pose_by_binding(
+            PoseTelemetry(1.0, 0.0, 0.0, 0.0, 30.0, 0.0),
+            FrameTransform(10.0, 20.0, 0.0, 0.0, 0.0, half, half),
+        )
+        np.testing.assert_allclose(
+            (transformed.x, transformed.y, transformed.z), (10.0, 21.0, 0.0), atol=1e-8,
+        )
+        np.testing.assert_allclose(
+            (transformed.roll, transformed.pitch, transformed.yaw), (0.0, 30.0, 90.0), atol=1e-8,
+        )
+
+    def test_relocalization_pose_uses_center_and_screen_up(self):
+        viewer = PointCloudViewer()
+        viewer._relocalization_picker_enabled = True
+        native = viewer._canvas.native
+        native.resize(400, 300)
+        viewer._screen_to_map = lambda x, y, _width, _height: (x / 10.0, -y / 10.0)
+        viewer._screen_to_plane = lambda x, y: (x / 10.0, -y / 10.0)
+        x, y, yaw = viewer.relocalization_pose()
+        self.assertAlmostEqual(x, native.width() / 20.0)
+        self.assertAlmostEqual(y, -native.height() / 20.0)
+        self.assertAlmostEqual(yaw, math.pi / 2.0)
+
+    def test_relocalization_pose_allows_direction_sample_outside_map(self):
+        viewer = PointCloudViewer()
+        viewer._relocalization_picker_enabled = True
+        viewer._canvas.native.resize(400, 300)
+        viewer._screen_to_map = lambda *_args: (12.0, 8.0)
+        viewer._screen_to_plane = lambda *_args: (12.0, 18.0)
+        self.assertEqual(viewer.relocalization_pose(), (12.0, 8.0, math.pi / 2.0))
+
+    def test_relocalization_pose_rejects_invalid_center_or_direction(self):
+        viewer = PointCloudViewer()
+        viewer._relocalization_picker_enabled = True
+        viewer._canvas.native.resize(400, 300)
+        viewer._screen_to_map = lambda *_args: None
+        viewer._screen_to_plane = lambda *_args: (12.0, 18.0)
+        self.assertIsNone(viewer.relocalization_pose())
+
+        viewer._screen_to_map = lambda *_args: (12.0, 8.0)
+        viewer._screen_to_plane = lambda *_args: (12.0, 8.0)
+        self.assertIsNone(viewer.relocalization_pose())
+        viewer._screen_to_plane = lambda *_args: (float("nan"), 18.0)
+        self.assertIsNone(viewer.relocalization_pose())
 
     def test_screen_world_round_trip_respects_real_map_bounds(self):
         viewer = PointCloudViewer()

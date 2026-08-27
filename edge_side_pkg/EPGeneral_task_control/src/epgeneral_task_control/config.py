@@ -10,14 +10,14 @@ class ConfigError(ValueError):
     pass
 
 
-def _read(path):
+def _read(path, expected_schema=2):
     try:
         with io.open(path, "r", encoding="utf-8") as stream:
             value = yaml.safe_load(stream)
     except (IOError, yaml.YAMLError) as exc:
         raise ConfigError("cannot read config %s: %s" % (path, exc))
-    if not isinstance(value, dict) or value.get("schema_version") != 1:
-        raise ConfigError("config schema_version must be 1: %s" % path)
+    if not isinstance(value, dict) or value.get("schema_version") != expected_schema:
+        raise ConfigError("config schema_version must be %s: %s" % (expected_schema, path))
     return value
 
 
@@ -58,12 +58,15 @@ def _ip(value, label, unspecified=False):
 
 def load_config(task_path, device_path):
     task = _read(task_path)
-    device_root = _read(device_path)
+    device_root = _read(device_path, 1)
     network = _map(task, "network")
     storage = _map(task, "storage")
     ros = _map(task, "ros")
     timeouts = _map(task, "timeouts")
     limits = _map(task, "limits")
+    adapter = task.get("adapter", {})
+    if adapter and not isinstance(adapter, dict):
+        raise ConfigError("adapter must be a mapping")
     device = _map(device_root, "device")
     result = {
         "protocol_id": _text(task, "protocol_id"),
@@ -88,7 +91,26 @@ def load_config(task_path, device_path):
         "max_compressed_bytes": _number(limits.get("max_compressed_bytes"), "limits.max_compressed_bytes", 1024, integer=True),
         "max_raw_bytes": _number(limits.get("max_raw_bytes"), "limits.max_raw_bytes", 1024, integer=True),
         "max_chunks": _number(limits.get("max_chunks"), "limits.max_chunks", 1, 4096, True),
+        "adapter": dict(adapter),
     }
+    if adapter:
+        adapter_text = (
+            "active_map_state_file", "navigation_launch_package", "navigation_launch_file",
+            "navigation_map_root", "navigation_map_yaml", "navigation_action",
+            "odom_topic", "zero_velocity_topic",
+        )
+        for key in adapter_text:
+            if not isinstance(adapter.get(key), str) or not adapter[key].strip():
+                raise ConfigError("adapter.%s must be a non-empty string" % key)
+        for key in ("navigation_startup_timeout_seconds", "waypoint_timeout_seconds",
+                    "pose_timeout_seconds", "zero_velocity_hz"):
+            value = adapter.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or float(value) <= 0:
+                raise ConfigError("adapter.%s must be positive" % key)
+        count = adapter.get("zero_velocity_count")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ConfigError("adapter.zero_velocity_count must be a positive integer")
+        result["adapter"] = dict(adapter)
     if result["max_raw_bytes"] < result["max_compressed_bytes"]:
         raise ConfigError("limits.max_raw_bytes must cover max_compressed_bytes")
     return result

@@ -7,6 +7,7 @@ NTP_SERVER="${CCS_NTP_SERVER:-${GROUND_STATION_IP}}"
 ROS_IP_VALUE="${CCS_ROS_IP:-192.168.50.120}"
 LIVOX_SETUP="${CCS_LIVOX_SETUP:-/home/nvidia/livox_fastlio/devel/setup.bash}"
 REALSENSE_SETUP="${CCS_REALSENSE_SETUP:-/home/nvidia/realsense_ws/devel/setup.bash}"
+NAVIGATION_SETUP="${CCS_NAVIGATION_SETUP:-/home/nvidia/github_upload/AADCL_UAV_UGV/Scout_mini/devel/setup.bash}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE_CONFIG_DIR="${CCS_EDGE_PROFILE_CONFIG_DIR:-${WORKSPACE}/config/scout_mini}"
 STATE_DIR="${CCS_EDGE_STATE_DIR:-${HOME}/.ros/ccs_edge_dev_scout_mini}"
@@ -15,10 +16,10 @@ PID_DIR="${STATE_DIR}/run"
 START_LOG="${LOG_DIR}/startup.log"
 SHUTDOWN_STARTED=false
 
-LAUNCH_NAMES=(scout_livox d435i mqtav udp_telemetry video_srt map_stream)
-NODE_NAMES=(/scout_base_node /camera/realsense2_camera /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_video_srt /epgeneral_map_stream)
-EXPECTED_COMMANDS=(scout_livox_base.launch D435I.launch epgeneral_mqtav epgeneral_udp_telemetry epgeneral_video_srt epgeneral_map_stream)
-MANAGED=(false false false false false false)
+LAUNCH_NAMES=(scout_livox d435i mqtav udp_telemetry video_srt map_stream relocalization task_control)
+NODE_NAMES=(/scout_base_node /camera/realsense2_camera /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_video_srt /epgeneral_map_stream /epgeneral_relocalization /epgeneral_task_control)
+EXPECTED_COMMANDS=(scout_livox_base.launch D435I.launch epgeneral_mqtav epgeneral_udp_telemetry epgeneral_video_srt epgeneral_map_stream epgeneral_relocalization scout_task_control.launch)
+MANAGED=(false false false false false false false false)
 
 mkdir -p "${LOG_DIR}" "${PID_DIR}"
 
@@ -36,6 +37,17 @@ process_is_running() {
 }
 
 ros_node_exists() { rosnode list 2>/dev/null | grep -Fxq -- "$1"; }
+
+ros_executable_exists() {
+  local package="$1" executable="$2" prefix
+  local old_ifs="${IFS}"
+  IFS=':'
+  for prefix in ${CMAKE_PREFIX_PATH:-}; do
+    [[ -x "${prefix}/lib/${package}/${executable}" ]] && { IFS="${old_ifs}"; return 0; }
+  done
+  IFS="${old_ifs}"
+  return 1
+}
 
 wait_for_master() {
   local attempt
@@ -99,18 +111,22 @@ trap 'shutdown_all $?' EXIT
 [[ -r /opt/ros/noetic/setup.bash ]] || fail "未找到 ROS Noetic 环境"
 [[ -r "${REALSENSE_SETUP}" ]] || fail "未找到 RealSense 工作空间：${REALSENSE_SETUP}"
 [[ -r "${LIVOX_SETUP}" ]] || fail "未找到 livox_fastlio 工作空间：${LIVOX_SETUP}"
+[[ -r "${NAVIGATION_SETUP}" ]] || fail "未找到 Scout navigation 工作空间：${NAVIGATION_SETUP}"
 [[ -r "${WORKSPACE}/devel/setup.bash" ]] || fail "工作空间尚未编译：${WORKSPACE}"
-for config_name in device.yaml epgeneral_mqtav.yaml udp_telemetry.yaml video.yaml map_stream.yaml; do
+for config_name in device.yaml epgeneral_mqtav.yaml udp_telemetry.yaml video.yaml map_stream.yaml relocalization.yaml task_control.yaml; do
   [[ -r "${PROFILE_CONFIG_DIR}/${config_name}" ]] || fail "缺少 Scout profile 配置：${PROFILE_CONFIG_DIR}/${config_name}"
 done
 ip link show can0 2>/dev/null | grep -Eq 'state UP|<[^>]*UP' || fail "can0 未处于 UP 状态"
 
 source /opt/ros/noetic/setup.bash
 source "${REALSENSE_SETUP}"
+source "${NAVIGATION_SETUP}" --extend
 source "${LIVOX_SETUP}" --extend
 source "${WORKSPACE}/devel/setup.bash" --extend
 export ROS_MASTER_URI="${ROS_MASTER_URI:-http://127.0.0.1:11311}"
 export ROS_IP="${ROS_IP_VALUE}"
+ros_executable_exists scout_base scout_base_node || fail "当前 ROS overlay 中缺少已编译的 scout_base_node"
+ros_executable_exists livox_ros_driver2 livox_ros_driver2_node || fail "当前 ROS overlay 中缺少已编译的 livox_ros_driver2_node"
 
 report INFO "启动 Scout Mini profile，工作空间=${WORKSPACE}，地面站=${GROUND_STATION_IP}"
 for attempt in $(seq 1 30); do
@@ -161,7 +177,12 @@ start_launch 4 /epgeneral_video_srt epgeneral_video_srt epgeneral_video_srt.laun
   device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml" video_config_file:="${PROFILE_CONFIG_DIR}/video.yaml"
 start_launch 5 /epgeneral_map_stream epgeneral_map_stream epgeneral_map_stream.launch \
   mapping_config_file:="${PROFILE_CONFIG_DIR}/map_stream.yaml" device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
-report OK "Scout Mini 常驻栈和四个功能包已启动；按 Ctrl+C 停止"
+start_launch 6 /epgeneral_relocalization epgeneral_relocalization epgeneral_relocalization.launch \
+  config_file:="${PROFILE_CONFIG_DIR}/relocalization.yaml" device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
+start_launch 7 /epgeneral_task_control epgeneral_task_control scout_task_control.launch \
+  task_config_file:="${PROFILE_CONFIG_DIR}/task_control.yaml" device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
+wait_for_node /scout_navigation_task_adapter || fail "Scout 任务导航适配器启动失败"
+report OK "Scout Mini 常驻栈和任务控制功能包已启动；按 Ctrl+C 停止"
 while true; do
   sleep 2
   for index in "${!NODE_NAMES[@]}"; do

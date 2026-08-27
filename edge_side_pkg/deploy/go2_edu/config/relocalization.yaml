@@ -1,0 +1,8 @@
+schema_version: 1
+protocol_id: ccs-relocalization-v1
+enabled: false
+backend: go2_edu
+network: {bind_host: 0.0.0.0, control_port: 14565, ground_station_ip: 192.168.50.101, status_port: 14566, max_datagram_bytes: 1400}
+storage: {map_root: /home/nvidia/go2_mid360_nav/maps/ccs_download, active_map_state_file: /home/nvidia/.ros/ccs_edge_dev/state/relocalization.json, max_artifact_bytes: 4294967296, download_timeout_seconds: 300.0}
+ros: {map_frame: map, odom_frame: odom, initial_pose_topic: /initialpose, map_topic: /map_2d, startup_timeout_seconds: 60.0, stages: []}
+tf_stability: {timeout_seconds: 30.0, sample_hz: 10.0, sample_count: 10, translation_tolerance_m: 0.10, yaw_tolerance_deg: 2.0}

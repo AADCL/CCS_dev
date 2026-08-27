@@ -17,6 +17,7 @@ class SubsystemId(str, Enum):
     UDP_TELEMETRY = "udp_telemetry"
     MAP_BUILDING = "map_building"
     TASK_CONTROL = "task_control"
+    RELOCALIZATION = "relocalization"
     SRT_FFMPEG = "srt_ffmpeg"
     MAP_REPOSITORY = "map_repository"
     TASK_REPOSITORY = "task_repository"
@@ -37,6 +38,7 @@ SUBSYSTEM_NAMES = {
     SubsystemId.UDP_TELEMETRY: "UDP 高频遥测",
     SubsystemId.MAP_BUILDING: "实时建图 / PGM",
     SubsystemId.TASK_CONTROL: "UDP 任务控制",
+    SubsystemId.RELOCALIZATION: "设备重定位",
     SubsystemId.SRT_FFMPEG: "FFmpeg / SRT",
     SubsystemId.MAP_REPOSITORY: "地图仓储",
     SubsystemId.TASK_REPOSITORY: "任务仓储",
@@ -125,6 +127,14 @@ class SystemRuntimeStatusStore(QObject):
     def update_task_control(self, healthy: bool, message: str) -> None:
         self.update(
             SubsystemId.TASK_CONTROL,
+            SubsystemState.HEALTHY if healthy else SubsystemState.ERROR,
+            message,
+        )
+
+    @Slot(bool, str)
+    def update_relocalization(self, healthy: bool, message: str) -> None:
+        self.update(
+            SubsystemId.RELOCALIZATION,
             SubsystemState.HEALTHY if healthy else SubsystemState.ERROR,
             message,
         )

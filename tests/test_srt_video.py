@@ -132,6 +132,22 @@ class SrtVideoTests(unittest.TestCase):
         self.assertEqual(events[-1][0], "diagnostic")
         widget.close()
 
+    def test_collapsed_video_expands_when_stream_starts(self):
+        fake = FakeReceiver()
+        widget = SrtVideoWidget(fake)
+        widget.set_collapsible(True)
+        widget.set_device(DeviceSnapshot("A", "One", "UGV", ip_address="192.168.1.10"))
+        widget.set_collapsed(True)
+        self.assertTrue(widget._collapsed)
+        self.assertTrue(widget.video_body.isHidden())
+        widget.start_stream()
+        self.assertFalse(widget._collapsed)
+        self.assertFalse(widget.video_body.isHidden())
+        self.assertFalse(widget.collapse_button.isEnabled())
+        widget.stop_stream()
+        self.assertTrue(widget.collapse_button.isEnabled())
+        widget.close()
+
     def test_config_rejects_absolute_ffmpeg_path_and_resolves_relative_path(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "srt.json"

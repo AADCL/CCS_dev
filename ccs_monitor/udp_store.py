@@ -171,7 +171,7 @@ class UdpTelemetryStore(QObject):
         changes: dict[str, object] = {"last_data_at": self._wall_clock(), "module_message": self.module_message}
         statuses = {item.name: item for item in snapshot.sensor_statuses}
         for name, value in event.payload.items():
-            descriptor = self.config.descriptor(name)
+            descriptor = self.config.any_descriptor(name)
             if descriptor is None:
                 continue
             if descriptor.data_type == "pose":
@@ -194,6 +194,7 @@ class UdpTelemetryStore(QObject):
                     display_name=descriptor.display_name,
                     availability=self._availability(value),
                     sample_age_seconds=self._optional_float(value.get("sample_age_seconds")),
+                    map_id=str(value["map_id"]) if value.get("map_id") else None,
                 )
             elif descriptor.data_type == "text_status":
                 statuses[name] = SensorStatusTelemetry(
@@ -202,6 +203,7 @@ class UdpTelemetryStore(QObject):
                     availability=self._availability(value),
                     sample_age_seconds=self._optional_float(value.get("sample_age_seconds")),
                     value=str(value["value"]) if value.get("value") is not None else None,
+                    map_id=str(value["map_id"]) if value.get("map_id") else None,
                 )
         changes["sensor_statuses"] = tuple(statuses[name] for name in sorted(statuses))
         updated = replace(snapshot, **changes)

@@ -41,7 +41,7 @@ def decode_trajectory(compressed, crc32, config, identity, expected_raw_bytes=No
     except (UnicodeDecodeError, ValueError) as exc:
         raise StorageError("trajectory JSON decode failed: %s" % exc)
     required = ("task_id", "subtask_id", "device_id")
-    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+    if not isinstance(payload, dict) or payload.get("schema_version") not in (1, 2):
         raise StorageError("trajectory schema is invalid")
     for key in required:
         if payload.get(key) != identity[key]:
@@ -110,12 +110,46 @@ class TrajectoryStore(object):
         metadata["xml_path"] = xml_path
         return metadata
 
+    def load_payload(self, task_id, subtask_id):
+        """Load the complete validated XML payload for a device adapter."""
+        unused_directory, xml_path = self.paths(task_id, subtask_id)
+        try:
+            root = ElementTree.parse(xml_path).getroot()
+            metadata_node = root.find("metadata")
+            waypoints_node = root.find("waypoints")
+            if metadata_node is None or waypoints_node is None:
+                return None
+            payload = {
+                "schema_version": int(root.get("schema_version", "1")),
+                "task_id": root.get("task_id"), "subtask_id": root.get("subtask_id"),
+                "device_id": root.get("device_id"), "revision": int(root.get("revision")),
+                "crc32": int(root.get("crc32")),
+                "task_name": metadata_node.get("task_name"),
+                "map_id": metadata_node.get("map_id"), "frame_id": metadata_node.get("frame_id"),
+                "cruise_speed_mps": float(metadata_node.get("cruise_speed_mps")),
+                "start_delay_seconds": float(metadata_node.get("start_delay_seconds")),
+                "waypoints": [], "xml_path": xml_path,
+            }
+            for index, item in enumerate(waypoints_node.findall("waypoint")):
+                if int(item.get("index")) != index:
+                    return None
+                payload["waypoints"].append({
+                    "index": index, "waypoint_id": item.get("waypoint_id"),
+                    "x": float(item.get("x")), "y": float(item.get("y")),
+                    "z": float(item.get("z")),
+                })
+            if not payload["task_id"] == task_id or not payload["subtask_id"] == subtask_id:
+                return None
+            return payload
+        except (IOError, TypeError, ValueError, ElementTree.ParseError, AttributeError):
+            return None
+
     def commit(self, payload, crc32):
         directory, xml_path = self.paths(payload["task_id"], payload["subtask_id"])
         if not os.path.isdir(directory):
             os.makedirs(directory)
         root = ElementTree.Element("trajectory", {
-            "schema_version": "1", "task_id": payload["task_id"], "subtask_id": payload["subtask_id"],
+            "schema_version": "2", "task_id": payload["task_id"], "subtask_id": payload["subtask_id"],
             "device_id": payload["device_id"], "revision": str(payload["revision"]), "crc32": str(int(crc32)),
         })
         ElementTree.SubElement(root, "metadata", {
@@ -132,6 +166,17 @@ class TrajectoryStore(object):
         self._atomic(xml_path, xml_data)
         metadata["xml_path"] = xml_path
         return metadata
+
+    def delete(self, task_id, subtask_id):
+        directory, xml_path = self.paths(task_id, subtask_id)
+        try:
+            os.unlink(xml_path)
+        except OSError:
+            pass
+        try:
+            os.rmdir(directory)
+        except OSError:
+            pass
 
     @staticmethod
     def _atomic(path, data):

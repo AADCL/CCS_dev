@@ -42,6 +42,11 @@ class MapRepositoryTests(unittest.TestCase):
         self.assertEqual(ready.status, MapStatus.READY)
         self.assertEqual(ready.point_count, 2)
         self.assertEqual(ready.bounds.width, 4)
+        self.repository.set_active_map(ready.map_id)
+        self.assertEqual(self.repository.active_map_id(), ready.map_id)
+        self.assertEqual(json.loads((self.root / "active_map.json").read_text())["map_id"], ready.map_id)
+        reloaded = MapRepository(self.root)
+        self.assertEqual(reloaded.active_map_id(), ready.map_id)
 
         renamed = self.repository.rename(definition.map_id, "B 区地图")
         self.assertEqual(renamed.name, "B 区地图")

@@ -14,6 +14,8 @@ from .main_window import MainWindow
 from .map_building_config import MapBuildingConfigError, load_map_building_config
 from .map_building_services import MapBuildingService
 from .map_repository import MapRepository
+from .relocalization_config import RelocalizationConfigError, load_relocalization_config
+from .relocalization_services import RelocalizationService
 from .mqtt_config import MqttConfigError, default_mqtt_config, load_mqtt_config
 from .mqtt_data_source import MqttDeviceSource
 from .mqtt_services import MqttMonitoringRuntime
@@ -125,7 +127,10 @@ def main() -> int:
     task_error = None
     try:
         task_config = load_task_system_config()
-        task_service = TaskExecutionService(task_config, task_repository, source.device)
+        task_service = TaskExecutionService(
+            task_config, task_repository, source.device,
+            active_map_id_getter=map_repository.active_map_id,
+        )
     except TaskSystemConfigError as exc:
         task_error = str(exc)
         system_status.update(SubsystemId.TASK_CONTROL, SubsystemState.ERROR, task_error)
@@ -137,11 +142,22 @@ def main() -> int:
     except MapBuildingConfigError as exc:
         mapping_error = str(exc)
         system_status.update(SubsystemId.MAP_BUILDING, SubsystemState.ERROR, mapping_error)
+    relocalization_service = None
+    relocalization_error = None
+    try:
+        relocalization_config = load_relocalization_config()
+        relocalization_service = RelocalizationService(
+            relocalization_config, map_repository, source
+        )
+    except RelocalizationConfigError as exc:
+        relocalization_error = str(exc)
+        system_status.update(SubsystemId.RELOCALIZATION, SubsystemState.ERROR, relocalization_error)
     window = MainWindow(
         source,
         telemetry_store=udp_store,
         map_repository=map_repository,
         mapping_service=mapping_service,
+        relocalization_service=relocalization_service,
         task_repository=task_repository,
         task_execution_service=task_service,
         system_status_store=system_status,
@@ -175,6 +191,10 @@ def main() -> int:
         QTimer.singleShot(0, mapping_service.start)
     elif mapping_error:
         window.map_page.detail_page.set_mapping_available(False, mapping_error)
+    if relocalization_service is not None:
+        relocalization_service.availability_changed.connect(system_status.update_relocalization)
+        app.aboutToQuit.connect(relocalization_service.stop)
+        QTimer.singleShot(0, relocalization_service.start)
     if task_service is not None:
         task_service.availability_changed.connect(system_status.update_task_control)
         app.aboutToQuit.connect(task_service.stop)

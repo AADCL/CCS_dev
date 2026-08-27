@@ -15,7 +15,7 @@ from epgeneral_task_control.storage import TrajectoryStore
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TASK_CONFIG = os.path.join(PACKAGE, "config", "task_control.yaml")
-DEVICE_CONFIG = os.path.join(os.path.dirname(PACKAGE), "epgeneral_device_config", "config", "device.yaml")
+DEVICE_CONFIG = os.path.join(PACKAGE, "test", "fixtures", "device.yaml")
 
 
 class FakeSocket(object):
@@ -80,7 +80,7 @@ class FakeRospy(object):
 
 def pack(config, message_type, request_id, payload, execution_id="", sent_at=None):
     return msgpack.packb({
-        "schema_version": 1, "protocol_id": config["protocol_id"], "task_id": "task-1",
+        "schema_version": 2, "protocol_id": config["protocol_id"], "task_id": "task-1",
         "subtask_id": "sub-1", "device_id": config["device_id"], "execution_id": execution_id,
         "message_type": message_type, "request_id": request_id, "sequence": 1,
         "sent_at_ns": int((sent_at if sent_at is not None else time.time()) * 1000000000), "payload": payload,
@@ -88,7 +88,7 @@ def pack(config, message_type, request_id, payload, execution_id="", sent_at=Non
 
 
 def task_payload(device_id):
-    return {"schema_version": 1, "task_id": "task-1", "task_name": "巡检", "map_id": "map-1",
+    return {"schema_version": 2, "task_id": "task-1", "task_name": "巡检", "map_id": "map-1",
             "frame_id": "map", "subtask_id": "sub-1", "device_id": device_id, "revision": 1,
             "cruise_speed_mps": 1.0, "start_delay_seconds": 0.0, "waypoints": [
                 {"index": 0, "waypoint_id": "a", "x": 0.0, "y": 0.0, "z": 1.0},
@@ -210,7 +210,7 @@ class NodeTests(unittest.TestCase):
                    "crc32": 1, "compression": "zlib", "encoding": "json-utf8"}
         self.node.handle_datagram(pack(self.config, "task_prepare", "blocked", prepare), self.config["ground_station_ip"])
         self.assertEqual(self.messages()[-1]["payload"]["error_code"], "BUSY")
-        self.node.handle_datagram(pack(self.config, "stop_task", "stop", {"reason": "done"},
+        self.node.handle_datagram(pack(self.config, "terminate_task", "stop", {"reason": "done"},
                                        execution_id="exec-stop"), self.config["ground_station_ip"])
         self.assertEqual(self.node.publisher.messages[-1].action, FakeCommand.STOP)
         self.assertTrue(self.messages()[-1]["payload"]["accepted"])
@@ -227,6 +227,22 @@ class NodeTests(unittest.TestCase):
         self.node._recover_execution()
         self.assertEqual(self.node.publisher.messages[-1].action, FakeCommand.STOP)
         self.assertIsNone(self.node.store.load_execution())
+
+    def test_emergency_stop_reports_states_and_removes_executable_trajectory(self):
+        crc32, count = self.deliver()
+        self.node.handle_datagram(pack(self.config, "task_commit", "commit", {
+            "revision": 1, "chunk_count": count, "crc32": crc32,
+        }), self.config["ground_station_ip"])
+        self.assertIsNotNone(self.node.store.load("task-1", "sub-1"))
+        self.node.handle_datagram(pack(
+            self.config, "emergency_stop", "emergency", {"reason": "test"}
+        ), self.config["ground_station_ip"])
+        messages = self.messages()
+        states = [item["payload"]["state"] for item in messages if item["message_type"] == "task_status"]
+        self.assertEqual(states[-2:], ["emergency_stop", "no_task"])
+        self.assertIsNone(self.node.store.load("task-1", "sub-1"))
+        status = self.node.mission_store.status("task-1", self.config["device_id"])
+        self.assertEqual(status["state"], "no_task")
 
 
 if __name__ == "__main__":

@@ -41,7 +41,8 @@ class UdpTelemetryProtocol:
             raise UdpProtocolError("不支持的 schema_version")
         if raw.get("protocol_id") != self.config.protocol_id:
             raise UdpProtocolError("protocol_id 不匹配")
-        if raw.get("descriptor_hash") != self.config.descriptor_hash:
+        descriptors = self.config.descriptors_for_hash(str(raw.get("descriptor_hash", "")))
+        if descriptors is None:
             raise UdpProtocolError("遥测描述哈希不匹配")
         device_id = raw.get("device_id")
         session_id = raw.get("session_id")
@@ -67,7 +68,7 @@ class UdpTelemetryProtocol:
                 raise UdpProtocolError("心跳包不能包含 level 或 payload")
         elif level not in {1, 2, 3}:
             raise UdpProtocolError("遥测包 level 无效")
-        self._validate_payload(payload, level)
+        self._validate_payload(payload, level, descriptors)
         return UdpEnvelope(device_id, session_id, message_type, sequence, sent_at_ns, level, payload)
 
     def encode(self, envelope: UdpEnvelope) -> bytes:
@@ -88,11 +89,13 @@ class UdpTelemetryProtocol:
             raise UdpProtocolError("编码结果超过数据报大小限制")
         return encoded
 
-    def _validate_payload(self, payload: dict[str, Any], level: int | None) -> None:
+    def _validate_payload(self, payload: dict[str, Any], level: int | None,
+                          descriptors=None) -> None:
+        descriptors = descriptors or self.config.descriptors
         for name, value in payload.items():
             if not isinstance(name, str):
                 raise UdpProtocolError("payload 键必须是字符串")
-            descriptor = self.config.descriptor(name)
+            descriptor = next((item for item in descriptors if item.name == name), None)
             if descriptor is None or descriptor.level != level:
                 raise UdpProtocolError(f"未知或等级不匹配的数据项：{name}")
             if not isinstance(value, dict):

@@ -29,9 +29,11 @@ from ..models import (
     HealthStatus,
     ImuTelemetry,
     PoseTelemetry,
+    SensorStatusTelemetry,
     TelemetryAvailability,
     UdpLinkStatus,
 )
+from ..device_map_context import map_mode_text, resolve_device_map_context
 from ..device_dialogs import StatusCardEditorDialog
 from ..srt_video import SrtVideoWidget, build_srt_url
 from ..widgets import STATUS_TEXT
@@ -111,6 +113,8 @@ class DataStatusCard(QFrame):
         meta_parts: list[str] = []
         if status is not None and status.sample_age_seconds is not None:
             meta_parts.append(f"数据年龄 {status.sample_age_seconds:.1f}s")
+        if status is not None and status.value and self.definition.value_kind != "text":
+            meta_parts.append(status.value)
         if self.definition.card_id == "livox_driver" and pointcloud is not None:
             if pointcloud.estimated_hz is not None:
                 meta_parts.append(f"点云 {pointcloud.estimated_hz:.1f} Hz")
@@ -129,8 +133,13 @@ class DeviceDetailPage(QWidget):
     clear_logs_requested = Signal(str)
     log_event_requested = Signal(str, object, str)
 
-    def __init__(self) -> None:
+    def __init__(self, source=None, map_repository=None, mapping_service=None,
+                 relocalization_service=None) -> None:
         super().__init__()
+        self.source = source
+        self.map_repository = map_repository
+        self.mapping_service = mapping_service
+        self.relocalization_service = relocalization_service
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.device: DeviceSnapshot | None = None
         self.entries: list[DeviceLogEntry] = []
@@ -193,13 +202,13 @@ class DeviceDetailPage(QWidget):
         self.telemetry_grid.setHorizontalSpacing(12)
         self.telemetry_grid.setVerticalSpacing(12)
         self.global_pose_panel, self.global_pose_values = self._telemetry_panel(
-            "全局位姿 · ENU", ("X", "Y", "Z", "Roll", "Pitch", "Yaw")
+            "重定位位姿 · Map", ("X", "Y", "Z", "Roll", "Pitch", "Yaw")
         )
         self.vision_pose_panel, self.vision_pose_values = self._telemetry_panel(
-            "视觉传感器位姿", ("X", "Y", "Z", "Roll", "Pitch", "Yaw")
+            "本地位姿 · odom", ("X", "Y", "Z", "Roll", "Pitch", "Yaw")
         )
         self.imu_panel, self.imu_values = self._telemetry_panel(
-            "IMU 基础信息", ("Roll", "Pitch", "Yaw", "角速度 X/Y/Z", "线加速度 X/Y/Z")
+            "IMU 信息", ("Roll", "Pitch", "Yaw", "角速度 X/Y/Z", "线加速度 X/Y/Z")
         )
         self.telemetry_panels = [self.global_pose_panel, self.vision_pose_panel, self.imu_panel]
         layout.addLayout(self.telemetry_grid)
@@ -359,8 +368,8 @@ class DeviceDetailPage(QWidget):
             "设备 IP": device.ip_address or "--",
             "最近可用状态": AVAILABILITY_TEXT[device.availability],
             "任务状态": STATUS_TEXT[device.task_status],
-            "电量": "--" if device.battery_percent is None else f"{device.battery_percent:g}%",
-            "定位状态": STATUS_TEXT[device.localization_status],
+            "电量": self._battery_text(device),
+            "定位状态": "未知空间",
             "健康状态": HEALTH_TEXT[device.health_status],
             "运行模式": device.flight_mode,
             "电池电压": "--" if device.battery_voltage is None else f"{device.battery_voltage:g} V",
@@ -381,6 +390,7 @@ class DeviceDetailPage(QWidget):
         }
         for name, value in values.items():
             self.fields[name].setText(value)
+        self._update_map_context()
         mqtt_online = device.connection_status.value == "online"
         self.mqtt_card.setProperty("state", "healthy" if mqtt_online else "error")
         self.mqtt_status.setText(f"MQTT · {STATUS_TEXT[device.connection_status]}")
@@ -419,10 +429,33 @@ class DeviceDetailPage(QWidget):
         self.fields["UDP 链路状态"].setText(UDP_LINK_TEXT[telemetry.udp_link_status])
         self.fields["UDP 最后心跳"].setText(self._format_datetime(telemetry.last_heartbeat_at))
         self.fields["UDP 最后数据"].setText(self._format_datetime(telemetry.last_data_at))
-        self._render_pose(self.global_pose_values, telemetry.global_pose)
-        self._render_pose(self.vision_pose_values, telemetry.vision_pose)
+        context = self._map_context()
+        self._render_pose(self.global_pose_values, context.map_pose if context else telemetry.global_pose)
+        self._render_pose(self.vision_pose_values, context.local_pose if context else telemetry.vision_pose)
         self._render_imu(telemetry.imu)
+        self._update_map_context(context)
         self._render_status_cards()
+
+    def _map_context(self):
+        if self.device is None or self.source is None:
+            return None
+        return resolve_device_map_context(
+            self.source, self.relocalization_service, self.pending_telemetry,
+            self.device.device_id,
+        )
+
+    def _update_map_context(self, context=None) -> None:
+        context = context or self._map_context()
+        if context is not None:
+            self.fields["定位状态"].setText(context.localization_text)
+
+    @staticmethod
+    def _battery_text(device) -> str:
+        if device.battery_percent is not None:
+            return f"{device.battery_percent:g}%"
+        if device.battery_voltage is not None and device.device_type == "UGV":
+            return "待标定"
+        return "--"
 
     @staticmethod
     def _render_pose(labels: dict[str, QLabel], pose: PoseTelemetry | None) -> None:
@@ -477,6 +510,23 @@ class DeviceDetailPage(QWidget):
         telemetry = self.pending_telemetry
         statuses = {} if telemetry is None else {item.name: item for item in telemetry.sensor_statuses}
         pointcloud = None if telemetry is None else telemetry.pointcloud
+        profile = self.source.profile(self.device.device_id) if self.source and self.device else None
+        active_map_id = profile.active_map_id if profile else None
+        if "pgm_mapping" in statuses:
+            status = statuses["pgm_mapping"]
+            if not active_map_id or status.map_id != active_map_id:
+                statuses["pgm_mapping"] = SensorStatusTelemetry(
+                    "pgm_mapping", "PGM 地图状态", TelemetryAvailability.UNKNOWN,
+                    status.sample_age_seconds, "状态来源未关联当前地图", status.map_id,
+                )
+        if self.device is not None:
+            statuses["mapping_mode"] = SensorStatusTelemetry(
+                "mapping_mode", "当前建图模式", TelemetryAvailability.AVAILABLE,
+                value=map_mode_text(
+                    self.map_repository, self.mapping_service, active_map_id,
+                    self.device.device_id,
+                ), map_id=active_map_id,
+            )
         for card_id, card in self.status_cards.items():
             card.update_status(statuses.get(card_id), pointcloud)
 

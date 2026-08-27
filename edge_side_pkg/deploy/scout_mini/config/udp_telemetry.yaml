@@ -2,11 +2,9 @@ schema_version: 1
 protocol_id: "ccs-udp-telemetry-v1"
 network: {destination_host: "192.168.50.101", destination_port: 14560, max_datagram_bytes: 16384}
 descriptors:
-  - {name: vision_pose, display_name: "视觉传感器位姿", type: pose, level: 1, source: {topic: /scout/odom, message_type: nav_msgs/Odometry, mapping: {position: pose.pose.position, orientation: pose.pose.orientation}}}
+  - {name: vision_pose, display_name: "本地位姿", type: pose, level: 1, source: {topic: /scout/odom, message_type: nav_msgs/Odometry, mapping: {position: pose.pose.position, orientation: pose.pose.orientation}}}
   - {name: imu, display_name: "IMU", type: imu, level: 1, source: {topic: /livox/imu, message_type: sensor_msgs/Imu, mapping: {orientation: orientation, angular_velocity: angular_velocity, linear_acceleration: linear_acceleration}}}
   - {name: livox_pointcloud, display_name: "雷达点云", type: pointcloud_status, level: 2, source: {topic: /livox/lidar, timeout_seconds: 1.0}}
   - {name: livox_driver, display_name: "Livox 驱动", type: availability, level: 3, source: {topic: /livox/lidar, timeout_seconds: 3.0}}
-  - {name: pgm_mapping, display_name: "PGM 地图生成状态", type: availability, level: 3, source: {topic: /map_pgm, timeout_seconds: 3.0}}
-  - {name: octomap_mapping, display_name: "八叉树地图生成状态", type: availability, level: 3, source: {topic: /octomap_binary, timeout_seconds: 3.0}}
-  - {name: occupancy_grid_mapping, display_name: "占据栅格图生成状态", type: availability, level: 3, source: {topic: /map_2d, timeout_seconds: 3.0}}
-  - {name: mapping_mode, display_name: "当前建图模式", type: text_status, level: 3, source: {topic: /mapping_mode, message_type: std_msgs/String, timeout_seconds: 3.0, mapping: {value: data}}}
+  - {name: fastlio2, display_name: "FAST-LIO2 定位状态", type: availability, level: 3, source: {topic: /Odometry, timeout_seconds: 3.0}}
+  - {name: pgm_mapping, display_name: "PGM 地图状态", type: availability, level: 3, source: {kind: pgm_file, topic: /ccs/relocalization/pgm_file, state_file: /home/nvidia/.ros/ccs_edge_dev/state/relocalization.json, map_root: /home/nvidia/livox_fastlio/maps/ccs_download}}

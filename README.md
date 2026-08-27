@@ -1,8 +1,8 @@
 # 多异构智能体指挥与控制系统
 
-当前指控平台版本：**v0.18.3**
+当前指控平台版本：**v0.21.1**
 
-端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.3.1**、epgeneral_udp_telemetry **v0.2.2**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.9.1**、epgeneral_task_control **v0.1.0**
+端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.4.0**、epgeneral_udp_telemetry **v0.3.0**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.10.0**、epgeneral_task_control **v0.3.1**、epgeneral_relocalization **v0.2.2**
 
 ## 功能介绍
 
@@ -12,9 +12,10 @@
 
 - **系统总览**：统计在线/离线设备、地图和任务执行记录，并集中展示 NTP、MQTT、UDP、建图、任务、FFmpeg/SRT 及本地仓储状态。
 - **设备管理**：支持搜索、筛选、新建、编辑、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
-- **实时监测**：通过 MQTT 更新连接、电量、任务和健康状态，通过 UDP 14560 接收 20/5/1 Hz 分级位姿、IMU、点云及传感器状态。
+- **实时监测**：设备页显示活动地图重定位位姿、本地 odom 位姿和 IMU；FAST_LIO2 以 Odometry 新鲜度判断，PGM 以端侧活动地图文件为准。
 - **视频监控**：通过系统 FFmpeg 按需连接端侧 UDP 9000 SRT Listener，显示 H.264/MPEG-TS 视频流。
 - **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原；新增 `ccs-map-stream-v2` 单机遥控建图，包括准备协商、实时预览、端侧成果生成、HTTP 断点下载及 PCD+PGM+YAML 原子提交。
+- **设备重定位**：完整地图可下发至 Scout，启动重定位栈后以地图中心十字星选择初始位姿；成功的 `map <- odom` 绑定持久化并用于各地图视图的在线设备标记。Go2 当前显示为不支持。
 - **任务系统**：支持按地图实际米制边界进行 PCD/PGM 选点、多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态，支持全屏及面板折叠。
 - **端侧配套**：`edge_side_pkg` 提供共享身份、MQTT 遥测、UDP 遥测、SRT 推流、实时建图和任务协调包。
@@ -36,9 +37,10 @@ CCS_dev/
 │   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
 │   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.1
 │   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
-│   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.2.2
+│   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.3.0
 │   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.9.1
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
+│   ├── EPGeneral_relocalization/           # ROS 地图下发与重定位协调包，v0.2.2
 │   ├── epgeneral_mqtav.zip                  # 端侧部署归档
 │   └── README.md
 ├── docs/DEVELOPMENT_NOTES.md
@@ -77,6 +79,9 @@ CCS_dev/
 | TCP 动态 | 指控平台 → 端侧 | v2 建图 ZIP 成果 HTTP 下载（端侧返回带短期令牌的 URL） |
 | UDP 14563 | 地面站 → 端侧 | 任务下发与控制 |
 | UDP 14564 | 端侧 → 地面站 | 任务 ACK、状态和进度 |
+| UDP 14565 | 地面站 → 端侧 | 重定位协商、地图描述、启动与初始位姿 |
+| UDP 14566 | 端侧 → 地面站 | 重定位状态、心跳和结果 |
+| TCP 14601 | 端侧 → 地面站 | 带令牌和 Range 的重定位地图 ZIP 下载 |
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
@@ -259,16 +264,21 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 
 ### 任务页面
 
-- 新建任务时单选地图、多选设备。
+- 新建任务默认使用指控大屏当前激活地图；地图选择框标注激活状态，所有状态设备均可选择且在线设备优先显示。
 - 为每台设备在点云或 free 栅格中选点，并在表格中修改 XYZ、增删或调整顺序。
-- 设置默认高度、巡航速度、启动延迟和冲突阈值；每个有效子任务需要 2–500 个航点。
+- 左侧设备以卡片显示端侧状态、revision 和任务点数量，创建、读取、删除子任务按钮位于对应卡片内部；未选择设备时右侧点列表收起。
+- 选点入口位于右侧点列表中间的“开始选点”按钮，地图工具栏只负责图层和浏览；设置默认高度、巡航速度、启动延迟和冲突阈值，每个有效子任务需要 2–500 个航点。
 - 子任务可单独保存、下发和执行；共同执行会先下发最新修订，再按统一 UTC 时间启动。
 - 冲突应通过修改轨迹或时间消解；强制执行必须填写原因并写入审计日志。
+
+地图页和任务页只读展示全局激活地图状态。激活地图持久化在 `data/map_server/active_map.json`，只有指控大屏的地图选择器可以修改它；任务绑定地图可以与全局激活地图不同。点云高度光标保留 `z <=` 当前阈值的点，滑块向下调整时隐藏更高点云。
 
 ### 指控大屏
 
 - 左侧显示 MQTT 在线设备，中间显示 PCD/PGM/叠加地图，右侧显示状态和位置/姿态趋势。
 - 下方控制台选择地图与任务，可共同开始或终止任务。
+
+Scout 执行任务前必须同时具备当前进程产生的 `localized` 状态、实时 `/fastlio_odom` 和 `map<-odom` TF。端侧进程重启后会使历史 `localized` 状态失效，必须重新完成重定位；定位不可用、地图不匹配和导航启动超时会通过任务状态返回明确错误码。
 - 设备栏和控制台可收起；进入全屏后按 Esc 恢复。
 
 ## QA

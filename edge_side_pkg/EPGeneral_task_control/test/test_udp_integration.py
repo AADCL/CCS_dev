@@ -14,7 +14,7 @@ from test_node import FakeCommand, FakeRospy, pack
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TASK_CONFIG = os.path.join(PACKAGE, "config", "task_control.yaml")
-DEVICE_CONFIG = os.path.join(os.path.dirname(PACKAGE), "epgeneral_device_config", "config", "device.yaml")
+DEVICE_CONFIG = os.path.join(PACKAGE, "test", "fixtures", "device.yaml")
 
 
 def free_port():
@@ -44,7 +44,7 @@ class UdpIntegrationTests(unittest.TestCase):
             raw, address = ground.recvfrom(4096)
             message = msgpack.unpackb(raw, raw=False)
             self.assertEqual(address[0], "127.0.0.1")
-            self.assertEqual(message["protocol_id"], "ccs-task-control-v1")
+            self.assertEqual(message["protocol_id"], "ccs-task-control-v2")
             self.assertEqual(message["message_type"], "command_ack")
             self.assertTrue(message["payload"]["accepted"])
             node.close()
