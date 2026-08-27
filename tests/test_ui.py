@@ -256,12 +256,13 @@ class UiTests(unittest.TestCase):
         self.app.processEvents()
         self.assertNotIn("地图位置", detail.fields)
         self.assertEqual(detail.fields["UDP 链路状态"].text(), "在线")
-        self.assertEqual(detail.global_pose_values["X"].text(), "1.000 m")
-        self.assertEqual(len(detail.status_cards), 6)
+        self.assertEqual(detail.global_pose_values["X"].text(), "--")
+        self.assertEqual(detail.vision_pose_values["X"].text(), "1.000 m")
+        self.assertEqual(len(detail.status_cards), 4)
         self.assertIn("9.8 Hz", detail.status_cards["livox_driver"].meta.text())
         self.assertEqual(detail.status_cards["fastlio2"].value.text(), "运行正常")
-        self.assertEqual(detail.status_cards["pgm_mapping"].value.text(), "不可用")
-        self.assertEqual(detail.status_cards["mapping_mode"].value.text(), "增量建图")
+        self.assertEqual(detail.status_cards["pgm_mapping"].value.text(), "等待数据")
+        self.assertEqual(detail.status_cards["mapping_mode"].value.text(), "模式未知")
         replacement = DeviceTelemetrySnapshot(device_id="ugv-042", udp_link_status=UdpLinkStatus.WARNING)
         page._on_telemetry_updated("ugv-042", replacement)
         self.assertIs(detail.pending_telemetry, replacement)
@@ -279,8 +280,8 @@ class UiTests(unittest.TestCase):
                 imu=ImuTelemetry(index, 2, 3, 0.1, 0.2, 0.3, 9.1, 9.2, 9.3),
             ))
         detail._render_telemetry()
-        self.assertEqual(detail.global_pose_values["X"].text(), "19.000 m")
-        self.assertEqual(detail.vision_pose_values["X"].text(), "119.000 m")
+        self.assertEqual(detail.global_pose_values["X"].text(), "--")
+        self.assertEqual(detail.vision_pose_values["X"].text(), "19.000 m")
         self.assertEqual(detail.imu_values["Roll"].text(), "19.000°")
 
     def test_status_card_editor_selection_and_device_binding(self):

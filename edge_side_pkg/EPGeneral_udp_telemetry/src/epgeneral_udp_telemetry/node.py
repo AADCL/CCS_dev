@@ -1,4 +1,8 @@
 import socket
+import json
+import os
+import re
+import stat
 import threading
 import time
 import uuid
@@ -45,6 +49,10 @@ class RosUdpTelemetryNode(object):
 
         for descriptor in self.config["descriptors"]:
             source = descriptor["source"]
+            if source.get("kind") == "pgm_file":
+                self.rospy.loginfo("UDP telemetry file source name=%s state=%s root=%s",
+                                   descriptor["name"], source["state_file"], source["map_root"])
+                continue
             if descriptor["type"] in {"availability", "pointcloud_status"}:
                 message_class = self.rospy.AnyMsg
             else:
@@ -151,13 +159,40 @@ class RosUdpTelemetryNode(object):
                 continue
             sampler = self.samplers[descriptor["name"]]
             try:
-                payload[descriptor["name"]] = sampler.snapshot(now)
+                if descriptor["source"].get("kind") == "pgm_file":
+                    payload[descriptor["name"]] = self._pgm_file_snapshot(descriptor)
+                else:
+                    payload[descriptor["name"]] = sampler.snapshot(now)
             except Exception as exc:
                 sampler.reject("snapshot failed: %s" % exc, received=False)
                 payload[descriptor["name"]] = {"valid": False, "sample_age_seconds": None}
                 self._record_sample_result(descriptor, False, exc)
         self._send("telemetry", self.sequences[level], level, payload)
         self.sequences[level] += 1
+
+    @staticmethod
+    def _pgm_file_snapshot(descriptor):
+        source = descriptor["source"]
+        state_path = os.path.abspath(os.path.expanduser(source["state_file"]))
+        root = os.path.abspath(os.path.expanduser(source["map_root"]))
+        try:
+            with open(state_path, "r") as stream:
+                state_value = json.load(stream)
+            map_id = state_value.get("map_id")
+            if not isinstance(map_id, str) or not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", map_id):
+                raise ValueError("active map id is invalid")
+            map_dir = os.path.abspath(os.path.join(root, map_id))
+            if os.path.commonpath([root, map_dir]) != root or os.path.islink(map_dir):
+                raise ValueError("active map path is unsafe")
+            pgm_path = os.path.join(map_dir, "map.pgm")
+            file_stat = os.lstat(pgm_path)
+            available = stat.S_ISREG(file_stat.st_mode) and not stat.S_ISLNK(file_stat.st_mode)
+            return {"valid": True, "status": "available" if available else "unavailable",
+                    "sample_age_seconds": 0.0, "map_id": map_id}
+        except (IOError, OSError, ValueError, TypeError):
+            map_id = locals().get("map_id")
+            return {"valid": True, "status": "unavailable", "sample_age_seconds": 0.0,
+                    "map_id": map_id if isinstance(map_id, str) else None}
 
     def _send(self, message_type, sequence, level, payload):
         with self.send_lock:
@@ -228,7 +263,7 @@ class RosUdpTelemetryNode(object):
             age = stats["last_sample_age_seconds"]
             source = descriptor["source"]
             source_status.values = [
-                KeyValue(key="topic", value=source["topic"]),
+                KeyValue(key="topic", value=source.get("topic", source.get("state_file", "file"))),
                 KeyValue(key="message_type", value=source.get("message_type", "AnyMsg")),
                 KeyValue(key="level", value=str(descriptor["level"])),
                 KeyValue(key="received_count", value=str(stats["received_count"])),

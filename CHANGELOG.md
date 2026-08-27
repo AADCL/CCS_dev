@@ -2,6 +2,59 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## v0.21.1 - 2026-08-26
+
+- 修复任务二级页面重复显示两个“执行任务”按钮的问题，中间按钮改为“开始选点/结束选点”。
+- Scout 执行前增加实时 `/fastlio_odom`、`map<-odom` TF 和导航地图文件校验。
+- 端侧返回 `LOCALIZATION_UNAVAILABLE`、`MAP_FRAME_MISMATCH` 和 `NAVIGATION_STARTUP_TIMEOUT` 等明确错误码，平台日志保留设备错误详情。
+- 重定位进程重启时自动清除历史 `localized` 状态，平台升级至 v0.21.1，任务控制至 v0.3.1，重定位至 v0.2.2。
+
+## v0.21.0 - 2026-08-26
+
+- 增加 Scout Mini 真实任务执行适配器：启动 `navigation_teb.launch`，通过 `/fastlio_odom` 与 `map<-odom` TF 获取位姿，并按顺序向 `/move_base/goal` 发送航点。
+- 任务执行前校验任务地图、全局激活地图和端侧 localized 地图一致；常规终止和急停均取消导航目标并发布 `/cmd_vel` 零速度。
+- `epgeneral_task_control` 升级至 v0.3.0；协议仍为 `ccs-task-control-v2` / schema 2。
+
+## v0.20.1 - 2026-08-26
+
+- 修正点云高度光标为保留光标以下点云，并同步实时点云筛选。
+- 增加全局激活地图持久化，指控大屏地图选择作为唯一修改入口。
+- 任务二级页面改为设备卡片操作，右侧点列表默认收起，选点按钮移动至右侧栏。
+
+## v0.20.0 - 2026-08-26
+
+- 指控平台和端侧任务控制升级至 `ccs-task-control-v2`，补充任务协商、读取、删除、终止和急停闭环。
+- 端侧任务状态统一为 `no_task`、`task_exists`、`receiving`、`received`、`ready`、`running`、`completed`、`failed`、`emergency_stop`。
+- 任务页面增加主任务控制和点云高度显示上限。
+
+## v0.19.2 - 2026-08-25
+
+- 修复重定位初始位姿选择器的方向十字标线被 VisPy 画布遮挡或尺寸不同步的问题；标线现在由地图视口的透明叠层布局管理。
+- 初始位置仍必须位于当前地图范围内，yaw 方向采样改为投影到无边界地图平面，避免方向采样越出地图边缘时误报“无法从当前视图解算初始位姿”。
+- 端侧协议和功能包未改动，继续配套 `epgeneral_relocalization` v0.2.1，无需重新部署 Scout 或 Go2。
+
+## v0.19.1 / 端侧 relocalization v0.2.1 - 2026-08-25
+
+- 重定位顶视选择器只在首次进入时复位相机；左键稳定调整 yaw，右键平移不再依赖 VisPy 残留手势状态，所有地图查看器改为以鼠标位置缩放。
+- 地图二级页建图与重定位日志自动滚动至最新记录；在线设备卡的视频关闭后可折叠，启流时自动展开。
+- Scout 重复重定位立即删除地面站绑定和端侧持久 TF，取消旧监测并反序重启栈；新 TF 先落端侧 schema 2 状态，再覆盖地面站绑定。
+- Go2 同步 schema 2、旧 TF 清理和会话代际逻辑，但继续返回 `UNSUPPORTED_BACKEND`，不启动空后端。
+
+## v0.19.0 / 端侧 udp_telemetry v0.3.0、relocalization v0.2.0 - 2026-08-25
+
+- 设备详情统一显示活动地图重定位位姿、本地 odom 位姿和 IMU；Scout 使用 `/scout/odom`，FAST_LIO2 独立监测 `/Odometry`。
+- 设备配置升级为 schema 6 并持久化 `active_map_id`；PGM 状态严格关联端侧活动地图目录中的普通 `map.pgm`。
+- 删除八叉树和占据栅格状态卡，建图模式复用地图状态；UDP v1 增加精确 descriptor hash 允许列表以兼容滚动升级。
+- Scout 固定 30 V 满电并记录 90 天分钟电压中位数；完整放电标定前百分比保持未知，Go2 继续使用原生 SOC。
+
+- 修复地图下载、重定位栈启动和初始位姿处理期间，地面站收到合法进行中状态后仍累计重试次数，最终错误显示“端侧未响应指令”的问题；进度回包现在会刷新请求确认与重试预算。
+- 地图在线设备卡新增地图下发、重定位状态、启动栈和初始位姿提交；固定中心十字星通过地图平移和旋转解算二维位置与 yaw。
+- 新增 `ccs-relocalization-v1`：UDP 14565/14566 承载会话控制和状态，地面站 TCP 14601 提供带令牌、Range 和 SHA-256 的 PCD+PGM+YAML 地图 ZIP。
+- 设备配置升级为 schema 5，按地图保存 `map <- odom` 完整变换；地图页、任务页和指控大屏可复用绑定显示在线设备。
+- 新增 `epgeneral_relocalization` v0.1.0，Scout 按顺序管理 FAST-LIO、坐标适配、PCD 全局重定位和 map_server，并以稳定 TF 作为成功判据。
+- Go2 profile 和地图目录约定已预留，但因缺少 Go2 全局重定位算法包保持禁用并返回 `UNSUPPORTED_BACKEND`。
+- 自动化覆盖协议、配置迁移、地图包安全安装和 TF 稳定数学；2026-08-25 已在 Scout 完成部署、构建、常驻节点和 UDP 协商冒烟验证，真实地图传输、六阶段重定位栈、初始位姿与稳定 TF 仍需现场验收。
+
 ## 端侧 epgeneral_map_stream v0.9.1 - 2026-08-24
 
 - 建图启动链新增 `go2_map_accumulator/map_accumulator.launch`，并等待 `/go2_map_accumulator` 节点就绪后才允许进入 mapping。

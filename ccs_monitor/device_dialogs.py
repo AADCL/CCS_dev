@@ -196,6 +196,11 @@ class NewDeviceDialog(QDialog):
             last_tested_at=self._last_tested_at,
             srt_port=self.srt_port_input.value(),
             srt_latency_ms=self.srt_latency_input.value(),
+            relocalization_profile=(
+                "scout_mini" if str(self.type_input.currentData()).upper() == "UGV"
+                else "go2_edu" if str(self.type_input.currentData()).upper() == "QRD"
+                else "disabled"
+            ),
         )
 
 
@@ -239,6 +244,9 @@ class EditDeviceDialog(NewDeviceDialog):
             profile.ip_address, profile.availability, profile.last_tested_at,
             self.original_profile.status_card_ids, profile.srt_port,
             profile.srt_latency_ms,
+            self.original_profile.relocalization_profile,
+            self.original_profile.map_bindings,
+            self.original_profile.active_map_id,
         )
 
 

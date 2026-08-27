@@ -35,11 +35,15 @@ class DevicesPage(QWidget):
     def __init__(
         self, source: DeviceDataSource, telemetry_store=None, map_repository=None,
         task_repository=None, mapping_service=None, task_execution_service=None,
+        relocalization_service=None,
     ) -> None:
         super().__init__()
         self.source = source
         self.telemetry_store = telemetry_store
         self.telemetry_cache: dict[str, object] = {}
+        self.map_repository = map_repository
+        self.mapping_service = mapping_service
+        self.relocalization_service = relocalization_service
         self.migration_coordinator = (
             DeviceReferenceMigrationCoordinator(
                 source, map_repository, task_repository, mapping_service,
@@ -85,7 +89,9 @@ class DevicesPage(QWidget):
         layout.setSpacing(16)
         self.page_stack.addWidget(self.list_page)
 
-        self.detail_page = DeviceDetailPage()
+        self.detail_page = DeviceDetailPage(
+            self.source, self.map_repository, self.mapping_service, self.relocalization_service
+        )
         self.detail_page.back_requested.connect(self.show_list)
         self.detail_page.status_cards_changed.connect(self._update_status_cards)
         self.detail_page.clear_logs_requested.connect(self.source.clear_device_logs)

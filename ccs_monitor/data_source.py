@@ -52,6 +52,8 @@ class DeviceDataSource(Protocol):
     def append_external_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None: ...
     def clear_device_logs(self, device_id: str) -> None: ...
     def update_device_status_cards(self, device_id: str, status_card_ids: tuple[str, ...] | None) -> None: ...
+    def upsert_device_map_binding(self, device_id: str, binding) -> None: ...
+    def remove_device_map_binding(self, device_id: str, map_id: str) -> None: ...
     def device_type_templates(self) -> list[DeviceTypeTemplate]: ...
     def device_type_template(self, type_id: str) -> DeviceTypeTemplate | None: ...
     def create_device_type_template(self, template: DeviceTypeTemplate, icon_source=None) -> DeviceTypeTemplate: ...
@@ -193,6 +195,18 @@ class SimulatedDeviceSource(QObject):
             if device.device_id.casefold() == device_id.casefold() else device
             for device in self._devices
         ]
+        self.devices_updated.emit(self.snapshots())
+
+    def upsert_device_map_binding(self, device_id: str, binding) -> None:
+        self._profiles = self.repository.upsert_map_binding(device_id, binding)
+        self.devices_updated.emit(self.snapshots())
+
+    def remove_device_map_binding(self, device_id: str, map_id: str) -> None:
+        self._profiles = self.repository.remove_map_binding(device_id, map_id)
+        self.devices_updated.emit(self.snapshots())
+
+    def set_device_active_map(self, device_id: str, map_id: str | None) -> None:
+        self._profiles = self.repository.set_active_map(device_id, map_id)
         self.devices_updated.emit(self.snapshots())
 
     def device_type_templates(self) -> list[DeviceTypeTemplate]:

@@ -1,5 +1,34 @@
 # 开发笔记
 
+## v0.19.2 初始位姿选择器修复
+
+- `RelocalizationReticle` 与地图内容通过 `QStackedLayout.StackAll` 共享视口几何，透明且不接收鼠标事件；不要再将覆盖控件作为 `QStackedWidget` 的非托管子控件。
+- 初始位姿的中心点使用 `_screen_to_map()` 执行地图范围校验，屏幕上方向点使用 `_screen_to_plane()` 仅求平面投影。两点必须有限且方向向量非零，方向点无需落在地图边界内。
+- 此修复仅修改地面站显示与解算，不改变 `ccs-relocalization-v1`、端侧活动地图 schema 或端侧包版本。
+
+## v0.19.1 地图交互与重复重定位
+
+- `set_relocalization_picker()` 是边沿触发操作；持续状态刷新只更新可见性，不能重置相机 azimuth、center 或 distance。顶视模式左键只改变 yaw，右键使用独立手势起点平移。
+- 共享地图查看器在滚轮缩放前后反投影鼠标位置，并用世界坐标差补偿 camera center。地图外或无法与 `z=0` 平面求交时只调整 distance。
+- 重复重定位在地面站和端侧立即废弃旧绑定。端侧状态文件 schema 2 只允许 localized 状态携带 `map_from_odom`；TF 监测代际用于拒绝旧线程迟到结果。
+- Scout 成功 TF 先原子写端侧再回包；同地图协商可用持久 TF修复地面站绑定。Go2 使用相同状态清理代码，但后端保持禁用。
+
+## v0.19.0 遥测状态与电池修复
+
+- schema 6 的 `active_map_id` 是设备详情唯一地图上下文；运行会话状态优先，重启后由同地图绑定恢复成功状态。
+- UDP v1 线格式不变，地面站配置 schema 2 按精确 hash 选择显式允许的旧/新 Scout、Go2 描述符集合。
+- Scout 本地/Map 位姿来自 `/scout/odom`，FAST_LIO2 来自 `/Odometry`，`/livox/imu` 是 Livox IMU。Go2 使用 prefixed odometry 和底盘 IMU。
+- 重定位节点原子写活动地图状态；UDP `pgm_file` 来源限制在 profile 地图根目录并拒绝路径逃逸和符号链接。
+- Scout 电池曲线默认为空，分钟中位数保留 90 天；完整放电标定前不得从单点电压伪造 SOC。
+
+## v0.19.0 / epgeneral_relocalization v0.1.0
+
+- 地面站 `RelocalizationService` 独占 UDP 14566 和 TCP 14601，按 map/device/session 管理协商、地图下发、启动栈、初始位姿与结果；所有端侧回包校验登记 IP、会话和单调 sequence。
+- 完整重定位地图包固定为 `manifest.json`、`public_map.pcd`、`map.pgm`、`map.yaml`。端侧续传到临时文件，拒绝重定向、路径穿越、符号链接、额外条目和哈希不一致，再原子替换 `<map_root>/<map_id>`。
+- 设备配置 schema 5 保存 `relocalization_profile` 和每地图 `map_from_odom`；地图页、任务页及指控大屏使用 profile 指定的 UDP pose source 组合实时位姿。
+- Scout 初始位姿使用固定中心反投影计算 X/Y/yaw，端侧发布 `/initialpose` 后要求 10 个 10 Hz TF 样本满足 0.10 m / 2° 稳定窗口。
+- Go2 只有禁用 profile 和 `~/go2_mid360_nav/maps/ccs_download` 目录约定；没有全局重定位算法包前始终返回 `UNSUPPORTED_BACKEND`。
+
 ## epgeneral_map_stream v0.9.1
 
 - `mapping_prerequisites.launch` 在坐标转换链后启动 `go2_map_accumulator/map_accumulator.launch`，`start_fast_lio.sh` 等待 `/go2_map_accumulator` 后才宣布建图栈就绪。
@@ -565,3 +594,24 @@
 - 设备以 `DeviceCard` 卡片展示，使用 Qt 样式表表达连接状态、低电量和选中状态。
 - 搜索、设备类型和连接状态可以组合过滤。
 - 卡片网格根据视口宽度在 1–3 列之间切换，但标题统计和工具栏仍包含固定尺寸，尚未形成完整响应式页面。
+## v0.20.1 任务界面修正
+
+- `MapRepository` 使用 `data/map_server/active_map.json` 保存全局激活地图；指控大屏地图选择写入该状态，地图页和任务页只读同步展示。
+- 任务绑定地图与全局激活地图可以不同，任务不会因全局地图切换自动改写。
+- 任务设备操作收拢到设备卡片内部，右侧点列表在未选中设备时保持收起；选点按钮位于右侧点列表。
+- 点云高度光标保留 `z <= threshold` 的点，滑块向下调整时隐藏更高点云。
+
+v0.20.1 任务页交互约束：设备列表使用约 280px 起步宽度的卡片，子任务创建、读取、删除按钮绑定在各自卡片内；进入任务页不自动选择设备，右侧点列表保持收起，选择设备或点击卡片操作后才展开。地图工具栏不提供选点入口，选点按钮位于右侧点列表底部，并显示“开始选点/结束选点”；保存下发按钮显示“保存下发”，设备执行按钮显示“执行任务”。
+
+## v0.21.1 Scout 任务执行修正
+
+- 任务页中间操作按钮承载“开始选点/结束选点”，右侧保留“执行任务”。
+- Scout 任务适配器在启动导航前必须收到实时 `/fastlio_odom`，并能查询 `map<-odom` TF；只存在持久化 `localized` 文件不能作为执行依据。
+- `epgeneral_relocalization` 重启时将旧 `localized` 状态降级为 `standby`，重新定位成功后才可执行任务。平台保留端侧失败消息和错误码。
+
+## v0.21.0 Scout 任务执行
+
+- Scout 任务控制包为 v0.3.0；协议和 UDP 端口不变。适配器收到执行命令后按任务地图启动 `scout_navigation/navigation_teb.launch`，使用 `/fastlio_odom` 与 `map<-odom` TF 计算 map 位姿。
+- 任务地图必须同时匹配平台全局激活地图和端侧 `relocalization.json` 的 localized 地图；不一致时拒绝运动。
+- 目标通过 `/move_base/goal` 顺序执行；航点成功由 move_base action result 判定，状态和航点进度继续从 14564 回传。终止/急停取消目标、发布 `/cmd_vel` 零速度并停止导航进程。
+- Scout 一键启动常驻任务控制节点，但导航栈按任务启停。v0.21.0 只做静态安全验收，不宣称真实车辆运动已验收。

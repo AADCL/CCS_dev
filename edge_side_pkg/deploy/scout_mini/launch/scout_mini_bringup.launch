@@ -21,4 +21,12 @@
     <arg name="mapping_config_file" value="$(arg profile_dir)/map_stream.yaml" />
     <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
   </include>
+  <include file="$(find epgeneral_relocalization)/launch/epgeneral_relocalization.launch">
+    <arg name="config_file" value="$(arg profile_dir)/relocalization.yaml" />
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
+  </include>
+  <include file="$(find epgeneral_task_control)/launch/scout_task_control.launch">
+    <arg name="task_config_file" value="$(arg profile_dir)/task_control.yaml" />
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
+  </include>
 </launch>

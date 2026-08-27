@@ -39,9 +39,10 @@ class EncodedSubtask:
 
 class TaskProtocol:
     MESSAGE_TYPES = {
-        "task_prepare", "task_chunk", "task_commit", "execute_task",
-        "cancel_execution", "stop_task", "command_ack", "task_heartbeat",
-        "task_status", "waypoint_progress",
+        "negotiate_task", "read_task", "task_prepare", "task_chunk", "task_commit",
+        "execute_task", "terminate_task", "emergency_stop", "delete_task",
+        "command_ack", "task_summary", "task_transfer_prepare", "task_transfer_chunk",
+        "task_transfer_commit", "task_heartbeat", "task_status", "waypoint_progress",
     }
 
     def __init__(self, config: TaskSystemConfig) -> None:
@@ -50,7 +51,7 @@ class TaskProtocol:
     def encode(self, envelope: TaskEnvelope) -> bytes:
         self._validate(envelope)
         data = msgpack.packb({
-            "schema_version": 1, "protocol_id": self.config.protocol_id,
+            "schema_version": self.config.schema_version, "protocol_id": self.config.protocol_id,
             "task_id": envelope.task_id, "subtask_id": envelope.subtask_id,
             "device_id": envelope.device_id, "execution_id": envelope.execution_id,
             "message_type": envelope.message_type, "request_id": envelope.request_id,
@@ -68,7 +69,7 @@ class TaskProtocol:
             raw = msgpack.unpackb(datagram, raw=False, strict_map_key=True)
         except Exception as exc:
             raise TaskProtocolError(f"MessagePack 解码失败：{exc}") from exc
-        if not isinstance(raw, dict) or raw.get("schema_version") != 1:
+        if not isinstance(raw, dict) or raw.get("schema_version") != self.config.schema_version:
             raise TaskProtocolError("任务信封 schema 无效")
         if raw.get("protocol_id") != self.config.protocol_id:
             raise TaskProtocolError("任务协议 ID 不匹配")
@@ -86,11 +87,12 @@ class TaskProtocol:
 
     def encode_subtask(self, task: TaskDefinition, subtask: DeviceSubtask) -> EncodedSubtask:
         payload = {
-            "schema_version": 1, "task_id": task.task_id, "task_name": task.name,
+            "schema_version": 2, "task_id": task.task_id, "task_name": task.name,
             "map_id": task.map_id, "frame_id": task.frame_id,
             "subtask_id": subtask.subtask_id, "device_id": subtask.device_id,
             "revision": subtask.revision, "cruise_speed_mps": subtask.cruise_speed_mps,
             "start_delay_seconds": subtask.start_delay_seconds,
+            "default_altitude_m": subtask.default_altitude_m,
             "waypoints": [
                 {"index": index, "waypoint_id": point.waypoint_id, "x": point.x, "y": point.y, "z": point.z}
                 for index, point in enumerate(subtask.waypoints)
@@ -118,7 +120,7 @@ class TaskProtocol:
             payload = json.loads(raw.decode("utf-8"))
         except (zlib.error, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise TaskProtocolError(f"子任务解压失败：{exc}") from exc
-        if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        if not isinstance(payload, dict) or payload.get("schema_version") not in {1, 2}:
             raise TaskProtocolError("子任务内容 schema 无效")
         return payload
 
@@ -152,4 +154,3 @@ class TaskProtocol:
         elif isinstance(value, (list, tuple)):
             for item in value:
                 cls._validate_finite(item)
-

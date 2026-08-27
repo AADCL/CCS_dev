@@ -1,6 +1,23 @@
 # Go2 EDU 端侧监控套件部署指南
 
+## 2026-08-25 v0.19.1 重定位兼容框架部署记录
+
+- `epgeneral_relocalization 0.2.1` 的 12 项端侧测试、Python 编译和 catkin 增量构建通过；部署前备份位于 `~/.deployment_backups/20260825_214703_v0191_relocalization`。
+- 一键栈已重启，Go2 bridge、UDP 遥测、重定位协调器和 UDP 14565 在线；odometry、IMU 和原生 battery 话题可用。
+- 使用活动地图 `334b2a09-1d0f-4665-b30f-49a495aaf4b7` 完成真实 UDP 协商，返回 `negotiation_status/UNSUPPORTED_BACKEND`；继续发送 `start_stack(replace_existing=true)` 返回 `command_error/UNSUPPORTED_BACKEND`，未启动空后端。
+- `~/.ros/ccs_edge_dev/state/relocalization.json` 已写为 schema 2 `unsupported`，不含 `map_from_odom`。Go2 只部署一致性框架，不宣称支持真实重定位。
+
+## 2026-08-25 v0.19.0 遥测增量部署记录
+
+- `epgeneral_udp_telemetry 0.3.0`、`epgeneral_relocalization 0.2.0` 的 23 项端侧测试和完整 catkin 构建通过；包/config 备份位于 `~/.deployment_backups/20260825_194924_v019_telemetry`，脚本备份位于 `20260825_195249_v019_scripts`。
+- 一键栈已启动，Go2 bridge、UDP 遥测和禁用型重定位协调器常驻；UDP 14565 正常监听，`/qrd/QRD_001/odometry`、`imu`、`battery` 类型及 UDP link=true 已验证。
+- Go2 重定位仍返回 `UNSUPPORTED_BACKEND`；本记录只证明兼容框架和遥测状态可用，不代表具备全局重定位算法。
+
 本 profile 面向 Ubuntu 20.04、ROS Noetic、Go2 EDU 和 Unitree SDK2。遥控建图需安装 `epgeneral_map_stream` v0.9.1、FAST_LIO、map accumulator、`tf2_ros` 和 PGM 生成包。建图启动链会先拉起 accumulator，停止建图再保存和验证 PCD；指控平台配套 v0.18.3。
+
+v0.19.0 一键脚本同时启动 `epgeneral_relocalization`，但 Go2 profile 明确设置 `enabled: false`，协商只返回 `UNSUPPORTED_BACKEND`。地图根目录预留为 `~/go2_mid360_nav/maps/ccs_download`；在提供并验证 Go2 全局 PCD 重定位算法 launch 前，不得将该 profile 改为启用或宣称 Go2 已支持重定位。
+
+设备详情本地位姿和 FAST_LIO2 新鲜度均使用 `/qrd/QRD_001/odometry`，IMU 使用底盘桥接 `/qrd/QRD_001/imu`，电量优先使用 `/qrd/QRD_001/battery` 原生 percentage。协商仍会写活动地图状态，PGM 卡片检查 `~/go2_mid360_nav/maps/ccs_download/<map_id>/map.pgm`，但这不代表 Go2 已支持重定位。
 
 v0.8.0 已于 2026-08-24 部署到 `192.168.50.100`：按 ROS、Go2 MID360、edge workspace 顺序重建成功，53 项端侧测试通过（2 项地面站契约环境跳过）。短时启动 MID360、FAST_LIO 和四个坐标转换节点后，已按 `/lio/cloud_registered` 实际时间戳验证 `odom <- lio_odom` 可查询；abort 后未生成成果，PID、Livox 和建图节点均清理。
 

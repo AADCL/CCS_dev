@@ -30,7 +30,7 @@ from .task_models import (
 )
 
 
-TASK_SCHEMA_VERSION = 1
+TASK_SCHEMA_VERSION = 2
 DEFAULT_TASK_ROOT = Path(__file__).resolve().parent.parent / "data" / "task_server"
 
 
@@ -174,12 +174,7 @@ class TaskRepository(QObject):
             raise TaskRepositoryError("所选地图没有可用 PCD 或 PGM 图层")
         self._ensure_unique_name(display_name)
         created_at = (now or utc_now()).astimezone(timezone.utc)
-        base = f"{safe_name}_{created_at.strftime('%Y%m%d_%H%M%S')}"
-        directory = self.root / base
-        suffix = 2
-        while directory.exists():
-            directory = self.root / f"{base}_{suffix}"
-            suffix += 1
+        directory = self.root / str(uuid.uuid4().hex)
         directory.mkdir()
         subtasks = tuple(DeviceSubtask(
             uuid.uuid4().hex, item.device_id, item.device_name, item.device_type, item.ip_address
@@ -222,6 +217,7 @@ class TaskRepository(QObject):
             status=TaskDefinitionStatus.READY if ready else TaskDefinitionStatus.DRAFT,
         )
         self._write_task(updated)
+        self._write_subtask_static(updated, next(item for item in updated.subtasks if item.subtask_id == subtask.subtask_id))
         self.append_audit(task_id, "subtask_saved", reason, device_id=subtask.device_id, payload={
             "revision": next(item.revision for item in updated_subtasks if item.subtask_id == subtask.subtask_id),
             "waypoint_count": len(subtask.waypoints),
@@ -229,10 +225,24 @@ class TaskRepository(QObject):
         self._refresh()
         return self.task_by_id(task_id) or updated
 
+    def _write_subtask_static(self, task: TaskDefinition, subtask: DeviceSubtask) -> Path:
+        stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
+        safe_device = sanitize_task_name(subtask.device_id)
+        path = self.root / task.directory_name / (f"{stamp}_{safe_device}.json")
+        self._atomic_json(path, {
+            "schema_version": 2, "task_id": task.task_id, "subtask_id": subtask.subtask_id,
+            "device_id": subtask.device_id, "map_id": task.map_id, "frame_id": task.frame_id,
+            "revision": subtask.revision, "default_altitude_m": subtask.default_altitude_m,
+            "cruise_speed_mps": subtask.cruise_speed_mps,
+            "start_delay_seconds": subtask.start_delay_seconds,
+            "waypoints": [point.__dict__ for point in subtask.waypoints],
+        })
+        return path
+
     def mark_delivered(self, task_id: str, device_id: str, revision: int) -> TaskDefinition:
         task = self._require_task(task_id)
         subtasks = tuple(
-            replace(item, delivered_revision=revision)
+            replace(item, delivered_revision=revision, edge_revision=revision)
             if item.device_id.casefold() == device_id.casefold() and item.revision == revision else item
             for item in task.subtasks
         )
@@ -243,6 +253,16 @@ class TaskRepository(QObject):
         self.append_audit(task_id, "subtask_delivered", "子任务下发成功", device_id=device_id, payload={
             "revision": revision
         })
+        self._refresh()
+        return self.task_by_id(task_id) or updated
+
+    def update_edge_status(self, task_id: str, subtask: DeviceSubtask) -> TaskDefinition:
+        task = self._require_task(task_id)
+        items = tuple(subtask if item.subtask_id == subtask.subtask_id else item for item in task.subtasks)
+        if items == task.subtasks:
+            raise TaskRepositoryError("子任务不存在")
+        updated = replace(task, subtasks=items, updated_at=utc_now())
+        self._write_task(updated)
         self._refresh()
         return self.task_by_id(task_id) or updated
 
@@ -401,7 +421,7 @@ class TaskRepository(QObject):
     def _read_task(self, path: Path, directory_name: str) -> TaskDefinition:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("schema_version") != TASK_SCHEMA_VERSION:
+            if payload.get("schema_version") not in {1, TASK_SCHEMA_VERSION}:
                 raise ValueError("schema_version 不受支持")
             safety = TaskSafetySettings(**{key: float(value) for key, value in payload["safety"].items()})
             self._validate_safety(safety)
@@ -411,7 +431,7 @@ class TaskRepository(QObject):
                 str(payload["map_name"]), str(payload["frame_id"]), str(payload["map_fingerprint"]),
                 datetime.fromisoformat(str(payload["created_at"])),
                 datetime.fromisoformat(str(payload["updated_at"])), subtasks, safety,
-                TaskDefinitionStatus(str(payload["status"])), directory_name,
+            TaskDefinitionStatus(str(payload["status"])), directory_name,
             )
             if not task.task_id or not task.name or not task.map_id or not task.subtasks:
                 raise ValueError("任务 ID、名称、地图和设备不能为空")
@@ -441,11 +461,21 @@ class TaskRepository(QObject):
             "cruise_speed_mps": item.cruise_speed_mps,
             "start_delay_seconds": item.start_delay_seconds, "revision": item.revision,
             "delivered_revision": item.delivered_revision,
+            "edge_status": item.edge_status.value,
+            "edge_revision": item.edge_revision,
+            "edge_message": item.edge_message,
+            "edge_updated_at": item.edge_updated_at.isoformat() if item.edge_updated_at else None,
             "waypoints": [waypoint.__dict__ for waypoint in item.waypoints],
         }
 
     @staticmethod
     def _parse_subtask(payload: dict[str, Any]) -> DeviceSubtask:
+        from .task_models import EdgeTaskStatus
+        updated_at = payload.get("edge_updated_at")
+        try:
+            edge_status = EdgeTaskStatus(str(payload.get("edge_status", EdgeTaskStatus.NO_TASK.value)))
+        except ValueError:
+            edge_status = EdgeTaskStatus.NO_TASK
         return DeviceSubtask(
             str(payload["subtask_id"]), str(payload["device_id"]), str(payload["device_name"]),
             str(payload["device_type"]), str(payload["ip_address"]), str(payload.get("layer_mode", "pointcloud")),
@@ -453,6 +483,9 @@ class TaskRepository(QObject):
             float(payload.get("default_altitude_m", 1.0)), float(payload.get("cruise_speed_mps", 1.0)),
             float(payload.get("start_delay_seconds", 0.0)), int(payload.get("revision", 0)),
             int(payload["delivered_revision"]) if payload.get("delivered_revision") is not None else None,
+            edge_status, int(payload["edge_revision"]) if payload.get("edge_revision") is not None else None,
+            str(payload.get("edge_message", "")),
+            datetime.fromisoformat(updated_at) if updated_at else None,
         )
 
     @staticmethod

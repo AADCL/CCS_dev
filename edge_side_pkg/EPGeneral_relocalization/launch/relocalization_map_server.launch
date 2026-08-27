@@ -1,0 +1,7 @@
+<launch>
+  <arg name="map_yaml" />
+  <node pkg="map_server" type="map_server" name="scout_map_server"
+        args="$(arg map_yaml)" output="screen">
+    <remap from="map" to="/map_2d" />
+  </node>
+</launch>

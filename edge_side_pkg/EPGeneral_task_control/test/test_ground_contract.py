@@ -15,7 +15,7 @@ from epgeneral_task_control.storage import TrajectoryStore, decode_trajectory
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TASK_CONFIG = os.path.join(PACKAGE, "config", "task_control.yaml")
-DEVICE_CONFIG = os.path.join(os.path.dirname(PACKAGE), "epgeneral_device_config", "config", "device.yaml")
+DEVICE_CONFIG = os.path.join(PACKAGE, "test", "fixtures", "device.yaml")
 
 
 class GroundContractTests(unittest.TestCase):

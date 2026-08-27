@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from PySide6.QtCore import QObject, QProcess, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import (
-    QCheckBox, QFrame, QHBoxLayout, QLabel, QSizePolicy, QStackedWidget,
+    QCheckBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QStackedWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -430,6 +430,8 @@ class SrtVideoWidget(QFrame):
         self._device_key: tuple | None = None
         self._last_event_state: str | None = None
         self._stream_started = False
+        self._collapsible = False
+        self._collapsed = False
         self._build()
         self.receiver.frame_ready.connect(self._show_frame)
         self.receiver.state_changed.connect(self._on_state)
@@ -454,7 +456,17 @@ class SrtVideoWidget(QFrame):
         self.stream_switch.setEnabled(False)
         self.stream_switch.toggled.connect(self._toggle_stream)
         header.addWidget(self.stream_switch)
+        self.collapse_button = QPushButton("⌃")
+        self.collapse_button.setObjectName("videoCollapseButton")
+        self.collapse_button.setToolTip("收起视频")
+        self.collapse_button.setVisible(False)
+        self.collapse_button.clicked.connect(self.toggle_collapsed)
+        header.addWidget(self.collapse_button)
         layout.addLayout(header)
+        self.video_body = QWidget()
+        body_layout = QVBoxLayout(self.video_body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(10)
         self.video_stack = QStackedWidget()
         self.placeholder = QWidget()
         placeholder_layout = QVBoxLayout(self.placeholder)
@@ -469,12 +481,31 @@ class SrtVideoWidget(QFrame):
         self.video_output.setObjectName("videoOutput")
         self.video_stack.addWidget(self.placeholder)
         self.video_stack.addWidget(self.video_output)
-        layout.addWidget(self.video_stack, 1)
+        body_layout.addWidget(self.video_stack, 1)
         self.url_label = QLabel("SRT 地址将在选择设备后生成")
         self.url_label.setObjectName("videoUrl")
         self.url_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.url_label.setWordWrap(True)
-        layout.addWidget(self.url_label)
+        body_layout.addWidget(self.url_label)
+        layout.addWidget(self.video_body, 1)
+
+    def set_collapsible(self, enabled: bool) -> None:
+        self._collapsible = bool(enabled)
+        self.collapse_button.setVisible(self._collapsible)
+        if not self._collapsible:
+            self.set_collapsed(False)
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        collapsed = bool(collapsed) and self._collapsible and not self.stream_switch.isChecked()
+        self._collapsed = collapsed
+        self.video_body.setVisible(not collapsed)
+        self.collapse_button.setText("⌄" if collapsed else "⌃")
+        self.collapse_button.setToolTip("展开视频" if collapsed else "收起视频")
+        self.setMinimumHeight(0 if collapsed else 250)
+        self.setMaximumHeight(self.sizeHint().height() if collapsed else 16777215)
+
+    def toggle_collapsed(self) -> None:
+        self.set_collapsed(not self._collapsed)
 
     def set_device(self, device: DeviceSnapshot | None) -> None:
         key = None if device is None else (
@@ -505,6 +536,7 @@ class SrtVideoWidget(QFrame):
     def start_stream(self) -> None:
         if self._endpoint is None:
             return
+        self.set_collapsed(False)
         self._set_switch(True)
         self._stream_started = True
         self._show_status("正在检查 FFmpeg 与连接 SRT 视频流...")
@@ -516,6 +548,8 @@ class SrtVideoWidget(QFrame):
         self._show_status("视频流已关闭")
 
     def _toggle_stream(self, enabled: bool) -> None:
+        if enabled:
+            self.set_collapsed(False)
         self.start_stream() if enabled else self.stop_stream()
 
     def _show_frame(self, image: QImage) -> None:
@@ -561,3 +595,4 @@ class SrtVideoWidget(QFrame):
         self.stream_switch.blockSignals(True)
         self.stream_switch.setChecked(checked)
         self.stream_switch.blockSignals(False)
+        self.collapse_button.setEnabled(not checked)

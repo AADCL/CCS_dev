@@ -59,6 +59,7 @@ def sanitize_map_name(name: str) -> str:
 
 class MapRepository(QObject):
     maps_updated = Signal(object)
+    active_map_changed = Signal(object)
 
     def __init__(
         self,
@@ -78,7 +79,10 @@ class MapRepository(QObject):
         self.root.mkdir(parents=True, exist_ok=True)
         self.trash_root.mkdir(parents=True, exist_ok=True)
         self.fusion_root.mkdir(parents=True, exist_ok=True)
+        self.active_map_file = self.root / "active_map.json"
+        self._active_map_id: str | None = None
         self.load_all()
+        self._load_active_map()
 
     def load_all(self) -> list[MapDefinition]:
         maps: list[MapDefinition] = []
@@ -99,6 +103,37 @@ class MapRepository(QObject):
 
     def map_by_id(self, map_id: str) -> MapDefinition | None:
         return next((item for item in self._maps if item.map_id == map_id), None)
+
+    def active_map_id(self) -> str | None:
+        return self._active_map_id
+
+    def active_map(self) -> MapDefinition | None:
+        return self.map_by_id(self._active_map_id) if self._active_map_id else None
+
+    def set_active_map(self, map_id: str) -> MapDefinition:
+        definition = self.map_by_id(map_id)
+        if definition is None or definition.status != MapStatus.READY or not (definition.pcd_path or definition.pgm):
+            raise MapRepositoryError("只能激活包含有效 PCD 或 PGM 图层的就绪地图")
+        self._active_map_id = definition.map_id
+        self._atomic_json(self.active_map_file, {"map_id": definition.map_id})
+        self.active_map_changed.emit(definition)
+        return definition
+
+    def _load_active_map(self) -> None:
+        active_id = None
+        try:
+            payload = json.loads(self.active_map_file.read_text(encoding="utf-8"))
+            active_id = payload.get("map_id") if isinstance(payload, dict) else None
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+        candidate = self.map_by_id(str(active_id)) if active_id else None
+        if candidate is None or candidate.status != MapStatus.READY or not (candidate.pcd_path or candidate.pgm):
+            candidate = next((item for item in self._maps if item.status == MapStatus.READY and (item.pcd_path or item.pgm)), None)
+        self._active_map_id = candidate.map_id if candidate else None
+        if self._active_map_id:
+            self._atomic_json(self.active_map_file, {"map_id": self._active_map_id})
+        else:
+            self.active_map_file.unlink(missing_ok=True)
 
     def update_device_reference(
         self, original_device_id: str, profile: DeviceProfile
@@ -514,7 +549,11 @@ class MapRepository(QObject):
             shutil.move(str(source), str(target))
         except OSError as exc:
             raise MapRepositoryError(f"地图移入回收目录失败：{exc}") from exc
+        if self._active_map_id == map_id:
+            self._active_map_id = None
         self._refresh_and_emit()
+        self._load_active_map()
+        self.active_map_changed.emit(self.active_map())
         return target
 
     def export_zip(self, map_id: str, destination: str | Path) -> Path:
@@ -1018,6 +1057,11 @@ class MapRepository(QObject):
 
     def _refresh_and_emit(self) -> None:
         self.load_all()
+        if self._active_map_id:
+            active = self.map_by_id(self._active_map_id)
+            if active is None or active.status != MapStatus.READY or not (active.pcd_path or active.pgm):
+                self._active_map_id = None
+                self._load_active_map()
         self.maps_updated.emit(self.maps())
 
     def _read_metadata(self, path: Path, directory_name: str) -> MapDefinition:

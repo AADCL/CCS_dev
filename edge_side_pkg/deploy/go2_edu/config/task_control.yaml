@@ -1,7 +1,7 @@
-schema_version: 1
-protocol_id: "ccs-task-control-v1"
+schema_version: 2
+protocol_id: "ccs-task-control-v2"
 network: {bind_host: "0.0.0.0", control_port: 14563, ground_station_ip: "192.168.151.100", status_port: 14564, max_datagram_bytes: 1400}
-storage: {directory: "~/.ros/epgeneral_task_control/go2_tasks"}
+storage: {directory: "~/ccs_edge_ws/mission"}
 ros:
   command_topic: "/epgeneral_task_control/execution_command"
   feedback_topic: "/epgeneral_task_control/execution_feedback"

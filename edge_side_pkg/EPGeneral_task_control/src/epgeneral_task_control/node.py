@@ -6,9 +6,11 @@ import time
 from .config import ConfigError, load_config
 from .protocol import ProtocolError, decode, encode, signature
 from .storage import StorageError, TrajectoryStore, decode_trajectory
+from .mission_store import MissionStore
 
 
-ACK_COMMANDS = {"task_prepare", "task_commit", "execute_task", "cancel_execution", "stop_task"}
+ACK_COMMANDS = {"negotiate_task", "read_task", "task_prepare", "task_commit", "execute_task",
+                "terminate_task", "emergency_stop", "delete_task"}
 
 
 class Transfer(object):
@@ -57,6 +59,7 @@ class RosTaskControlNode(object):
         self.clock = clock
         self.wall_clock = wall_clock
         self.store = store or TrajectoryStore(config["storage_directory"])
+        self.mission_store = MissionStore(config["storage_directory"])
         self.lock = threading.RLock()
         self.running = threading.Event()
         self.socket = None
@@ -70,7 +73,7 @@ class RosTaskControlNode(object):
         self.pending_execute = None
         self.ack_cache = {}
         self.sequence = 0
-        self.state = "standby"
+        self.state = "no_task"
 
     def _set_state(self, state):
         self.state = str(state)
@@ -151,9 +154,63 @@ class RosTaskControlNode(object):
         with self.lock:
             if command["message_type"] != "task_chunk" and self._repeat(command):
                 return
-            handlers = {"task_prepare": self._prepare, "task_chunk": self._chunk, "task_commit": self._commit,
-                        "execute_task": self._execute, "cancel_execution": self._cancel, "stop_task": self._stop}
+            handlers = {"negotiate_task": self._negotiate, "read_task": self._read_task,
+                        "task_prepare": self._prepare, "task_chunk": self._chunk, "task_commit": self._commit,
+                        "execute_task": self._execute, "terminate_task": self._terminate,
+                        "emergency_stop": self._emergency_stop, "delete_task": self._delete_task}
             handlers[command["message_type"]](command)
+
+    def _negotiate(self, command):
+        status = self.mission_store.status(command["task_id"], command["device_id"])
+        self._ack(command, True, cache=True)
+        self._send(command, "task_summary", status)
+
+    def _read_task(self, command):
+        record = self.mission_store.load(command["task_id"], command["device_id"])
+        self._ack(command, bool(record), "task not found" if record is None else "", "UNKNOWN_TASK" if record is None else None)
+        if record is not None:
+            self._send(command, "task_transfer_prepare", {"revision": record.get("revision", 0), "payload": record})
+
+    def _delete_task(self, command):
+        if self.execution is not None:
+            self._ack(command, False, "cannot delete an active execution", "BUSY")
+            return
+        self.mission_store.delete(command["task_id"], command["device_id"])
+        self.store.delete(command["task_id"], command["subtask_id"])
+        self._set_state("no_task")
+        self._ack(command, True)
+
+    def _terminate(self, command):
+        execution = self.execution
+        if execution is None or not self._matches_execution(command, execution):
+            self._ack(command, False, "execution does not match", "EXECUTION_CONFLICT")
+            return
+        if execution.state in ("scheduling", "scheduled"):
+            self._cancel(command)
+        elif execution.state == "running":
+            self._stop(command)
+        else:
+            self._ack(command, False, "execution is not active", "EXECUTION_CONFLICT")
+
+    def _emergency_stop(self, command):
+        if self.execution is not None:
+            self._publish_command("STOP", self.execution.persisted(), command["request_id"])
+            self.execution = None
+            self.store.clear_execution()
+            self.pending_execute = None
+        self._set_state("emergency_stop")
+        self._send(command, "task_status", {
+            "state": "emergency_stop", "message": "emergency stop accepted",
+            "error_code": None,
+        })
+        self._ack(command, True)
+        self.mission_store.delete(command["task_id"], command["device_id"])
+        self.store.delete(command["task_id"], command["subtask_id"])
+        self._set_state("no_task")
+        self._send(command, "task_status", {
+            "state": "no_task", "message": "emergency cleanup completed",
+            "error_code": None,
+        })
 
     def _repeat(self, command):
         cached = self.ack_cache.get(command["request_id"])
@@ -261,6 +318,7 @@ class RosTaskControlNode(object):
         try:
             trajectory = decode_trajectory(compressed, crc32, self.config, identity, transfer.raw_bytes)
             metadata = self.store.commit(trajectory, crc32)
+            self.mission_store.save(trajectory, "ready")
         except (StorageError, OSError) as exc:
             self._set_state("error")
             error_text = str(exc)
@@ -272,7 +330,7 @@ class RosTaskControlNode(object):
                 error_code = "INVALID_WAYPOINT"
             self._ack(command, False, error_text, error_code)
             self.transfer = None
-            self._set_state("ready" if existing else "standby")
+            self._set_state("ready" if existing else "no_task")
             return
         self.transfer = None
         self._set_state("ready")
@@ -420,7 +478,7 @@ class RosTaskControlNode(object):
             self.rospy.logwarn("trajectory transfer timed out and was discarded")
             existing = self.store.load(transfer.identity["task_id"], transfer.identity["subtask_id"])
             self.transfer = None
-            self._set_state("ready" if existing is not None else "standby")
+            self._set_state("ready" if existing is not None else "no_task")
         execution = self.execution
         if execution is None:
             return

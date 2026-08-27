@@ -113,6 +113,31 @@ class MiddlePanCameraTests(unittest.TestCase):
         self.assertTrue(event.handled)
         self.assertTrue(camera.changed)
 
+    def test_planar_left_drag_changes_only_azimuth(self):
+        class CameraBase:
+            def viewbox_mouse_event(self, event):
+                self.base_event_called = True
+
+        class Camera(MiddlePanTurntableCameraMixin, CameraBase):
+            interactive = True
+            planar_rotation = True
+            azimuth = 10.0
+            elevation = 90.0
+
+            def view_changed(self):
+                self.changed = True
+
+        press = SimpleNamespace(pos=np.asarray((10.0, 20.0)))
+        camera = Camera()
+        event = SimpleNamespace(
+            handled=False, type="mouse_move", press_event=press, buttons=(1,),
+            mouse_event=SimpleNamespace(pos=np.asarray((30.0, 80.0))),
+        )
+        camera.viewbox_mouse_event(event)
+        self.assertEqual(camera.azimuth, 20.0)
+        self.assertEqual(camera.elevation, 90)
+        self.assertTrue(event.handled)
+
 
 @unittest.skipUnless(PYSIDE_AVAILABLE, "PySide6 is not installed")
 class CommandDashboardUiTests(unittest.TestCase):

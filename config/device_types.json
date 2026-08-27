@@ -5,13 +5,11 @@
       "type_id": "UGV",
       "display_name": "无人地面车",
       "icon_path": "data/device_type_assets/ugv_4c1f34e72b.svg",
-      "map_marker_shape": "cube",
+      "map_marker_shape": "arrow",
       "default_status_cards": [
         "livox_driver",
         "fastlio2",
         "pgm_mapping",
-        "octomap_mapping",
-        "occupancy_grid_mapping",
         "mapping_mode"
       ]
     },
@@ -24,8 +22,6 @@
         "livox_driver",
         "fastlio2",
         "pgm_mapping",
-        "octomap_mapping",
-        "occupancy_grid_mapping",
         "mapping_mode"
       ]
     },
@@ -38,8 +34,6 @@
         "livox_driver",
         "fastlio2",
         "pgm_mapping",
-        "octomap_mapping",
-        "occupancy_grid_mapping",
         "mapping_mode"
       ]
     },
@@ -52,7 +46,18 @@
         "livox_driver",
         "fastlio2",
         "pgm_mapping",
-        "occupancy_grid_mapping",
+        "mapping_mode"
+      ]
+    },
+    {
+      "type_id": "FGV",
+      "display_name": "翻转臂履带车",
+      "icon_path": "data/device_type_assets/fgv_3e67321715.svg",
+      "map_marker_shape": "cube",
+      "default_status_cards": [
+        "livox_driver",
+        "fastlio2",
+        "pgm_mapping",
         "mapping_mode"
       ]
     }

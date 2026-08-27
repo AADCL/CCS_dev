@@ -1,6 +1,6 @@
 # epgeneral_udp_telemetry
 
-版本：v0.2.2。该 ROS Melodic/Noetic 包将 MAVROS 或普通 ROS 话题转换为 CCS v0.18.2 可识别的 MessagePack UDP 遥测。它不发送原始点云，也不是 QGroundControl 可直接解析的原生 MAVLink 数据流。
+版本：v0.3.0。该 ROS Melodic/Noetic 包将 ROS 话题和受限地图文件状态转换为 CCS MessagePack UDP 遥测。
 
 ## 依赖与安装
 
@@ -29,7 +29,7 @@ source devel/setup.bash
 python3 -c "import epgeneral_udp_telemetry; print(epgeneral_udp_telemetry.__version__)"
 ```
 
-预期版本为 `0.2.2`。如果导入仍失败，检查当前终端的 `echo $ROS_PACKAGE_PATH` 和 `python3 -c 'import sys; print(sys.path)'` 是否包含该工作空间的 devel 路径。源码入口也提供同包 `src` 回退，但标准部署仍应完成 build 和 source。
+预期版本为 `0.3.0`。如果导入仍失败，检查当前终端的 `echo $ROS_PACKAGE_PATH` 和 `python3 -c 'import sys; print(sys.path)'` 是否包含该工作空间的 devel 路径。源码入口也提供同包 `src` 回退，但标准部署仍应完成 build 和 source。
 
 ## 配置
 
@@ -40,6 +40,7 @@ python3 -c "import epgeneral_udp_telemetry; print(epgeneral_udp_telemetry.__vers
 - Level 3：1 Hz，`availability` 按话题新鲜度判断可用性，`text_status` 读取并复用最近文本值。
 - Pose 的 `source.mapping.position/orientation` 和 IMU 的三个 mapping 使用点分属性路径，可适配 PoseStamped、Odometry 或其他同结构消息。
 - `name/display_name/type/level` 必须与地面站 `config/udp_telemetry.json` 完全一致，否则描述哈希校验会拒绝数据。
+- `source.kind: pgm_file` 读取活动地图状态文件，只检查配置地图根目录下非符号链接的 `map.pgm`，不订阅 ROS 话题。
 
 默认全局位姿为 `/mavros/local_position/pose` 的本地 ENU 米制坐标；姿态输出为 roll/pitch/yaw 角度。默认三级话题包括 Livox、FAST-LIO2、PGM、OctoMap、OccupancyGrid 和 `/mapping_mode`，均应按实际部署修改。
 

@@ -1,8 +1,28 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.18.3`，更新日期：2026-08-24。
+文档版本：`v0.21.1`，更新日期：2026-08-26。
 
-指控平台 v0.18.3 配套 `epgeneral_udp_telemetry` v0.2.2，并与端侧 `epgeneral_map_stream` v0.9.1 使用 `ccs-map-stream-v2` 单机遥控建图。MQTT schema 1.0、SRT、UDP 遥测信封、descriptor hash、v1 后端和任务协议保持兼容；v2 端侧不自动回退 v1。
+## v0.19.2 地面站初始位姿选择器修复
+
+- 本次只修复地面站十字标线叠层和初始位姿平面反投影，`ccs-relocalization-v1` 消息、端口、字段和状态转换均未变化。
+- Scout 使用 `epgeneral_relocalization` v0.2.2；重启后旧 `localized` 状态自动失效，必须重新建立实时定位。
+
+## v0.19.1 重复重定位一致性
+
+- `ccs-relocalization-v1` 的消息类型和 schema 不变；`start_stack.payload.replace_existing` 为可选布尔值，缺省 false。
+- 活动地图状态文件 schema 2 保存 `map_id/status`，仅 localized 状态增加 `map_frame/odom_frame/localized_at/map_from_odom`；schema 1 仍可读取。
+- Scout 替换流程先清除旧 TF、取消旧监测并停止旧进程，再重新计算。成功结果先在端侧原子提交，随后由地面站覆盖同地图绑定。
+- Go2 同步维护 schema 2 并清除历史 TF，但 `start_stack` 和 `initial_pose` 继续返回 `UNSUPPORTED_BACKEND`。
+
+## v0.19.0 设备详情遥测语义
+
+- Scout `vision_pose=/scout/odom`（frame `odom`），`fastlio2=/Odometry`（实测 frame `camera_init`），`imu=/livox/imu`；Map 位姿由持久化 `map <- odom` 在地面站组合。
+- Go2 `global_pose` 与 `fastlio2` 均来自 `/qrd/QRD_001/odometry`，IMU 来自 `/qrd/QRD_001/imu`。
+- `pgm_mapping` 携带 `map_id`，端侧检查 `<map_root>/<map_id>/map.pgm` 普通文件；地面站仅接受与设备 `active_map_id` 一致的状态。
+- UDP envelope 仍为 schema 1 / `ccs-udp-telemetry-v1`；地面站只额外接受配置中明确列出的 descriptor hash。
+- Scout 30 V 定义为满电，曲线未标定时百分比为 `null`；Go2 原生百分比不被估算覆盖。
+
+指控平台 v0.19.2 配套 `epgeneral_udp_telemetry` v0.3.0、`epgeneral_relocalization` v0.2.1 和 `epgeneral_map_stream` v0.10.0。MQTT schema 1.0、SRT 与 UDP 遥测 wire schema 保持兼容。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -11,13 +31,13 @@
 | 通道 | 方向 | 地址/端口 | 协议版本 | 当前端侧实现 |
 | --- | --- | --- | --- | --- |
 | MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | epgeneral_mqtav v0.3.1 |
-| UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.2.2 |
+| UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.3.0 |
 | SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.0 |
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.9.1 |
-| UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
-| UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v1` | epgeneral_task_control v0.1.0 |
+| UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v2` | epgeneral_task_control v0.3.1 |
+| UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v2` | epgeneral_task_control v0.3.1 |
 
 端侧身份由 `edge_side_pkg/EPGeneral_device_config/config/device.yaml` 提供，`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。MQTT、遥测、建图和任务协议中的 `device_id` 均使用该 ID。
 
@@ -403,7 +423,15 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 
 当前结论：v1 作为历史后端保留；v0.18.3 地面站与端侧 `epgeneral_map_stream` v0.9.1 保持 `ccs-map-stream-v2` 兼容，并增加 accumulator 随建图链启动、停止前主动保存与新鲜度校验。真机部署结果见对应版本部署记录。
 
-## UDP 地图任务控制接口（ccs-task-control-v1）
+## UDP 地图任务控制接口（ccs-task-control-v2）
+
+v0.21.1 继续使用 `ccs-task-control-v2`、MessagePack schema 2 和 UDP 14563/14564。v1 端侧不参与 v2 运行链路；平台仅迁移并读取旧任务数据。Scout v0.3.1 任务适配器除要求任务地图、平台全局激活地图和端侧 localized 地图一致外，还必须在启动导航前确认实时 `/fastlio_odom` 和 `map<-odom` TF 存在。执行失败时通过 `LOCALIZATION_UNAVAILABLE`、`MAP_FRAME_MISMATCH` 或 `NAVIGATION_STARTUP_TIMEOUT` 返回原因。
+
+Scout 执行时启动 `roslaunch scout_navigation navigation_teb.launch map_name:=<map_id>`，通过 `/fastlio_odom` 和 `map<-odom` TF 获取 map 坐标，将 `map` frame、Z=0 的目标经 actionlib 发送到 `/move_base/goal`。首点航向由当前位置指向首点，后续航向由前一点指向当前点。终止/急停先取消 move_base 目标，再向 `/cmd_vel` 连续发布零速度并停止导航进程；本版本不动态设置 TEB 巡航速度。
+
+v2 在保留 1400 字节数据报、800 字节分片、zlib、CRC32、request ID 幂等和来源 IP 校验的基础上，新增 `negotiate_task`、`read_task`、`terminate_task`、`emergency_stop`、`delete_task` 及反向任务读取分片消息。端侧任务状态为 `no_task`、`task_exists`、`receiving`、`received`、`ready`、`running`、`completed`、`failed`、`emergency_stop`。
+
+常规终止等待端侧 ACK/终态；急停必须先停止适配器并发布零速度，再删除端侧任务内容，依次上报 `emergency_stop` 和 `no_task`。
 
 ### 兼容性与网络
 
@@ -418,7 +446,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 ```python
 {
   "schema_version": 1,
-  "protocol_id": "ccs-task-control-v1",
+  "protocol_id": "ccs-task-control-v2",
   "task_id": "<稳定任务 ID>",
   "subtask_id": "<设备子任务 ID>",
   "device_id": "UAV_001",
@@ -491,7 +519,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 {"revision": 3, "scheduled_at": "2026-08-12T08:00:05+00:00"}
 ```
 
-端侧验证本地已提交同一修订，ACK 后进入 scheduled，在 UTC 时间到达时执行。`cancel_execution` 用于尚在 preparing/scheduled 的会话，`stop_task` 用于 running 会话，两者 payload 均为 `{"reason": "用户终止任务"}`。停止应幂等并尽快进入安全状态。
+端侧验证本地已提交同一修订，ACK 后进入 ready/running。`terminate_task` 用于常规终止，`emergency_stop` 用于强制停止并清除端侧任务，两者均须幂等；急停还必须发布零速度指令。
 
 ### 上行 ACK、心跳、状态和进度
 
@@ -544,8 +572,25 @@ UDP 14560 全局位姿仍是地面站地图实时标记来源；14564 进度是�
 - XML 根节点为 `trajectory`，保存 task/subtask/device/revision/CRC；metadata 保存任务名、map/frame、速度和延迟；waypoints 按连续 index 保存 ID 与 XYZ。
 - 当前仓库已包含协议与协调包并完成自动测试；设备专属运动控制适配节点和真实 ROS Melodic 联调不在该包范围内。
 
+## 设备重定位协议 v1
+
+`ccs-relocalization-v1` 使用 MessagePack schema 1。地面站向端侧 UDP 14565 发送 `negotiate`、`map_offer`、`start_stack`、`initial_pose`；端侧向地面站 UDP 14566 发送 `negotiation_status`、`download_status`、`stack_status`、`relocalization_result`、`session_heartbeat`、`command_error`。
+
+公共信封字段为 `map_id/device_id/session_id/request_id/message_type/sequence/sent_at_ns/payload`。双方必须限制 1400 字节，按 request ID 幂等，拒绝错误设备、来源 IP、会话、乱序状态和非有限数值。
+
+地图缺失时端侧返回 `map_required`。地面站 TCP 14601 的 `/relocalization/map.zip?token=...` 支持 HEAD、GET 和单段 Range，禁止重定向；ZIP 只允许 `manifest.json/public_map.pcd/map.pgm/map.yaml`。端侧校验声明大小、SHA-256、PCD/PGM/YAML 内容后原子安装至 profile 的 `ccs_download/<map_id>`。
+
+`initial_pose` payload 使用 map 系米和弧度：
+
+```json
+{"frame_id":"map","x":1.0,"y":2.0,"yaw":0.5,"covariance":{"x":0.25,"y":0.25,"yaw":0.0685389}}
+```
+
+成功结果返回 `map_frame`、`odom_frame` 及 `map_from_odom` 的 `x/y/z/qx/qy/qz/qw`。Scout 默认要求连续 10 个 10 Hz TF 样本的平移跨度不超过 0.10 m、yaw 跨度不超过 2°；30 秒未稳定返回失败。Go2 v0.19.0 profile 返回 `UNSUPPORTED_BACKEND`。
+
 ## 配置对应关系补充
 
 | 地面站 | 端侧 | 对应内容 |
 | --- | --- | --- |
-| `config/task_system.json` | `epgeneral_task_control/config/task_control.yaml` | `ccs-task-control-v1`、14563/14564、包长、分片、任务限制与 UTC 调度 |
+| `config/task_system.json` | `epgeneral_task_control/config/task_control.yaml` | `ccs-task-control-v2`、14563/14564、包长、分片、任务限制与 UTC 调度 |
+| `config/relocalization.json` | `epgeneral_relocalization/config/relocalization.yaml` | `ccs-relocalization-v1`、14565/14566、TCP 14601、profile、地图根目录与 TF 稳定阈值 |

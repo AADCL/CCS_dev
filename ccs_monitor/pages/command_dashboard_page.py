@@ -48,7 +48,7 @@ from ..point_cloud import PointCloudError
 from ..task_conflicts import TaskConflictDetector
 from ..task_models import TaskDefinitionStatus
 from ..styles import ThemeMode, ThemePalette, theme_palette
-from .map_page import PointCloudViewer
+from .map_page import PointCloudViewer, bound_map_pose
 
 
 @dataclass(frozen=True)
@@ -886,6 +886,7 @@ class CommandDashboardPage(QWidget):
     def _connect_sources(self) -> None:
         self.source.devices_updated.connect(self._update_devices)
         self.repository.maps_updated.connect(self._update_maps)
+        self.repository.active_map_changed.connect(self._active_map_changed)
         if self.telemetry_store is not None:
             self.telemetry_store.telemetry_updated.connect(self._telemetry_updated)
             self.telemetry_store.module_status_changed.connect(self._module_status_changed)
@@ -916,11 +917,6 @@ class CommandDashboardPage(QWidget):
         self._task_changed()
 
     def _task_changed(self) -> None:
-        task = self.task_repository.task_by_id(self.task_combo.currentData()) if self.task_repository and self.task_combo.currentData() else None
-        if task is not None:
-            index = self.map_combo.findData(task.map_id)
-            if index >= 0:
-                self.map_combo.setCurrentIndex(index)
         self._update_console_status()
 
     def _task_service_available(self, available: bool, message: str) -> None:
@@ -1010,7 +1006,7 @@ class CommandDashboardPage(QWidget):
         self._update_system_status()
 
     def _update_maps(self, maps: object) -> None:
-        current_id = self.selected_map_id
+        current_id = self.repository.active_map_id()
         available = [
             item for item in maps
             if item.status == MapStatus.READY and (item.pcd_path or item.pgm)
@@ -1019,13 +1015,17 @@ class CommandDashboardPage(QWidget):
         self.map_combo.clear()
         for definition in available:
             layers = "+".join(filter(None, ("PCD" if definition.pcd_path else "", "PGM" if definition.pgm else "")))
-            self.map_combo.addItem(f"{definition.name}  [{layers}]", definition.map_id)
+            active = "  · 当前激活" if definition.map_id == self.repository.active_map_id() else ""
+            self.map_combo.addItem(f"{definition.name}  [{layers}]{active}", definition.map_id)
         index = self.map_combo.findData(current_id)
         if index < 0 and self.map_combo.count():
             index = 0
         self.map_combo.setCurrentIndex(index)
         self.map_combo.blockSignals(False)
-        self.selected_map_id = self.map_combo.currentData()
+        self.selected_map_id = self.repository.active_map_id() or self.map_combo.currentData()
+        index = self.map_combo.findData(self.selected_map_id)
+        if index >= 0:
+            self.map_combo.setCurrentIndex(index)
         self._load_selected_map()
 
     def _select_device(self, device_id: str) -> None:
@@ -1047,7 +1047,25 @@ class CommandDashboardPage(QWidget):
             self.status_panel.set_telemetry(telemetry)
 
     def _map_changed(self) -> None:
-        self.selected_map_id = self.map_combo.currentData()
+        map_id = self.map_combo.currentData()
+        if not map_id:
+            return
+        try:
+            self.repository.set_active_map(map_id)
+        except MapRepositoryError as exc:
+            QMessageBox.warning(self, "激活地图失败", str(exc))
+            return
+        self.selected_map_id = map_id
+        self._load_selected_map()
+
+    def _active_map_changed(self, definition: object) -> None:
+        map_id = getattr(definition, "map_id", None)
+        self.selected_map_id = map_id
+        index = self.map_combo.findData(map_id)
+        if index >= 0 and self.map_combo.currentIndex() != index:
+            self.map_combo.blockSignals(True)
+            self.map_combo.setCurrentIndex(index)
+            self.map_combo.blockSignals(False)
         self._load_selected_map()
 
     def _layer_changed(self) -> None:
@@ -1087,8 +1105,9 @@ class CommandDashboardPage(QWidget):
             self.layer_combo.blockSignals(True)
             self.layer_combo.setCurrentIndex(target_index)
             self.layer_combo.blockSignals(False)
+        active_text = "当前激活地图" if definition.map_id == self.repository.active_map_id() else "非激活地图"
         self.map_state.setText(
-            f"{definition.name}  ·  {mode.upper()}" + ("  ·  部分图层失败" if errors else "")
+            f"{definition.name}  ·  {active_text}  ·  {mode.upper()}" + ("  ·  部分图层失败" if errors else "")
         )
         if errors and not (self.viewer.pointcloud_loaded or self.viewer.pgm_loaded):
             self.viewer.show_message("地图加载失败：" + "；".join(errors))
@@ -1116,8 +1135,10 @@ class CommandDashboardPage(QWidget):
         if self.telemetry_store is not None:
             for device in self.device_panel.devices:
                 snapshot = self.telemetry_store.telemetry(device.device_id)
-                if snapshot.global_pose:
-                    pose_item = snapshot.global_pose
+                pose_item = bound_map_pose(
+                    self.source, snapshot, device.device_id, self.selected_map_id or ""
+                ) or snapshot.global_pose
+                if pose_item is not None:
                     markers.append(DeviceMapMarker(
                         device.device_id, device.device_name,
                         pose_item.x, pose_item.y, pose_item.z, "online",

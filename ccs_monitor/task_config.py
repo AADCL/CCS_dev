@@ -14,6 +14,7 @@ class TaskSystemConfigError(ValueError):
 
 @dataclass(frozen=True)
 class TaskSystemConfig:
+    schema_version: int
     protocol_id: str
     bind_host: str
     status_port: int
@@ -32,13 +33,13 @@ class TaskSystemConfig:
 def load_task_system_config(path: str | Path = DEFAULT_TASK_CONFIG_PATH) -> TaskSystemConfig:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        if payload.get("schema_version") != 1:
-            raise ValueError("schema_version 必须为 1")
+        if payload.get("schema_version") != 2:
+            raise ValueError("schema_version 必须为 2")
         network = payload["network"]
         transport = payload["transport"]
         limits = payload["limits"]
         config = TaskSystemConfig(
-            str(payload["protocol_id"]), str(network["bind_host"]), int(network["status_port"]),
+            int(payload["schema_version"]), str(payload["protocol_id"]), str(network["bind_host"]), int(network["status_port"]),
             int(network["device_control_port"]), int(network["max_datagram_bytes"]),
             int(transport["chunk_payload_bytes"]), float(transport["retry_seconds"]),
             int(transport["max_attempts"]), float(transport["heartbeat_timeout_seconds"]),
@@ -60,4 +61,3 @@ def load_task_system_config(path: str | Path = DEFAULT_TASK_CONFIG_PATH) -> Task
     if config.max_attempts < 1 or config.max_waypoints_per_subtask < 2 or config.max_compressed_bytes < 1024:
         raise TaskSystemConfigError("重试或资源限制无效")
     return config
-

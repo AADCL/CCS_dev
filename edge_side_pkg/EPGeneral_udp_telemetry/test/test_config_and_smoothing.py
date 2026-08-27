@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(PACKAGE, "src"))
 
 from epgeneral_udp_telemetry.config import ConfigError, descriptor_hash, load_config
 from epgeneral_udp_telemetry.smoothing import TelemetrySampler, average_quaternions
+from epgeneral_udp_telemetry.node import RosUdpTelemetryNode
 
 
 class ConfigTests(unittest.TestCase):
@@ -33,6 +34,27 @@ class ConfigTests(unittest.TestCase):
                 load_config(os.path.join(PACKAGE, "config", "telemetry.yaml"), path)
         finally:
             os.unlink(path)
+
+    def test_pgm_file_source_rejects_symlink_and_reports_map_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = os.path.join(directory, "maps")
+            target = os.path.join(root, "map-1")
+            os.makedirs(target)
+            state = os.path.join(directory, "active.json")
+            with open(state, "w") as stream:
+                stream.write('{"map_id":"map-1"}')
+            descriptor = {"source": {"kind": "pgm_file", "state_file": state, "map_root": root}}
+            pgm = os.path.join(target, "map.pgm")
+            with open(pgm, "wb") as stream:
+                stream.write(b"P5\n1 1\n255\n\x00")
+            value = RosUdpTelemetryNode._pgm_file_snapshot(descriptor)
+            self.assertEqual((value["status"], value["map_id"]), ("available", "map-1"))
+            os.unlink(pgm)
+            try:
+                os.symlink(os.path.join(directory, "missing.pgm"), pgm)
+            except OSError:
+                self.skipTest("symlink creation is unavailable")
+            self.assertEqual(RosUdpTelemetryNode._pgm_file_snapshot(descriptor)["status"], "unavailable")
 
 
 class SmoothingTests(unittest.TestCase):

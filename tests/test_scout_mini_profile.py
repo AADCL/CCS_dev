@@ -42,13 +42,27 @@ class ScoutMiniProfileTests(unittest.TestCase):
         finally:
             sys.path.pop(0)
         ground = json.loads((ROOT / "config" / "udp_telemetry.json").read_text(encoding="utf-8"))
-        self.assertEqual(edge["descriptor_hash"], descriptor_hash(ground["descriptors"]))
+        accepted_hashes = {
+            descriptor_hash(items) for items in ground["accepted_descriptor_sets"]
+        }
+        self.assertIn(edge["descriptor_hash"], accepted_hashes)
+        self.assertEqual(edge["descriptors"][4]["source"]["topic"], "/Odometry")
 
     def test_start_script_sources_existing_workspaces_and_all_nodes(self):
         script = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
-        for setup in ("realsense_ws/devel/setup.bash", "livox_fastlio/devel/setup.bash", "${WORKSPACE}/devel/setup.bash"):
+        for setup in (
+            "realsense_ws/devel/setup.bash", "Scout_mini/devel/setup.bash",
+            "livox_fastlio/devel/setup.bash", "${WORKSPACE}/devel/setup.bash",
+        ):
             self.assertIn(setup, script)
-        for node in ("scout_livox_base.launch", "D435I.launch", "epgeneral_mqtav", "epgeneral_udp_telemetry", "epgeneral_video_srt", "epgeneral_map_stream"):
+        self.assertLess(script.index('source "${NAVIGATION_SETUP}"'), script.index('source "${LIVOX_SETUP}"'))
+        self.assertIn("ros_executable_exists scout_base scout_base_node", script)
+        self.assertIn("ros_executable_exists livox_ros_driver2 livox_ros_driver2_node", script)
+        for node in (
+            "scout_livox_base.launch", "D435I.launch", "epgeneral_mqtav",
+            "epgeneral_udp_telemetry", "epgeneral_video_srt", "epgeneral_map_stream",
+            "epgeneral_relocalization", "scout_task_control.launch",
+        ):
             self.assertIn(node, script)
         self.assertIn("ROS_IP_VALUE", script)
         for topic in ("/scout_status", "/BMS_status", "/livox/lidar", "/livox/imu", "/camera/color/image_raw"):

@@ -18,6 +18,19 @@ class LocalizationStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+class RelocalizationStatus(str, Enum):
+    UNSUPPORTED = "unsupported"
+    UNKNOWN_SPACE = "unknown_space"
+    MAP_TRANSFERRING = "map_transferring"
+    MAP_VERIFYING = "map_verifying"
+    MAP_READY = "map_ready"
+    STACK_STARTING = "stack_starting"
+    AWAITING_POSE = "awaiting_pose"
+    RELOCALIZING = "relocalizing"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class TaskStatus(str, Enum):
     EXECUTING = "executing"
     STANDBY = "standby"
@@ -90,8 +103,6 @@ DEVICE_STATUS_CARD_DEFINITIONS = (
     DeviceStatusCardDefinition("livox_driver", "Livox 驱动状态"),
     DeviceStatusCardDefinition("fastlio2", "FAST-LIO2 定位状态"),
     DeviceStatusCardDefinition("pgm_mapping", "PGM 地图生成状态"),
-    DeviceStatusCardDefinition("octomap_mapping", "八叉树地图生成状态"),
-    DeviceStatusCardDefinition("occupancy_grid_mapping", "占据栅格图生成状态"),
     DeviceStatusCardDefinition("mapping_mode", "当前建图模式", "text"),
 )
 DEVICE_STATUS_CARD_CATALOG = {item.card_id: item for item in DEVICE_STATUS_CARD_DEFINITIONS}
@@ -174,6 +185,30 @@ class DeviceProfile:
     status_card_ids: tuple[str, ...] | None = None
     srt_port: int = 9000
     srt_latency_ms: int = 120
+    relocalization_profile: str = "disabled"
+    map_bindings: tuple["DeviceMapBinding", ...] = ()
+    active_map_id: str | None = None
+
+
+@dataclass(frozen=True)
+class FrameTransform:
+    x: float
+    y: float
+    z: float
+    qx: float
+    qy: float
+    qz: float
+    qw: float
+
+
+@dataclass(frozen=True)
+class DeviceMapBinding:
+    map_id: str
+    map_frame: str
+    odom_frame: str
+    map_from_odom: FrameTransform
+    localized_at: datetime
+    pose_source: str = "global_pose"
 
 
 @dataclass(frozen=True)
@@ -222,6 +257,7 @@ class SensorStatusTelemetry:
     availability: TelemetryAvailability = TelemetryAvailability.UNKNOWN
     sample_age_seconds: float | None = None
     value: str | None = None
+    map_id: str | None = None
 
 
 @dataclass(frozen=True)

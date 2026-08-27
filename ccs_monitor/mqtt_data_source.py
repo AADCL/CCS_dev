@@ -31,6 +31,7 @@ from .mqtt_protocol import (
     MqttProtocolError,
     MqttStatusEvent,
 )
+from .battery_estimation import BatteryEstimator
 
 
 LOGGER = logging.getLogger(__name__)
@@ -56,11 +57,13 @@ class MqttDeviceSource(SimulatedDeviceSource):
         wall_clock: Callable[[], datetime] = utc_now,
         start_watchdog: bool = True,
         parent=None,
+        battery_estimator=None,
     ) -> None:
         self.monitor_config = config
         self._clock = clock
         self._wall_clock = wall_clock
         self._parser = MqttMessageParser(config.topic_root)
+        self.battery_estimator = battery_estimator or BatteryEstimator()
         super().__init__(repository=repository, parent=parent)
         self._logs = {
             device.device_id: deque(maxlen=config.log_capacity)
@@ -273,10 +276,21 @@ class MqttDeviceSource(SimulatedDeviceSource):
             else HealthStatus.NORMAL if event.fcu_connected else HealthStatus.ATTENTION
         )
         task_status = normalize_mission_status(event.mission_status)
+        profile = self.profile(device.device_id)
+        estimated = self.battery_estimator.observe(
+            device.device_id,
+            profile.relocalization_profile if profile else "disabled",
+            event.battery_voltage,
+            self._wall_clock(),
+            device.connection_status == ConnectionStatus.ONLINE,
+        )
+        battery_percent = event.battery_percentage
+        if profile is not None and profile.relocalization_profile == "scout_mini":
+            battery_percent = estimated
         self._replace_device(
             replace(
                 device,
-                battery_percent=event.battery_percentage,
+                battery_percent=battery_percent,
                 task_status=task_status,
                 health_status=health,
                 flight_mode=event.flight_mode,

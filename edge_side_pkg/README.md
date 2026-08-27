@@ -12,7 +12,7 @@
 
 命名规则：通用包目录使用 `EPGeneral_<function>`，ROS/catkin 包名使用全小写 `epgeneral_<function>`。设备专属扩展使用 `EPDQUAV_`、`EPUGV_`、`EPQRD_`、`EPDATUGV_` 或 `EPAGUAV_` 目录前缀，对应 ROS 前缀为 `epdquav_`、`epugv_`、`epqrd_`、`epdatugv_`、`epaguav_`。
 
-地面站当前为 v0.18.3；视频链路要求端侧使用 `epgeneral_video_srt` v0.1.0。`epgeneral_map_stream` v0.9.1 随建图链启动 map accumulator，并在停止进程前保存和校验 PCD。
+地面站当前为 v0.19.2；视频链路要求端侧使用 `epgeneral_video_srt` v0.1.0。`epgeneral_map_stream` v0.9.1 随建图链启动 map accumulator，并在停止进程前保存和校验 PCD。v0.19.2 仅修复地面站初始位姿选择器，端侧包无需更新。
 
 地面站修改设备 ID 后，必须同步修改端侧共享 `device.yaml` 并重启 MQTT、UDP、建图、任务和视频节点。v0.15.1 只修复地面站融合算法的可迁移路径；v0.15.0 的展示与本地引用调整以及现有端侧协议字段、功能包版本均保持不变。
 
@@ -28,9 +28,10 @@
 - `epgeneral_device_config` v0.1.0：保存端侧设备 ID/IP 的共享配置。地面站 `config/devices.json` 必须有同 ID 且 IP 相同的记录。
 - `epgeneral_mqtav` v0.4.0：订阅可配置 ROS 状态和电池字段，支持自定义状态新鲜度，并向地面站 MQTT Broker 发布带启动 session 的 presence、heartbeat、status。
 - `epgeneral_video_srt` v0.1.0：订阅配置的 ROS 原始或压缩图像话题，并通过 GStreamer 以 SRT Listener 输出 baseline H.264/MPEG-TS，默认 UDP 9000。
-- `epgeneral_udp_telemetry` v0.2.2：按配置订阅 MAVROS/ROS 位姿、IMU、点云、地图生成状态和建图模式，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测，并隔离非法高频样本、报告逐来源 diagnostics。
+- `epgeneral_udp_telemetry` v0.3.0：按 profile 订阅本地位姿、IMU、点云和 FAST_LIO2，并按活动地图安全检查 PGM 文件，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测。
 - `epgeneral_map_stream` v0.9.1：建图启动时拉起 map accumulator；停止时保存并校验当前 session PCD，再停止建图进程和生成 PGM/YAML/ZIP。
 - `epgeneral_task_control` v0.1.0：监听 UDP 14563 任务指令，原子保存 XML，通过 ROS 强类型接口协调执行，并向 UDP 14564 回传状态和进度。
+- `epgeneral_relocalization` v0.2.2：监听 UDP 14565，以 schema 2 持久化活动地图及有效 TF；进程重启时清除旧 localized 状态，安全下载地图 ZIP并协调 Scout 重定位栈。Go2 同步状态清理框架但后端保持禁用。
 
 ## v0.8.0 实时建图接口
 
@@ -60,7 +61,7 @@ catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
-修改 `epgeneral_device_config/config/device.yaml` 后，使用 `roslaunch epgeneral_mqtav epgeneral_mqtav.launch`、`roslaunch epgeneral_video_srt epgeneral_video_srt.launch`、`roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>`、`roslaunch epgeneral_map_stream epgeneral_map_stream.launch` 和 `roslaunch epgeneral_task_control epgeneral_task_control.launch` 启动对应功能。视频启动前执行 `gst-inspect-1.0 srtsink`，并放行 UDP 9000。
+修改 `epgeneral_device_config/config/device.yaml` 后，使用各包 launch 或对应设备的一键启动脚本。重定位还需放行 UDP 14565/14566 和地面站 TCP 14601；Scout 使用启用 profile，Go2 只启动禁用协调节点。
 
 每次新增或更新 Python ROS 包后，执行 `catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3` 并在启动 roslaunch 的同一终端执行 `source devel/setup.bash`。
 

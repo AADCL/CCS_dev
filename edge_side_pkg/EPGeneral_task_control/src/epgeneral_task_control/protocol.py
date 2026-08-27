@@ -4,8 +4,11 @@ import time
 import msgpack
 
 
-COMMAND_TYPES = {"task_prepare", "task_chunk", "task_commit", "execute_task", "cancel_execution", "stop_task"}
-MESSAGE_TYPES = COMMAND_TYPES | {"command_ack", "task_heartbeat", "task_status", "waypoint_progress"}
+COMMAND_TYPES = {"negotiate_task", "read_task", "task_prepare", "task_chunk", "task_commit",
+                 "execute_task", "terminate_task", "emergency_stop", "delete_task"}
+MESSAGE_TYPES = COMMAND_TYPES | {"command_ack", "task_summary", "task_transfer_prepare",
+                                 "task_transfer_chunk", "task_transfer_commit",
+                                 "task_heartbeat", "task_status", "waypoint_progress"}
 
 
 class ProtocolError(ValueError):
@@ -45,7 +48,7 @@ def decode(datagram, config):
             raw = msgpack.unpackb(datagram, raw=False)
     except Exception as exc:
         raise ProtocolError("MessagePack decode failed: %s" % exc)
-    if not isinstance(raw, dict) or raw.get("schema_version") != 1:
+    if not isinstance(raw, dict) or raw.get("schema_version") != 2:
         raise ProtocolError("schema_version is unsupported")
     if raw.get("protocol_id") != config["protocol_id"]:
         raise ProtocolError("protocol_id does not match")
@@ -67,7 +70,7 @@ def encode(config, identity, message_type, sequence, payload, request_id=None):
         raise ProtocolError("message_type is invalid")
     _finite(payload)
     raw = {
-        "schema_version": 1, "protocol_id": config["protocol_id"],
+        "schema_version": 2, "protocol_id": config["protocol_id"],
         "task_id": identity["task_id"], "subtask_id": identity["subtask_id"],
         "device_id": config["device_id"], "execution_id": identity.get("execution_id", ""),
         "message_type": message_type, "request_id": request_id or identity.get("request_id", "status"),

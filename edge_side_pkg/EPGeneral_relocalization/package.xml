@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>epgeneral_relocalization</name>
+  <version>0.2.2</version>
+  <description>CCS edge-side map transfer and relocalization coordinator.</description>
+  <maintainer email="ccs@example.invalid">CCS Team</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>geometry_msgs</depend>
+  <depend>map_server</depend>
+  <depend>rospy</depend>
+  <depend>tf2_ros</depend>
+  <exec_depend>python3-msgpack</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+</package>

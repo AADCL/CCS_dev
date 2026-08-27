@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         telemetry_store=None,
         map_repository: MapRepository | None = None,
         mapping_service=None,
+        relocalization_service=None,
         task_repository: TaskRepository | None = None,
         task_execution_service=None,
         system_status_store: SystemRuntimeStatusStore | None = None,
@@ -56,6 +57,7 @@ class MainWindow(QMainWindow):
         self.telemetry_store = telemetry_store
         self.map_repository = map_repository or MapRepository()
         self.mapping_service = mapping_service
+        self.relocalization_service = relocalization_service
         self.task_repository = task_repository or TaskRepository()
         self.task_execution_service = task_execution_service
         self.system_status_store = system_status_store
@@ -125,13 +127,14 @@ class MainWindow(QMainWindow):
         )
         self.devices_page = DevicesPage(
             self.source, self.telemetry_store, self.map_repository, self.task_repository,
-            self.mapping_service, self.task_execution_service,
+            self.mapping_service, self.task_execution_service, self.relocalization_service,
         )
         self.map_page = MapPage(
             self.source,
             self.overview,
             self.map_repository,
             mapping_service=self.mapping_service,
+            relocalization_service=self.relocalization_service,
             telemetry_store=self.telemetry_store,
         )
         self.task_page = TaskPage(

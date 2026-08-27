@@ -1,5 +1,11 @@
 # 更新记录
 
+## v0.3.0 - 2026-08-25
+
+- 新增 `pgm_file` 状态源，读取活动地图 ID 并安全检查普通 `map.pgm`，回包携带 `map_id`。
+- Scout 独立监测 `/Odometry` 作为 FAST_LIO2 状态，同时保留 `/scout/odom` 位姿；Go2 统一使用 prefixed odometry/IMU。
+- profile 删除 octomap、occupancy-grid 和 mapping-mode 上传；`ccs-udp-telemetry-v1` 线格式保持不变。
+
 ## v0.2.2 - 2026-08-22
 
 ### 新增

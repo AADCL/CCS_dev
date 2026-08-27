@@ -22,9 +22,9 @@ PID_DIR="${STATE_DIR}/run"
 START_LOG="${LOG_DIR}/startup.log"
 SHUTDOWN_STARTED=false
 
-LAUNCH_NAMES=(livox_driver go2_bridge mqtav udp_telemetry video_srt map_stream)
-NODE_NAMES=(/livox_lidar_publisher2 /epqrd_go2_bridge /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_video_srt /epgeneral_map_stream)
-EXPECTED_COMMANDS=(livox_ros_driver2 epqrd_go2_bridge epgeneral_mqtav epgeneral_udp_telemetry epgeneral_video_srt epgeneral_map_stream)
+LAUNCH_NAMES=(livox_driver go2_bridge mqtav udp_telemetry video_srt map_stream relocalization)
+NODE_NAMES=(/livox_lidar_publisher2 /epqrd_go2_bridge /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_video_srt /epgeneral_map_stream /epgeneral_relocalization)
+EXPECTED_COMMANDS=(livox_ros_driver2 epqrd_go2_bridge epgeneral_mqtav epgeneral_udp_telemetry epgeneral_video_srt epgeneral_map_stream epgeneral_relocalization)
 NODE_EXECUTABLES=(
   "/home/nvidia/go2_mid360_nav/catkin_ws/devel/lib/livox_ros_driver2/livox_ros_driver2_node"
   "${WORKSPACE}/devel/lib/epqrd_go2_bridge/epqrd_go2_bridge_node"
@@ -32,8 +32,9 @@ NODE_EXECUTABLES=(
   "${WORKSPACE}/devel/lib/epgeneral_udp_telemetry/epgeneral_udp_telemetry_node.py"
   "${WORKSPACE}/devel/lib/epgeneral_video_srt/epgeneral_video_srt_node"
   "${WORKSPACE}/devel/lib/epgeneral_map_stream/epgeneral_map_stream_node.py"
+  "${WORKSPACE}/devel/lib/epgeneral_relocalization/epgeneral_relocalization_node.py"
 )
-NODE_PROCESS_PIDS=("" "" "" "" "" "")
+NODE_PROCESS_PIDS=("" "" "" "" "" "" "")
 
 mkdir -p "${LOG_DIR}" "${PID_DIR}"
 
@@ -57,7 +58,7 @@ fail() {
 [[ -r /opt/ros/noetic/setup.bash ]] || fail "未找到 ROS Noetic 环境"
 [[ -r "${GO2_NAV_SETUP}" ]] || fail "未找到 Go2 MID360 工作空间：${GO2_NAV_SETUP}"
 [[ -r "${WORKSPACE}/devel/setup.bash" ]] || fail "工作空间尚未编译：${WORKSPACE}"
-for config_name in device.yaml go2.yaml epgeneral_mqtav.yaml udp_telemetry.yaml; do
+for config_name in device.yaml go2.yaml epgeneral_mqtav.yaml udp_telemetry.yaml relocalization.yaml; do
   [[ -r "${PROFILE_CONFIG_DIR}/${config_name}" ]] \
     || fail "缺少 Go2 profile 配置：${PROFILE_CONFIG_DIR}/${config_name}"
 done
@@ -307,6 +308,10 @@ start_launch video_srt /epgeneral_video_srt \
 start_launch map_stream /epgeneral_map_stream \
   epgeneral_map_stream epgeneral_map_stream.launch \
   mapping_config_file:="$(rospack find epgeneral_map_stream)/config/mapping.yaml" \
+  device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
+start_launch relocalization /epgeneral_relocalization \
+  epgeneral_relocalization epgeneral_relocalization.launch \
+  config_file:="${PROFILE_CONFIG_DIR}/relocalization.yaml" \
   device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
 report "OK" "全部功能包启动完成；按 Ctrl+C 停止全部进程"
 monitor_nodes

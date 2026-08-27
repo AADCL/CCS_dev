@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "protocol_id": "ccs-relocalization-v1",
+  "network": {
+    "bind_host": "0.0.0.0",
+    "status_port": 14566,
+    "device_control_port": 14565,
+    "http_bind_host": "0.0.0.0",
+    "http_port": 14601,
+    "max_datagram_bytes": 1400
+  },
+  "transport": {
+    "command_retry_seconds": 0.5,
+    "command_max_attempts": 5,
+    "session_timeout_seconds": 30.0,
+    "token_ttl_seconds": 900.0,
+    "max_artifact_bytes": 4294967296
+  },
+  "profiles": {
+    "scout_mini": {"supported": true, "pose_source": "vision_pose", "odom_frame": "odom"},
+    "go2_edu": {"supported": false, "pose_source": "global_pose", "odom_frame": "odom"},
+    "disabled": {"supported": false, "pose_source": "global_pose", "odom_frame": "odom"}
+  }
+}

@@ -604,6 +604,11 @@ QPushButton#mapDeviceCollapseButton {
     max-width: 24px;
     padding: 3px;
 }
+QPushButton#videoCollapseButton {
+    min-width: 24px;
+    max-width: 24px;
+    padding: 3px;
+}
 QLabel#mapFrameNote {
     color: #8fb3c9;
     font-size: 11px;
@@ -1012,6 +1017,32 @@ QFrame#mappingStatus {
     border: 1px solid #263747;
     border-radius: 5px;
 }
+QFrame#taskDeviceCard {
+    background: #0d161f;
+    border: 1px solid #263847;
+    border-radius: 5px;
+}
+QFrame#taskDeviceCard[selected='true'] {
+    background: #15372f;
+    border: 1px solid #37c5a0;
+}
+QLabel#taskDeviceStatus {
+    color: #9aead1;
+    background: #173c35;
+    border: 1px solid #2b7968;
+    border-radius: 10px;
+    padding: 2px 7px;
+}
+QLabel#taskDeviceStatus[state='task_exists'], QLabel#taskDeviceStatus[state='receiving'] {
+    color: #ffe3a0; border-color: #a87d2c; background: #3a2d18;
+}
+QLabel#taskDeviceStatus[state='received'], QLabel#taskDeviceStatus[state='ready'] {
+    color: #a9d9ff; border-color: #3978a8; background: #172e40;
+}
+QLabel#taskDeviceStatus[state='running'] { color: #ffe3a0; border-color: #b88c32; background: #3d3017; }
+QLabel#taskDeviceStatus[state='completed'] { color: #9fe8b4; border-color: #39835a; background: #173525; }
+QLabel#taskDeviceStatus[state='failed'], QLabel#taskDeviceStatus[state='emergency_stop'] { color: #ffc3c3; border-color: #a54b4b; background: #3b1e24; }
+QPushButton#taskDeviceAction { padding: 4px 5px; font-size: 11px; }
 QPlainTextEdit#mappingProtocolLog {
     color: #c7d2dc;
     background: #091017;

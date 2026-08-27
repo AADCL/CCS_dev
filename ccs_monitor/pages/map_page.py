@@ -33,10 +33,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSlider,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QStackedLayout,
     QStackedWidget,
     QSplitter,
     QVBoxLayout,
@@ -67,12 +69,14 @@ from ..models import (
     PgmFusionSource,
     PgmTransform2D,
     PoseTelemetry,
+    RelocalizationStatus,
     TaskStatus,
     UdpLinkStatus,
 )
 from ..pgm_map import PcdToPgmOptions, PgmMapError, PgmMapLoader
 from ..pgm_fusion import PgmFusionEngine, PgmFusionError, pcd_sha256
 from ..point_cloud import MapPointCloudLoader, PointCloudError
+from ..relocalization_artifacts import RelocalizationArtifactError
 from ..styles import ThemeMode, ThemePalette, theme_palette
 from ..srt_video import SrtVideoWidget
 from ..widgets import NoButtonDoubleSpinBox, NoButtonSpinBox
@@ -159,6 +163,48 @@ def transform_device_pose(pose: PoseTelemetry, transform: MapTransform) -> PoseT
         math.degrees(roll), math.degrees(pitch), math.degrees(yaw),
         pose.sample_age_seconds,
     )
+
+
+def transform_pose_by_binding(pose: PoseTelemetry, transform) -> PoseTelemetry:
+    qx, qy, qz, qw = transform.qx, transform.qy, transform.qz, transform.qw
+    xx, yy, zz = qx * qx, qy * qy, qz * qz
+    xy, xz, yz = qx * qy, qx * qz, qy * qz
+    wx, wy, wz = qw * qx, qw * qy, qw * qz
+    matrix = np.asarray((
+        (1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)),
+        (2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)),
+        (2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)),
+    ))
+    position = matrix @ np.asarray((pose.x, pose.y, pose.z))
+    rotation = matrix @ _rpy_rotation_matrix(pose.roll, pose.pitch, pose.yaw)
+    pitch = math.asin(float(np.clip(-rotation[2, 0], -1.0, 1.0)))
+    if abs(math.cos(pitch)) > 1e-8:
+        roll = math.atan2(rotation[2, 1], rotation[2, 2])
+        yaw = math.atan2(rotation[1, 0], rotation[0, 0])
+    else:
+        roll = 0.0
+        yaw = math.atan2(-rotation[0, 1], rotation[1, 1])
+    return PoseTelemetry(
+        float(position[0] + transform.x), float(position[1] + transform.y),
+        float(position[2] + transform.z),
+        math.degrees(roll), math.degrees(pitch), math.degrees(yaw),
+        pose.sample_age_seconds,
+    )
+
+
+def bound_map_pose(source, telemetry, device_id: str, map_id: str) -> PoseTelemetry | None:
+    profile = source.profile(device_id)
+    binding = next((
+        item for item in getattr(profile, "map_bindings", ()) if item.map_id == map_id
+    ), None)
+    if binding is None or telemetry is None:
+        return None
+    pose = getattr(telemetry, binding.pose_source, None)
+    if pose is None or (
+        pose.sample_age_seconds is not None and pose.sample_age_seconds > 2.0
+    ):
+        return None
+    return transform_pose_by_binding(pose, binding.map_from_odom)
 
 
 def device_task_status_text(
@@ -300,33 +346,83 @@ def pick_mode_zoom_distance(distance: float, wheel_delta: int) -> float:
     return float(np.clip(float(distance) * factor, 0.1, 1_000_000.0))
 
 
+def cursor_anchored_camera_center(center, before, after) -> tuple[float, float, float]:
+    value = np.asarray(center, dtype=np.float64).copy()
+    value[:2] += np.asarray(before, dtype=np.float64) - np.asarray(after, dtype=np.float64)
+    return float(value[0]), float(value[1]), float(value[2])
+
+
 class MiddlePanTurntableCameraMixin:
-    """Replace VisPy button-2 zoom with responsive planar map panning."""
+    """Provide deterministic map panning and top-down yaw gestures."""
 
     pan_speed_multiplier = MAP_PAN_DRAG_SPEED
+    planar_rotation = False
+    rotation_degrees_per_pixel = 0.5
 
     def viewbox_mouse_event(self, event) -> None:
+        event_type = getattr(event, "type", "")
+        mouse_event = getattr(event, "mouse_event", event)
+        position = np.asarray(getattr(mouse_event, "pos", (0.0, 0.0)), dtype=np.float64)
+        button = getattr(event, "button", getattr(mouse_event, "button", None))
+        buttons = tuple(getattr(event, "buttons", ()))
+        if self.interactive and event_type == "mouse_press" and button == 2:
+            self._ccs_pan_start = (position[:2].copy(), tuple(self.center))
+            event.handled = True
+            return
+        if self.interactive and self.planar_rotation and event_type == "mouse_press" and button == 1:
+            self._ccs_rotation_start = (position[:2].copy(), float(self.azimuth))
+            event.handled = True
+            return
         if (
             not event.handled
             and self.interactive
-            and event.type == "mouse_move"
-            and event.press_event is not None
-            and 2 in event.buttons
-            and not event.mouse_event.modifiers
+            and event_type == "mouse_move"
+            and 2 in buttons
         ):
-            if self._event_value is None or np.asarray(self._event_value).size != 3:
-                self._event_value = tuple(self.center)
+            start = getattr(self, "_ccs_pan_start", None)
+            if start is None:
+                press_event = getattr(event, "press_event", None)
+                if press_event is None:
+                    press_event = getattr(mouse_event, "press_event", None)
+                press_position = getattr(press_event, "pos", position)
+                start = (np.asarray(press_position, dtype=np.float64)[:2], tuple(self.center))
+                self._ccs_pan_start = start
             self.center = calculate_turntable_pan(
                 self,
-                event.mouse_event.press_event.pos,
-                event.mouse_event.pos,
+                start[0],
+                position,
                 self._viewbox.size,
-                self._event_value,
+                start[1],
                 self.pan_speed_multiplier,
             )
             self.view_changed()
             event.handled = True
             return
+        if (
+            not event.handled
+            and self.interactive
+            and self.planar_rotation
+            and event_type == "mouse_move"
+            and 1 in buttons
+        ):
+            start = getattr(self, "_ccs_rotation_start", None)
+            if start is None:
+                press_event = getattr(event, "press_event", None)
+                if press_event is None:
+                    press_event = getattr(mouse_event, "press_event", None)
+                press_position = getattr(press_event, "pos", position)
+                start = (np.asarray(press_position, dtype=np.float64)[:2], float(self.azimuth))
+                self._ccs_rotation_start = start
+            self.azimuth = start[1] + float(position[0] - start[0][0]) * self.rotation_degrees_per_pixel
+            self.elevation = 90
+            self.view_changed()
+            event.handled = True
+            return
+        if event_type == "mouse_release":
+            if button == 2:
+                self._ccs_pan_start = None
+            elif button == 1:
+                self._ccs_rotation_start = None
         super().viewbox_mouse_event(event)
 
 
@@ -334,7 +430,7 @@ class MapCard(QFrame):
     double_clicked = Signal(str)
     selection_changed = Signal(str, bool)
 
-    def __init__(self, definition: MapDefinition) -> None:
+    def __init__(self, definition: MapDefinition, active: bool = False) -> None:
         super().__init__()
         self.definition = definition
         self.setObjectName("mapCard")
@@ -355,7 +451,7 @@ class MapCard(QFrame):
         name.setObjectName("mapName")
         name.setWordWrap(True)
         header.addWidget(name, 1)
-        status = QLabel(STATUS_TEXT[definition.status])
+        status = QLabel(("当前激活 · " if active else "") + STATUS_TEXT[definition.status])
         status.setObjectName("mapStatus")
         status.setProperty("state", definition.status.value)
         header.addWidget(status, alignment=Qt.AlignmentFlag.AlignTop)
@@ -1272,10 +1368,16 @@ class HeightColorLegend(QWidget):
         self.minimum_label = QLabel("")
         self.minimum_label.setObjectName("muted")
         self.bar = RainbowHeightBar()
+        self.threshold = QSlider(Qt.Orientation.Horizontal)
+        self.threshold.setRange(0, 100)
+        self.threshold.setValue(0)
+        self.threshold.setFixedWidth(72)
+        self.threshold.setToolTip("显示该高度以下点云")
         self.maximum_label = QLabel("")
         self.maximum_label.setObjectName("muted")
         layout.addWidget(self.minimum_label)
         layout.addWidget(self.bar)
+        layout.addWidget(self.threshold)
         layout.addWidget(self.maximum_label)
         self.setVisible(False)
 
@@ -1285,11 +1387,14 @@ class HeightColorLegend(QWidget):
         if visible:
             self.minimum_label.setText(f"{minimum_z:.1f}m")
             self.maximum_label.setText(f"{maximum_z:.1f}m")
+            self.threshold.setToolTip("滑块从左向右移动，隐藏更高点云")
 
 
 class MapDeviceCard(QFrame):
     selected = Signal(str)
     video_requested = Signal(str, bool)
+    map_download_requested = Signal(str)
+    relocalization_requested = Signal(str)
 
     def __init__(self, device: DeviceSnapshot) -> None:
         super().__init__()
@@ -1310,6 +1415,24 @@ class MapDeviceCard(QFrame):
         self.task_state = QLabel()
         self.task_state.setObjectName("statusPill")
         layout.addWidget(self.task_state)
+        self.localization_state = QLabel("定位状态：未知空间")
+        self.localization_state.setObjectName("statusPill")
+        self.localization_state.setWordWrap(True)
+        layout.addWidget(self.localization_state)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(6)
+        self.download_map_button = QPushButton("下发地图")
+        self.download_map_button.clicked.connect(
+            lambda: self.map_download_requested.emit(self.device.device_id)
+        )
+        self.relocalization_button = QPushButton("启动重定位")
+        self.relocalization_button.setObjectName("primaryButton")
+        self.relocalization_button.clicked.connect(
+            lambda: self.relocalization_requested.emit(self.device.device_id)
+        )
+        action_row.addWidget(self.download_map_button)
+        action_row.addWidget(self.relocalization_button)
+        layout.addLayout(action_row)
         battery_row = QHBoxLayout()
         battery_row.setSpacing(7)
         self.battery = QProgressBar()
@@ -1331,7 +1454,8 @@ class MapDeviceCard(QFrame):
         self.frame_note.setVisible(False)
         layout.addWidget(self.frame_note)
         self.video = SrtVideoWidget(parent=self)
-        self.video.setMinimumSize(320, 250)
+        self.video.set_collapsible(True)
+        self.video.setMinimumWidth(320)
         self.video.stream_switch.toggled.connect(
             lambda enabled: self.video_requested.emit(self.device.device_id, bool(enabled))
         )
@@ -1342,6 +1466,8 @@ class MapDeviceCard(QFrame):
         self,
         device: DeviceSnapshot,
         remote: RemoteMappingSnapshot | None,
+        relocalization=None,
+        map_complete: bool = False,
     ) -> None:
         self.device = device
         self.name_button.setText(device.device_name)
@@ -1367,6 +1493,32 @@ class MapDeviceCard(QFrame):
         )
         self.frame_name.setText(f"坐标系 {frame_id or '未上报'}")
         self.video.set_device(device)
+        status = getattr(relocalization, "status", RelocalizationStatus.UNKNOWN_SPACE)
+        message = getattr(relocalization, "message", "未知空间")
+        self.localization_state.setText(f"定位状态：{message}")
+        busy = bool(
+            remote is not None and remote.device_id.casefold() == device.device_id.casefold()
+            and remote.state in {"preparing", "starting", "mapping", "warning", "degraded", "saving"}
+        )
+        can_download = bool(getattr(relocalization, "can_download", False))
+        can_start = bool(getattr(relocalization, "can_start", False))
+        can_submit = bool(getattr(relocalization, "can_submit_pose", False))
+        self.download_map_button.setEnabled(map_complete and can_download and not busy)
+        self.relocalization_button.setEnabled((can_start or can_submit) and not busy)
+        labels = {
+            RelocalizationStatus.STACK_STARTING: "启动中...",
+            RelocalizationStatus.AWAITING_POSE: "开始重定位",
+            RelocalizationStatus.RELOCALIZING: "重定位中...",
+            RelocalizationStatus.SUCCEEDED: "重新定位",
+        }
+        if status == RelocalizationStatus.FAILED:
+            label = "重新开始重定位" if can_submit else "重新启动重定位"
+        else:
+            label = labels.get(status, "启动重定位")
+        self.relocalization_button.setText(label)
+        if status == RelocalizationStatus.UNSUPPORTED:
+            self.download_map_button.setEnabled(False)
+            self.relocalization_button.setEnabled(False)
 
     def set_selected(self, selected: bool) -> None:
         self.name_button.blockSignals(True)
@@ -1386,6 +1538,8 @@ class MapDeviceCard(QFrame):
 
 class MapOnlineDevicePanel(QFrame):
     device_selected = Signal(str)
+    map_download_requested = Signal(str)
+    relocalization_requested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1396,6 +1550,8 @@ class MapOnlineDevicePanel(QFrame):
         self.cards: dict[str, MapDeviceCard] = {}
         self._frame_notes: dict[str, str] = {}
         self._active_video_id: str | None = None
+        self._relocalization_snapshots: dict[str, object] = {}
+        self._map_complete = False
         self._expanded_width = 380
         self._collapsed = False
         root = QVBoxLayout(self)
@@ -1440,7 +1596,12 @@ class MapOnlineDevicePanel(QFrame):
         self,
         devices: list[DeviceSnapshot],
         remote: RemoteMappingSnapshot | None = None,
+        relocalization_snapshots: dict[str, object] | None = None,
+        map_complete: bool = False,
     ) -> None:
+        if relocalization_snapshots is not None:
+            self._relocalization_snapshots = dict(relocalization_snapshots)
+        self._map_complete = bool(map_complete)
         online = [item for item in devices if item.connection_status == ConnectionStatus.ONLINE]
         remote_id = remote.device_id.casefold() if remote is not None else ""
         online.sort(key=lambda item: (
@@ -1467,9 +1628,14 @@ class MapOnlineDevicePanel(QFrame):
                 card = MapDeviceCard(item)
                 card.selected.connect(self.select_device)
                 card.video_requested.connect(self._on_video_requested)
+                card.map_download_requested.connect(self.map_download_requested)
+                card.relocalization_requested.connect(self.relocalization_requested)
                 self.cards[item.device_id] = card
                 self.card_layout.insertWidget(self.card_layout.count() - 1, card)
-            card.update_snapshot(item, remote)
+            card.update_snapshot(
+                item, remote, self._relocalization_snapshots.get(item.device_id.casefold()),
+                self._map_complete,
+            )
             card.set_selected(item.device_id == self.selected_device_id)
             card.set_frame_note(self._frame_notes.get(item.device_id, ""))
         for index, item in enumerate(online):
@@ -1493,6 +1659,12 @@ class MapOnlineDevicePanel(QFrame):
         card = self.cards.get(device_id)
         if card is not None:
             card.set_frame_note(note)
+
+    def set_relocalization_snapshot(self, snapshot) -> None:
+        self._relocalization_snapshots[snapshot.device_id.casefold()] = snapshot
+        card = self.cards.get(snapshot.device_id)
+        if card is not None:
+            card.update_snapshot(card.device, self.remote, snapshot, self._map_complete)
 
     def select_remote_device(self, remote: RemoteMappingSnapshot) -> None:
         if remote.device_id in self.cards:
@@ -1546,6 +1718,25 @@ class MapOnlineDevicePanel(QFrame):
         self._active_video_id = None
 
 
+class RelocalizationReticle(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.hide()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QColor("#ef4444"))
+        cx, cy = self.width() // 2, self.height() // 2
+        painter.drawLine(cx - 18, cy, cx + 18, cy)
+        painter.drawLine(cx, cy - 18, cx, cy + 18)
+        painter.drawLine(cx, cy - 30, cx - 7, cy - 20)
+        painter.drawLine(cx, cy - 30, cx + 7, cy - 20)
+        painter.drawEllipse(cx - 4, cy - 4, 8, 8)
+
+
 class PointCloudViewer(QWidget):
     load_failed = Signal(str)
     map_point_picked = Signal(float, float)
@@ -1582,6 +1773,7 @@ class PointCloudViewer(QWidget):
         self.selected_device_pose: PoseTelemetry | None = None
         self.device_trail: tuple[tuple[float, float, float], ...] = ()
         self.interaction_mode = "browse"
+        self._relocalization_picker_enabled = False
         self._task_path_visuals: list[object] = []
         self._task_point_visuals: list[object] = []
         self._conflict_visual = None
@@ -1627,6 +1819,7 @@ class PointCloudViewer(QWidget):
         self.devices_check = QCheckBox("设备")
         self.devices_check.setChecked(True)
         self.height_legend = HeightColorLegend()
+        self.height_legend.threshold.valueChanged.connect(lambda _value: self._refresh_point_colors())
         for widget in (
             QLabel("图层"), *self.layer_buttons.values(), self.grid_check,
             self.grid_spacing_input, self.grid_opacity_input, self.coordinate_check,
@@ -1636,8 +1829,16 @@ class PointCloudViewer(QWidget):
         controls.addStretch()
         controls.addWidget(self.height_legend)
         layout.addWidget(self.display_toolbar)
+        self._map_overlay = QWidget()
+        self._map_overlay_layout = QStackedLayout(self._map_overlay)
+        self._map_overlay_layout.setContentsMargins(0, 0, 0, 0)
+        self._map_overlay_layout.setStackingMode(QStackedLayout.StackingMode.StackAll)
         self._stack = QStackedWidget()
-        layout.addWidget(self._stack)
+        self._map_overlay_layout.addWidget(self._stack)
+        self._relocalization_reticle = RelocalizationReticle()
+        self._map_overlay_layout.addWidget(self._relocalization_reticle)
+        self._map_overlay_layout.setCurrentWidget(self._stack)
+        layout.addWidget(self._map_overlay)
         self.cursor_coordinate = QLabel("")
         self.cursor_coordinate.setObjectName("mapCursorCoordinate")
         self.cursor_coordinate.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -1845,6 +2046,9 @@ class PointCloudViewer(QWidget):
     def clear_live_points(self) -> None:
         self._live_view_initialized = False
         self._live_point_data = np.empty((0, 3), dtype=np.float32)
+        self._height_minimum = None
+        self._height_maximum = None
+        self.set_relocalization_picker(False)
         if self._live_points_visual is not None:
             self._live_points_visual.set_data(np.empty((0, 3), dtype=np.float32))
         self._refresh_point_colors()
@@ -1896,17 +2100,58 @@ class PointCloudViewer(QWidget):
                 self._camera.elevation = 90
                 self._camera.azimuth = 0
 
+    def set_relocalization_picker(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        was_enabled = self._relocalization_picker_enabled
+        self._relocalization_picker_enabled = enabled
+        self._relocalization_reticle.setVisible(bool(enabled))
+        if enabled:
+            self._map_overlay_layout.setCurrentWidget(self._relocalization_reticle)
+            self._relocalization_reticle.raise_()
+        else:
+            self._map_overlay_layout.setCurrentWidget(self._stack)
+        if self._camera is not None:
+            self._camera.planar_rotation = enabled
+        if enabled and not was_enabled and self._camera is not None:
+            self.interaction_mode = "browse"
+            self._camera.interactive = True
+            self._camera.elevation = 90
+            self._camera.azimuth = 0
+            self._camera.view_changed()
+
+    def relocalization_pose(self) -> tuple[float, float, float] | None:
+        native = getattr(self._canvas, "native", None)
+        if not self._relocalization_picker_enabled or native is None:
+            return None
+        width, height = native.width(), native.height()
+        center = self._screen_to_map(width / 2.0, height / 2.0, width, height)
+        above = self._screen_to_plane(width / 2.0, max(0.0, height / 2.0 - 40.0))
+        if center is None or above is None:
+            return None
+        values = np.asarray((*center, *above), dtype=np.float64)
+        if not np.isfinite(values).all():
+            return None
+        dx, dy = above[0] - center[0], above[1] - center[1]
+        if math.hypot(dx, dy) <= 1e-9:
+            return None
+        return center[0], center[1], math.atan2(dy, dx)
+
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         native = getattr(self._canvas, "native", None)
         if (
             watched is native
-            and self.interaction_mode == "pick"
             and event.type() == QEvent.Type.Wheel
             and self._camera is not None
         ):
+            before = self._screen_to_plane(event.position().x(), event.position().y())
             self._camera.distance = pick_mode_zoom_distance(
                 self._camera.distance, event.angleDelta().y())
             self._camera.view_changed()
+            after = self._screen_to_plane(event.position().x(), event.position().y())
+            if before is not None and after is not None:
+                self._camera.center = cursor_anchored_camera_center(
+                    self._camera.center, before, after)
+                self._camera.view_changed()
             return True
         if (
             watched is native
@@ -1978,21 +2223,34 @@ class PointCloudViewer(QWidget):
             return
         minimum_z = min(float(values.min()) for values in finite_z)
         maximum_z = max(float(values.max()) for values in finite_z)
+        threshold = maximum_z - (maximum_z - minimum_z) * self.height_legend.threshold.value() / 100.0
+        point_data = self._point_data
+        live_data = self._live_point_data
+        if maximum_z > minimum_z:
+            point_data = point_data[point_data[:, 2] <= threshold] if len(point_data) else point_data
+            live_data = live_data[live_data[:, 2] <= threshold] if len(live_data) else live_data
         if self._points_visual is not None and self.pointcloud_loaded:
             self._points_visual.set_data(
-                self._point_data,
-                face_color=height_rainbow_colors(self._point_data, minimum_z, maximum_z),
+                point_data,
+                # VisPy reduces face_color even when there are no positions; use
+                # one transparent color for the fully clipped state.
+                face_color=(
+                    height_rainbow_colors(point_data, minimum_z, maximum_z)
+                    if len(point_data) else (0.0, 0.0, 0.0, 0.0)
+                ),
                 edge_width=0, size=2.2,
             )
-        if self._live_points_visual is not None and len(self._live_point_data):
+        if self._live_points_visual is not None:
             self._live_points_visual.set_data(
-                self._live_point_data,
-                face_color=height_rainbow_colors(
-                    self._live_point_data, minimum_z, maximum_z
+                live_data,
+                face_color=(
+                    height_rainbow_colors(live_data, minimum_z, maximum_z)
+                    if len(live_data) else (0.0, 0.0, 0.0, 0.0)
                 ),
                 edge_width=0, size=2.5,
             )
         self.height_legend.set_range(minimum_z, maximum_z)
+        self.height_legend.threshold.setToolTip(f"显示 {threshold:.1f}m 以下点云（z ≤ 高度上限）")
         self._update_layer_controls()
 
     def _map_xy_bounds(self):
@@ -2075,6 +2333,14 @@ class PointCloudViewer(QWidget):
             except Exception:
                 return None
         return None
+
+    def _screen_to_plane(self, x: float, y: float) -> tuple[float, float] | None:
+        if self._view is None or self._camera is None:
+            return None
+        try:
+            return unproject_screen_to_plane(self._view.scene.transform, x, y)
+        except Exception:
+            return None
 
     def _contains_map_point(self, x: float, y: float) -> bool:
         if self.current_map is None:
@@ -2286,6 +2552,8 @@ class MapDetailPage(QWidget):
     mapping_requested = Signal()
     mapping_cancel_requested = Signal()
     device_selected = Signal(str)
+    map_download_requested = Signal(str)
+    relocalization_requested = Signal(str)
 
     def __init__(self, viewer_factory: Callable[[], PointCloudViewer] | None = None) -> None:
         super().__init__()
@@ -2361,10 +2629,20 @@ class MapDetailPage(QWidget):
         self.readiness_details.setWordWrap(True)
         self.readiness_details.setVisible(False)
         root.addWidget(self.readiness_details)
+        self.relocalization_log = QPlainTextEdit()
+        self.relocalization_log.setObjectName("mappingProtocolLog")
+        self.relocalization_log.setReadOnly(True)
+        self.relocalization_log.setMaximumBlockCount(200)
+        self.relocalization_log.setFixedHeight(96)
+        self.relocalization_log.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self.relocalization_log.setVisible(False)
+        root.addWidget(self.relocalization_log)
         self.content_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.content_splitter.setChildrenCollapsible(False)
         self.device_panel = MapOnlineDevicePanel()
         self.device_panel.device_selected.connect(self.device_selected)
+        self.device_panel.map_download_requested.connect(self.map_download_requested)
+        self.device_panel.relocalization_requested.connect(self.relocalization_requested)
         self.viewer = viewer_factory() if viewer_factory else PointCloudViewer()
         self.content_splitter.addWidget(self.device_panel)
         self.content_splitter.addWidget(self.viewer)
@@ -2387,8 +2665,28 @@ class MapDetailPage(QWidget):
         self,
         devices: list[DeviceSnapshot],
         remote: RemoteMappingSnapshot | None = None,
+        relocalization_snapshots: dict[str, object] | None = None,
+        map_complete: bool = False,
     ) -> None:
-        self.device_panel.set_devices(devices, remote)
+        self.device_panel.set_devices(
+            devices, remote, relocalization_snapshots, map_complete
+        )
+
+    def update_relocalization(self, snapshot) -> None:
+        self.device_panel.set_relocalization_snapshot(snapshot)
+        if snapshot.device_id == self.device_panel.selected_device_id:
+            self._set_protocol_log(self.relocalization_log, snapshot.logs)
+
+    @staticmethod
+    def _set_protocol_log(widget: QPlainTextEdit, lines) -> None:
+        values = tuple(lines)
+        widget.setPlainText("\n".join(values))
+        widget.setVisible(bool(values))
+        if not values:
+            return
+        scrollbar = widget.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+        QTimer.singleShot(0, lambda: scrollbar.setValue(scrollbar.maximum()))
 
     def stop_videos(self) -> None:
         self.device_panel.stop_videos()
@@ -2398,9 +2696,10 @@ class MapDetailPage(QWidget):
         definition: MapDefinition,
         pcd_path: Path | None,
         pgm_yaml_path: Path | None = None,
+        active: bool = False,
     ) -> None:
         self.definition = definition
-        self.title.setText(definition.name)
+        self.title.setText(f"{definition.name}  · 当前激活地图" if active else definition.name)
         creators = "、".join(item.device_name for item in definition.creator_devices) or "未知"
         bounds = "范围未知"
         if definition.bounds:
@@ -2462,11 +2761,7 @@ class MapDetailPage(QWidget):
             log_lines.append(
                 f"[{stamp}] {entry.direction:<5} {entry.event:<18} {entry.summary}"
             )
-        self.mapping_log.setPlainText("\n".join(log_lines))
-        self.mapping_log.setVisible(bool(log_lines))
-        if log_lines:
-            scrollbar = self.mapping_log.verticalScrollBar()
-            scrollbar.setValue(scrollbar.maximum())
+        self._set_protocol_log(self.mapping_log, log_lines)
         last_data = (
             snapshot.last_data_at.astimezone().strftime("%H:%M:%S")
             if snapshot.last_data_at else "--"
@@ -2540,6 +2835,7 @@ class MapPage(QWidget):
         repository: MapRepository | None = None,
         viewer_factory: Callable[[], PointCloudViewer] | None = None,
         mapping_service=None,
+        relocalization_service=None,
         telemetry_store=None,
         fusion_repository: MapFusionRepository | None = None,
         fusion_runner: MapFusionRunner | None = None,
@@ -2554,6 +2850,7 @@ class MapPage(QWidget):
         self.card_column_count = 0
         self.current_map_id: str | None = None
         self.mapping_service = mapping_service
+        self.relocalization_service = relocalization_service
         self.fusion_repository = (
             fusion_repository
             or getattr(mapping_service, "fusion_repository", None)
@@ -2576,6 +2873,7 @@ class MapPage(QWidget):
         self._build(viewer_factory)
         self._render_cards()
         self.repository.maps_updated.connect(self._on_maps_updated)
+        self.repository.active_map_changed.connect(self._on_active_map_changed)
         self.source.devices_updated.connect(self._on_devices_updated)
         self.fusion_finished.connect(self._on_fusion_finished)
         self.pgm_generation_finished.connect(self._on_pgm_generation_finished)
@@ -2591,6 +2889,8 @@ class MapPage(QWidget):
             self.mapping_service.pgm_download_failed.connect(self._on_pgm_download_failed)
             self.mapping_service.pgm_download_completed.connect(self._on_pgm_download_completed)
             self.mapping_service.remote_updated.connect(self._on_remote_mapping_updated)
+        if self.relocalization_service is not None:
+            self.relocalization_service.snapshot_updated.connect(self._on_relocalization_updated)
         if self.telemetry_store is not None:
             self.telemetry_store.telemetry_updated.connect(self._on_remote_telemetry)
         self._device_render_timer = QTimer(self)
@@ -2621,6 +2921,8 @@ class MapPage(QWidget):
         self.detail_page.mapping_requested.connect(self._toggle_mapping)
         self.detail_page.mapping_cancel_requested.connect(self._cancel_remote_mapping)
         self.detail_page.device_selected.connect(self._on_map_device_selected)
+        self.detail_page.map_download_requested.connect(self._download_relocalization_map)
+        self.detail_page.relocalization_requested.connect(self._handle_relocalization_action)
         if self.mapping_service is None:
             self.detail_page.set_mapping_available(False, "UDP 建图模块未配置")
         else:
@@ -2720,7 +3022,7 @@ class MapPage(QWidget):
         columns = 3 if self.width() >= 1180 else 2 if self.width() >= 760 else 1
         self.card_column_count = columns
         for index, definition in enumerate(filtered):
-            card = MapCard(definition)
+            card = MapCard(definition, definition.map_id == self.repository.active_map_id())
             card.set_edit_mode(self.edit_mode, definition.map_id in self.selected_map_ids)
             card.selection_changed.connect(self._set_selected)
             card.double_clicked.connect(self.show_detail)
@@ -3197,6 +3499,10 @@ class MapPage(QWidget):
         try:
             for map_id in tuple(self.selected_map_ids):
                 self.repository.delete(map_id)
+                for device in self.source.snapshots():
+                    profile = self.source.profile(device.device_id)
+                    if profile is not None and profile.active_map_id == map_id:
+                        self.source.set_device_active_map(device.device_id, None)
         except MapRepositoryError as exc:
             QMessageBox.critical(self, "地图删除失败", str(exc))
         self.selected_map_ids.clear()
@@ -3224,14 +3530,32 @@ class MapPage(QWidget):
                 pgm_yaml_path, _ = self.repository.pgm_paths(map_id)
             except MapRepositoryError:
                 pgm_yaml_path = None
-        self.detail_page.set_map(definition, pcd_path, pgm_yaml_path)
+        self.detail_page.set_map(definition, pcd_path, pgm_yaml_path, self.repository.active_map_id() == map_id)
         remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
         if remote is not None and remote.map_id != map_id:
             remote = None
-        self.detail_page.set_devices(self.devices, remote)
+        relocalization_snapshots = {}
+        map_complete = False
+        if self.relocalization_service is not None:
+            map_complete = self.relocalization_service.map_complete(map_id)
+            relocalization_snapshots = {
+                item.device_id.casefold(): self.relocalization_service.snapshot(map_id, item.device_id)
+                for item in self.devices
+            }
+        self.detail_page.set_devices(
+            self.devices, remote, relocalization_snapshots, map_complete
+        )
         self.page_stack.setCurrentWidget(self.detail_page)
         self._refresh_device_overlays()
         self._offer_interrupted_session(map_id)
+        if self.relocalization_service is not None and self.relocalization_service.available:
+            for item in self.devices:
+                if item.connection_status != ConnectionStatus.ONLINE:
+                    continue
+                try:
+                    self.relocalization_service.negotiate(map_id, item.device_id)
+                except (RuntimeError, ValueError):
+                    continue
 
     def show_list(self) -> None:
         remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
@@ -3241,6 +3565,7 @@ class MapPage(QWidget):
         if self.mapping_service is not None and self.mapping_service.active:
             self.mapping_service.interrupt_mapping("返回地图列表")
         self.detail_page.stop_videos()
+        self.detail_page.viewer.set_relocalization_picker(False)
         self.detail_page.viewer.clear()
         self.current_map_id = None
         self.page_stack.setCurrentWidget(self.list_page)
@@ -3367,6 +3692,55 @@ class MapPage(QWidget):
             self._remote_trail.clear()
             self.detail_page.viewer.set_device_trail([])
         self._refresh_device_overlays()
+        if self.relocalization_service is not None and self.current_map_id is not None:
+            snapshot = self.relocalization_service.snapshot(self.current_map_id, device_id)
+            self.detail_page.update_relocalization(snapshot)
+            self.detail_page.viewer.set_relocalization_picker(
+                snapshot.can_submit_pose and snapshot.status in {
+                    RelocalizationStatus.AWAITING_POSE, RelocalizationStatus.FAILED,
+                }
+            )
+
+    def _download_relocalization_map(self, device_id: str) -> None:
+        if self.relocalization_service is None or self.current_map_id is None:
+            return
+        try:
+            self.relocalization_service.download_map(self.current_map_id, device_id)
+        except (RelocalizationArtifactError, RuntimeError, ValueError) as exc:
+            QMessageBox.critical(self, "地图下发失败", str(exc))
+
+    def _handle_relocalization_action(self, device_id: str) -> None:
+        if self.relocalization_service is None or self.current_map_id is None:
+            return
+        snapshot = self.relocalization_service.snapshot(self.current_map_id, device_id)
+        try:
+            if snapshot.can_submit_pose:
+                pose = self.detail_page.viewer.relocalization_pose()
+                if pose is None:
+                    raise RuntimeError("无法从当前视图解算初始位姿")
+                self.relocalization_service.submit_initial_pose(
+                    self.current_map_id, device_id, *pose
+                )
+            else:
+                self.relocalization_service.start_stack(self.current_map_id, device_id)
+        except (RuntimeError, ValueError) as exc:
+            QMessageBox.critical(self, "重定位操作失败", str(exc))
+
+    def _on_relocalization_updated(self, snapshot) -> None:
+        if snapshot.map_id != self.current_map_id:
+            return
+        self.detail_page.update_relocalization(snapshot)
+        picker = (
+            snapshot.device_id == self.detail_page.device_panel.selected_device_id
+            and snapshot.status in {
+                RelocalizationStatus.AWAITING_POSE,
+                RelocalizationStatus.FAILED,
+            }
+            and snapshot.can_submit_pose
+        )
+        self.detail_page.viewer.set_relocalization_picker(picker)
+        if snapshot.status == RelocalizationStatus.SUCCEEDED:
+            self._refresh_device_overlays()
 
     def _refresh_device_overlays(self) -> None:
         if (
@@ -3391,9 +3765,16 @@ class MapPage(QWidget):
             snapshot = self._latest_telemetry.get(device.device_id.casefold())
             if snapshot is None and self.telemetry_store is not None:
                 snapshot = self.telemetry_store.telemetry(device.device_id)
-            pose = getattr(snapshot, "global_pose", None)
+            profile = self.source.profile(device.device_id)
+            binding = next((
+                item for item in getattr(profile, "map_bindings", ())
+                if item.map_id == definition.map_id
+            ), None)
+            pose_source = binding.pose_source if binding is not None else "global_pose"
+            pose = getattr(snapshot, pose_source, None)
             source_frame = (
-                remote.frame_id
+                binding.odom_frame
+                if binding is not None else remote.frame_id
                 if remote is not None and remote.device_id.casefold() == device.device_id.casefold()
                 else device.frame_id
             )
@@ -3408,6 +3789,9 @@ class MapPage(QWidget):
                 note = "UDP 全局位姿包含无效值"
             elif not source_frame:
                 note = "未上报位姿坐标系"
+            elif binding is not None:
+                transformed = transform_pose_by_binding(pose, binding.map_from_odom)
+                note = f"{binding.odom_frame} -> {binding.map_frame} · 已重定位"
             elif source_frame.casefold() == definition.frame_id.casefold():
                 transformed = pose
                 note = f"已定位到 {definition.frame_id}"
@@ -3569,12 +3953,41 @@ class MapPage(QWidget):
         self.selected_map_ids.intersection_update(item.map_id for item in self.maps)
         self._render_cards()
 
+    def _on_active_map_changed(self, definition: object) -> None:
+        self._render_cards()
+        if self.current_map_id and self.page_stack.currentWidget() is self.detail_page:
+            current = self.repository.map_by_id(self.current_map_id)
+            if current:
+                self.detail_page.set_map(current, self._map_pcd_path(current), self._map_pgm_path(current), current.map_id == self.repository.active_map_id())
+
+    def _map_pcd_path(self, definition: MapDefinition):
+        try:
+            return self.repository.pcd_path(definition.map_id) if definition.pcd_path else None
+        except MapRepositoryError:
+            return None
+
+    def _map_pgm_path(self, definition: MapDefinition):
+        try:
+            return self.repository.pgm_paths(definition.map_id)[0] if definition.pgm else None
+        except MapRepositoryError:
+            return None
+
     def _on_devices_updated(self, devices: object) -> None:
         self.devices = list(devices)
         remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None
         if remote is not None and remote.map_id != self.current_map_id:
             remote = None
-        self.detail_page.set_devices(self.devices, remote)
+        snapshots = {}
+        complete = False
+        if self.relocalization_service is not None and self.current_map_id is not None:
+            complete = self.relocalization_service.map_complete(self.current_map_id)
+            snapshots = {
+                item.device_id.casefold(): self.relocalization_service.snapshot(
+                    self.current_map_id, item.device_id
+                )
+                for item in self.devices
+            }
+        self.detail_page.set_devices(self.devices, remote, snapshots, complete)
         self._refresh_device_overlays()
 
     def closeEvent(self, event) -> None:  # noqa: N802

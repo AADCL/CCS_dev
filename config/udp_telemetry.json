@@ -1,29 +1,59 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "protocol_id": "ccs-udp-telemetry-v1",
-  "network": {
-    "bind_host": "0.0.0.0",
-    "port": 14560,
-    "max_datagram_bytes": 16384
-  },
-  "monitor": {
-    "heartbeat_hz": 1,
-    "warning_timeout_seconds": 2,
-    "error_timeout_seconds": 5
-  },
-  "level_rates_hz": {
-    "1": 20,
-    "2": 5,
-    "3": 1
-  },
+  "network": {"bind_host": "0.0.0.0", "port": 14560, "max_datagram_bytes": 16384},
+  "monitor": {"heartbeat_hz": 1, "warning_timeout_seconds": 2, "error_timeout_seconds": 5},
+  "level_rates_hz": {"1": 20, "2": 5, "3": 1},
   "descriptors": [
+    {"name": "global_pose", "display_name": "全局位姿", "type": "pose", "level": 1},
     {"name": "vision_pose", "display_name": "视觉传感器位姿", "type": "pose", "level": 1},
     {"name": "imu", "display_name": "IMU", "type": "imu", "level": 1},
     {"name": "livox_pointcloud", "display_name": "雷达点云", "type": "pointcloud_status", "level": 2},
     {"name": "livox_driver", "display_name": "Livox 驱动", "type": "availability", "level": 3},
+    {"name": "fastlio2", "display_name": "FAST-LIO2 定位状态", "type": "availability", "level": 3},
     {"name": "pgm_mapping", "display_name": "PGM 地图生成状态", "type": "availability", "level": 3},
     {"name": "octomap_mapping", "display_name": "八叉树地图生成状态", "type": "availability", "level": 3},
     {"name": "occupancy_grid_mapping", "display_name": "占据栅格图生成状态", "type": "availability", "level": 3},
     {"name": "mapping_mode", "display_name": "当前建图模式", "type": "text_status", "level": 3}
+  ],
+  "accepted_descriptor_sets": [
+    [
+      {"name": "vision_pose", "display_name": "本地位姿", "type": "pose", "level": 1},
+      {"name": "imu", "display_name": "IMU", "type": "imu", "level": 1},
+      {"name": "livox_pointcloud", "display_name": "雷达点云", "type": "pointcloud_status", "level": 2},
+      {"name": "livox_driver", "display_name": "Livox 驱动", "type": "availability", "level": 3},
+      {"name": "fastlio2", "display_name": "FAST-LIO2 定位状态", "type": "availability", "level": 3},
+      {"name": "pgm_mapping", "display_name": "PGM 地图状态", "type": "availability", "level": 3}
+    ],
+    [
+      {"name": "global_pose", "display_name": "本地位姿", "type": "pose", "level": 1},
+      {"name": "imu", "display_name": "IMU", "type": "imu", "level": 1},
+      {"name": "livox_pointcloud", "display_name": "雷达点云", "type": "pointcloud_status", "level": 2},
+      {"name": "livox_driver", "display_name": "Livox 驱动", "type": "availability", "level": 3},
+      {"name": "fastlio2", "display_name": "FAST-LIO2 定位状态", "type": "availability", "level": 3},
+      {"name": "pgm_mapping", "display_name": "PGM 地图状态", "type": "availability", "level": 3}
+    ],
+    [
+      {"name": "vision_pose", "display_name": "视觉传感器位姿", "type": "pose", "level": 1},
+      {"name": "imu", "display_name": "IMU", "type": "imu", "level": 1},
+      {"name": "livox_pointcloud", "display_name": "雷达点云", "type": "pointcloud_status", "level": 2},
+      {"name": "livox_driver", "display_name": "Livox 驱动", "type": "availability", "level": 3},
+      {"name": "pgm_mapping", "display_name": "PGM 地图生成状态", "type": "availability", "level": 3},
+      {"name": "octomap_mapping", "display_name": "八叉树地图生成状态", "type": "availability", "level": 3},
+      {"name": "occupancy_grid_mapping", "display_name": "占据栅格图生成状态", "type": "availability", "level": 3},
+      {"name": "mapping_mode", "display_name": "当前建图模式", "type": "text_status", "level": 3}
+    ],
+    [
+      {"name": "global_pose", "display_name": "全局位姿", "type": "pose", "level": 1},
+      {"name": "sensor_pose", "display_name": "传感器位姿", "type": "pose", "level": 1},
+      {"name": "imu", "display_name": "IMU", "type": "imu", "level": 1},
+      {"name": "livox_pointcloud", "display_name": "雷达点云", "type": "pointcloud_status", "level": 2},
+      {"name": "livox_driver", "display_name": "Livox 驱动", "type": "availability", "level": 3},
+      {"name": "fastlio2", "display_name": "FAST-LIO2 定位状态", "type": "availability", "level": 3},
+      {"name": "pgm_mapping", "display_name": "PGM 地图生成状态", "type": "availability", "level": 3},
+      {"name": "octomap_mapping", "display_name": "八叉树地图生成状态", "type": "availability", "level": 3},
+      {"name": "occupancy_grid_mapping", "display_name": "占据栅格图生成状态", "type": "availability", "level": 3},
+      {"name": "mapping_mode", "display_name": "当前建图模式", "type": "text_status", "level": 3}
+    ]
   ]
 }
