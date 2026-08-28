@@ -1431,6 +1431,9 @@ class MapDeviceCard(QFrame):
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
         self.download_map_button = QPushButton("下发地图")
+        apply_button_icon(
+            self.download_map_button, "upload", self.theme_palette, text="下发地图",
+        )
         self.download_map_button.clicked.connect(
             lambda: self.map_download_requested.emit(self.device.device_id)
         )
@@ -1473,6 +1476,9 @@ class MapDeviceCard(QFrame):
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
+        apply_button_icon(
+            self.download_map_button, "upload", palette, text="下发地图",
+        )
         self.video.set_theme(palette)
         self.update()
 
@@ -1773,6 +1779,10 @@ class RelocalizationReticle(QWidget):
 class PointCloudViewer(QWidget):
     load_failed = Signal(str)
     map_point_picked = Signal(float, float)
+    escape_pressed = Signal()
+
+    MAP_LAYER_ORDER = 0
+    DEVICE_LAYER_ORDER = 100
 
     def __init__(
         self,
@@ -1801,6 +1811,7 @@ class PointCloudViewer(QWidget):
         self._camera = None
         self.layer_mode = "overlay"
         self.devices_visible = True
+        self.cursor_coordinates_enabled = True
         self.pointcloud_loaded = False
         self.pgm_loaded = False
         self.selected_device_pose: PoseTelemetry | None = None
@@ -1946,6 +1957,10 @@ class PointCloudViewer(QWidget):
         self._marker_visual = scene.visuals.Markers(parent=self._view.scene)
         self._device_axis_visual = scene.visuals.Line(parent=self._view.scene)
         self._trail_visual = scene.visuals.Line(parent=self._view.scene)
+        for visual in (self._points_visual, self._live_points_visual):
+            visual.order = self.MAP_LAYER_ORDER
+        for visual in (self._marker_visual, self._device_axis_visual, self._trail_visual):
+            self._configure_device_visual(visual)
         self._device_axis_visual.visible = False
         self._trail_visual.visible = False
         self._conflict_visual = scene.visuals.Markers(parent=self._view.scene)
@@ -1996,6 +2011,7 @@ class PointCloudViewer(QWidget):
                     data.rgba(0.55 if self.layer_mode == "overlay" else 1.0),
                     parent=self._view.scene, method="subdivide"
                 )
+                self._pgm_visual.order = self.MAP_LAYER_ORDER
             else:
                 self._pgm_visual.set_data(
                     data.rgba(0.55 if self.layer_mode == "overlay" else 1.0)
@@ -2097,6 +2113,23 @@ class PointCloudViewer(QWidget):
         self.status.setText(message)
         self._stack.setCurrentWidget(self.status)
 
+    def set_cursor_coordinates_enabled(self, enabled: bool) -> None:
+        self.cursor_coordinates_enabled = bool(enabled)
+        self.cursor_check.setVisible(self.cursor_coordinates_enabled)
+        if not self.cursor_coordinates_enabled:
+            self.cursor_coordinate.setVisible(False)
+
+    def refresh_canvas(self) -> None:
+        native = getattr(self._canvas, "native", None)
+        if native is None:
+            return
+        if self.pointcloud_loaded or self.pgm_loaded or len(self._live_point_data):
+            self._stack.setCurrentWidget(native)
+        update = getattr(self._canvas, "update", None)
+        if callable(update):
+            update()
+        native.update()
+
     def reset_view(self) -> None:
         if self._camera is None or self.current_map is None:
             return
@@ -2180,6 +2213,14 @@ class PointCloudViewer(QWidget):
         native = getattr(self._canvas, "native", None)
         if (
             watched is native
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Escape
+        ):
+            self.escape_pressed.emit()
+            event.accept()
+            return True
+        if (
+            watched is native
             and event.type() == QEvent.Type.Wheel
             and self._camera is not None
         ):
@@ -2204,7 +2245,7 @@ class PointCloudViewer(QWidget):
                 self.map_point_picked.emit(*point)
             return True
         if watched is native and event.type() == QEvent.Type.MouseMove:
-            if MAP_VIEWER_SETTINGS.cursor_visible:
+            if self.cursor_coordinates_enabled and MAP_VIEWER_SETTINGS.cursor_visible:
                 point = self._screen_to_map(
                     event.position().x(), event.position().y(), watched.width(), watched.height()
                 )
@@ -2519,7 +2560,12 @@ class PointCloudViewer(QWidget):
         transform.rotate(float(marker.yaw), (0, 0, 1))
         transform.translate((marker.x, marker.y, marker.z))
         visual.transform = transform
+        self._configure_device_visual(visual)
         return visual
+
+    def _configure_device_visual(self, visual: object) -> None:
+        visual.set_gl_state("translucent", depth_test=False)
+        visual.order = self.DEVICE_LAYER_ORDER
 
     def set_selected_device_pose(self, pose: PoseTelemetry | None) -> None:
         self.selected_device_pose = pose

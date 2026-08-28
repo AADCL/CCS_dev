@@ -250,6 +250,12 @@ class CommandDashboardUiTests(unittest.TestCase):
         self.assertEqual(tuple(position_chart.legend_labels), ("X", "Y", "Z"))
         self.assertEqual(position_chart.x_axis.titleText(), "")
         self.assertEqual(position_chart.y_axis.titleText(), "")
+        position_chart.set_values({"X": [(-0.1, 1.0)], "Y": [], "Z": []})
+        self.assertEqual(position_chart.series["X"].count(), 1)
+        self.assertTrue(position_chart.series["X"].pointsVisible())
+        self.assertEqual(position_chart.series["X"].pen().widthF(), 2.0)
+        position_chart.set_values({"X": [(-0.2, 1.0), (-0.1, 2.0)], "Y": [], "Z": []})
+        self.assertFalse(position_chart.series["X"].pointsVisible())
 
         page.device_panel.set_mode(DevicePanelMode.DETAIL)
         self.assertEqual(page.device_panel.detail_button.property("appIconName"), "close")
@@ -282,6 +288,47 @@ class CommandDashboardUiTests(unittest.TestCase):
         self.assertFalse(page.console_panel.collapsed)
         self.assertEqual(page.console_panel.toggle_button.property("appIconName"), "expand")
         self.assertTrue(page.console_panel.content_widget.isVisible())
+
+    def test_selecting_device_seeds_latest_telemetry_and_hides_cursor_coordinates(self):
+        page = self.window.command_page
+        device_ids = [device.device_id for device in page.device_panel.devices]
+        self.assertGreaterEqual(len(device_ids), 2)
+        snapshots = {
+            device_ids[0]: DeviceTelemetrySnapshot(
+                device_ids[0], global_pose=PoseTelemetry(1, 2, 3, 4, 5, 6)
+            ),
+            device_ids[1]: DeviceTelemetrySnapshot(
+                device_ids[1], imu=ImuTelemetry(10, 20, 30, 0, 0, 0, 0, 0, 0)
+            ),
+        }
+        page.telemetry_store = SimpleNamespace(
+            telemetry=lambda device_id: snapshots.get(device_id, DeviceTelemetrySnapshot(device_id))
+        )
+
+        page._select_device(device_ids[0])
+        self.assertEqual(page.status_panel.position_chart.series["X"].count(), 1)
+        self.assertEqual(page.status_panel.attitude_chart.series["Yaw"].at(0).y(), 6)
+        page._select_device(device_ids[1])
+        self.assertEqual(page.status_panel.position_chart.series["X"].count(), 0)
+        self.assertEqual(page.status_panel.attitude_chart.series["Yaw"].at(0).y(), 30)
+        self.assertTrue(page.viewer.cursor_check.isHidden())
+        self.assertFalse(page.viewer.cursor_coordinates_enabled)
+
+    def test_escape_from_vispy_canvas_keeps_render_surface_alive(self):
+        page = self.window.command_page
+        native = page.viewer._canvas.native
+        page.viewer.pointcloud_loaded = True
+        page.viewer._stack.setCurrentWidget(native)
+        with patch.object(self.window, "showFullScreen"), patch.object(self.window, "showNormal"):
+            self.window.set_dashboard_fullscreen(True)
+            event = QKeyEvent(
+                QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier
+            )
+            self.app.sendEvent(native, event)
+            self.app.processEvents()
+        self.assertFalse(self.window.dashboard_fullscreen)
+        self.assertIs(page.viewer._stack.currentWidget(), native)
+        self.assertFalse(native.isHidden())
 
 
 if __name__ == "__main__":

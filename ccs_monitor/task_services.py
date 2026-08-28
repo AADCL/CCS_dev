@@ -276,10 +276,12 @@ class TaskExecutionService(QObject):
         if snapshot is not None and snapshot.task_id == task.task_id and updated.edge_ready:
             self._set_device_state(snapshot.execution_id, envelope.device_id, "ready")
             self._maybe_schedule(snapshot.execution_id)
-        if edge_status in {EdgeTaskStatus.RECEIVED, EdgeTaskStatus.FAILED}:
-            level = TaskEventLevel.ERROR if edge_status == EdgeTaskStatus.FAILED else TaskEventLevel.INFO
-            self._log(task.task_id, execution_id, "navigation_preparation", message or state,
-                      envelope.device_id, level)
+        level = TaskEventLevel.ERROR if edge_status == EdgeTaskStatus.FAILED else TaskEventLevel.INFO
+        self._log(
+            task.task_id, execution_id, "task_summary",
+            f"{state}: {message}" if message else state,
+            envelope.device_id, level,
+        )
         self.event_received.emit(envelope.device_id, envelope)
 
     def _handle_ack(self, envelope: TaskEnvelope) -> None:

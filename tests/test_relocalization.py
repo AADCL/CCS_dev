@@ -347,6 +347,7 @@ class RelocalizationServiceTests(unittest.TestCase):
 try:
     from PySide6.QtWidgets import QApplication, QPlainTextEdit
     from ccs_monitor.pages.map_page import MapDetailPage, MapDeviceCard
+    from ccs_monitor.styles import ThemeMode, theme_palette
 except ImportError:
     QApplication = None
 
@@ -367,6 +368,12 @@ class RelocalizationCardTests(unittest.TestCase):
             ),
             map_complete=True,
         )
+        self.assertTrue(card.download_map_button.isEnabled())
+        self.assertEqual(card.download_map_button.text(), "下发地图")
+        self.assertEqual(card.download_map_button.property("appIconName"), "upload")
+        self.assertEqual(card.download_map_button.property("appIconMode"), "night")
+        card.set_theme(theme_palette(ThemeMode.DAY))
+        self.assertEqual(card.download_map_button.property("appIconMode"), "day")
         self.assertTrue(card.download_map_button.isEnabled())
         self.assertFalse(card.relocalization_button.isEnabled())
         card.update_snapshot(

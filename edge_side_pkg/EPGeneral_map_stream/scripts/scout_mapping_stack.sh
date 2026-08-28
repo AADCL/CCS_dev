@@ -56,7 +56,7 @@ start_roslaunch() {
 }
 
 if [[ "${1:-}" == "--check" ]]; then
-  [[ "$#" -eq 9 ]] || fail "usage: $0 --check FAST_PACKAGE FAST_LAUNCH MAPPER_PACKAGE MAPPER_LAUNCH TF_PACKAGE TF_LAUNCH POSE_PACKAGE POSE_LAUNCH"
+  [[ "$#" -eq 9 || "$#" -eq 14 ]] || fail "invalid check arguments"
   check_launch "$2" "$3" rviz:=false
   check_launch "$4" "$5" map_name:=19700101_000000
   check_launch "$6" "$7"
@@ -65,12 +65,17 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 
 if [[ "${1:-}" == "--supervise" ]]; then
-  [[ "$#" -eq 14 ]] || fail "invalid supervisor arguments"
+  [[ "$#" -eq 14 || "$#" -eq 19 ]] || fail "invalid supervisor arguments"
   PID_FILE="$2" LOG_FILE="$3" START_TIMEOUT="$4" STOP_TIMEOUT="$5"
   MAP_NAME="$6" FAST_PACKAGE="$7" FAST_LAUNCH="$8"
   MAPPER_PACKAGE="$9" MAPPER_LAUNCH="${10}"
   TF_PACKAGE="${11}" TF_LAUNCH="${12}"
   POSE_PACKAGE="${13}" POSE_LAUNCH="${14}"
+  FAST_NODE="${15:-/laserMapping}"
+  MAPPER_NODE="${16:-/scout_pointcloud_mapper}"
+  TF_NODE="${17:-/scout_tf_manager}"
+  GEOMETRY_TF_NODE="${18:-/scout_geometry_tf_publisher}"
+  POSE_NODE="${19:-/scout_pose_adapter}"
   FAST_PID="" MAPPER_PID="" TF_PID="" POSE_PID="" STOPPING=false
 
   cleanup() {
@@ -94,26 +99,26 @@ if [[ "${1:-}" == "--supervise" ]]; then
 
   start_roslaunch "${FAST_PACKAGE}" "${FAST_LAUNCH}" "${LOG_FILE}" rviz:=false
   FAST_PID="${REPLY}"
-  wait_node /laserMapping "${START_TIMEOUT}" || fail "FAST-LIO did not become ready"
+  wait_node "${FAST_NODE}" "${START_TIMEOUT}" || fail "FAST-LIO did not become ready"
   printf 'stage=fast_lio action=ready pid=%s\n' "${FAST_PID}" >>"${LOG_FILE}"
 
   start_roslaunch "${MAPPER_PACKAGE}" "${MAPPER_LAUNCH}" "${LOG_FILE}" \
     "map_name:=${MAP_NAME}"
   MAPPER_PID="${REPLY}"
-  wait_node /scout_pointcloud_mapper "${START_TIMEOUT}" \
+  wait_node "${MAPPER_NODE}" "${START_TIMEOUT}" \
     || fail "pointcloud mapper did not become ready"
   printf 'stage=pointcloud_mapper action=ready pid=%s map_name=%s\n' \
     "${MAPPER_PID}" "${MAP_NAME}" >>"${LOG_FILE}"
 
   start_roslaunch "${TF_PACKAGE}" "${TF_LAUNCH}" "${LOG_FILE}"
   TF_PID="${REPLY}"
-  wait_node /scout_tf_manager "${START_TIMEOUT}" || fail "TF manager did not become ready"
-  wait_node /scout_geometry_tf_publisher "${START_TIMEOUT}" || fail "geometry TF publisher did not become ready"
+  wait_node "${TF_NODE}" "${START_TIMEOUT}" || fail "TF manager did not become ready"
+  wait_node "${GEOMETRY_TF_NODE}" "${START_TIMEOUT}" || fail "geometry TF publisher did not become ready"
   printf 'stage=tf_manager action=ready pid=%s\n' "${TF_PID}" >>"${LOG_FILE}"
 
   start_roslaunch "${POSE_PACKAGE}" "${POSE_LAUNCH}" "${LOG_FILE}"
   POSE_PID="${REPLY}"
-  wait_node /scout_pose_adapter "${START_TIMEOUT}" || fail "pose adapter did not become ready"
+  wait_node "${POSE_NODE}" "${START_TIMEOUT}" || fail "pose adapter did not become ready"
   printf 'stage=pose_adapter action=ready pid=%s\n' "${POSE_PID}" >>"${LOG_FILE}"
   : >"${PID_FILE}.ready"
 
@@ -126,7 +131,7 @@ if [[ "${1:-}" == "--supervise" ]]; then
 fi
 
 if [[ "${1:-}" == "--start" ]]; then
-  [[ "$#" -eq 14 ]] || fail "usage: $0 --start PID LOG START_TIMEOUT STOP_TIMEOUT MAP_NAME FAST_PACKAGE FAST_LAUNCH MAPPER_PACKAGE MAPPER_LAUNCH TF_PACKAGE TF_LAUNCH POSE_PACKAGE POSE_LAUNCH"
+  [[ "$#" -eq 14 || "$#" -eq 19 ]] || fail "invalid start arguments"
   PID_FILE="$2" LOG_FILE="$3" START_TIMEOUT="$4" MAP_NAME="$6"
   [[ "${START_TIMEOUT}" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "startup timeout is invalid"
   [[ "${MAP_NAME}" =~ ^[0-9]{8}_[0-9]{6}$ ]] || fail "map_name must use YYYYMMDD_HHMMSS"

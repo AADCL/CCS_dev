@@ -85,6 +85,15 @@ class UiTests(unittest.TestCase):
         self.assertEqual(self.window.theme_toggle_button.text(), "")
         self.assertEqual(self.window.theme_toggle_button.property("appIconName"), "outdoor")
         self.assertEqual(self.window.theme_toggle_button.property("appIconMode"), "night")
+        for button, text, icon_name in zip(
+            self.window.nav_buttons,
+            self.window.PAGE_NAMES,
+            self.window.PAGE_ICON_NAMES,
+        ):
+            self.assertEqual(button.text(), text)
+            self.assertFalse(button.icon().isNull())
+            self.assertEqual(button.property("appIconName"), icon_name)
+            self.assertEqual(button.property("appIconMode"), "night")
         self.assertEqual(
             self.app.palette().color(QPalette.ColorRole.Base).name(),
             theme_palette(ThemeMode.NIGHT).input_background.lower(),
@@ -100,6 +109,7 @@ class UiTests(unittest.TestCase):
             theme_palette(ThemeMode.DAY).input_background.lower(),
         )
         self.assertEqual(self.window.current_page_index, 4)
+        self.assertTrue(self.window.nav_buttons[4].isChecked())
         self.assertEqual(self.window.theme_toggle_button.text(), "")
         self.assertEqual(self.window.theme_toggle_button.property("appIconName"), "indoor")
         self.assertEqual(self.window.theme_toggle_button.property("appIconMode"), "day")
@@ -112,8 +122,23 @@ class UiTests(unittest.TestCase):
             self.assertFalse(button.icon().isNull())
             self.assertEqual(button.property("appIconName"), "back")
             self.assertEqual(button.property("appIconMode"), "day")
+        for button, text, icon_name in zip(
+            self.window.nav_buttons,
+            self.window.PAGE_NAMES,
+            self.window.PAGE_ICON_NAMES,
+        ):
+            self.assertEqual(button.text(), text)
+            self.assertEqual(button.property("appIconName"), icon_name)
+            self.assertEqual(button.property("appIconMode"), "day")
+        deliver_button = self.window.task_page.editor.deliver_button
+        deliver_enabled = deliver_button.isEnabled()
+        self.assertEqual(deliver_button.text(), "保存下发")
+        self.assertEqual(deliver_button.property("appIconName"), "upload")
+        self.assertEqual(deliver_button.property("appIconMode"), "day")
         self.window.theme_toggle_button.click()
         self.assertEqual(self.window.theme_mode, ThemeMode.NIGHT)
+        self.assertEqual(deliver_button.property("appIconMode"), "night")
+        self.assertEqual(deliver_button.isEnabled(), deliver_enabled)
 
     def test_theme_mode_round_trips_through_settings(self):
         settings_path = Path(self.temp_dir.name) / "theme.ini"

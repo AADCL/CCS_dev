@@ -474,7 +474,7 @@ class TelemetryChart(QFrame):
         for name, color in zip(names, self.theme_palette.route_colors):
             line = QLineSeries()
             line.setName(name)
-            line.setColor(QColor(color))
+            line.setPen(QPen(QColor(color), 2.0))
             chart.addSeries(line)
             line.attachAxis(self.x_axis)
             line.attachAxis(self.y_axis)
@@ -491,7 +491,7 @@ class TelemetryChart(QFrame):
         self.x_axis.setGridLineColor(QColor(palette.chart_grid))
         self.y_axis.setGridLineColor(QColor(palette.chart_grid))
         for name, line in self.series.items():
-            line.setColor(QColor(palette.route_colors[self._series_names.index(name)]))
+            line.setPen(QPen(QColor(palette.route_colors[self._series_names.index(name)]), 2.0))
         self.update()
 
     def set_values(self, values: dict[str, list[tuple[float, float]]]) -> None:
@@ -499,6 +499,7 @@ class TelemetryChart(QFrame):
         for name, series in self.series.items():
             points = [QPointF(x, y) for x, y in values.get(name, [])]
             series.replace(points)
+            series.setPointsVisible(len(points) == 1)
             all_y.extend(point.y() for point in points)
         if all_y:
             minimum, maximum = min(all_y), max(all_y)
@@ -789,6 +790,8 @@ class CommandDashboardPage(QWidget):
         self.execution_service = execution_service
         self.active_execution_id: str | None = None
         self.viewer = viewer_factory() if viewer_factory else PointCloudViewer()
+        self.viewer.set_cursor_coordinates_enabled(False)
+        self.viewer.escape_pressed.connect(self._viewer_escape_pressed)
         self.trends = TelemetryTrendBuffer()
         self.devices = source.snapshots()
         self.selected_device_id: str | None = None
@@ -1098,6 +1101,8 @@ class CommandDashboardPage(QWidget):
         ):
             self.status_panel.set_expanded(True)
         telemetry = self.telemetry_store.telemetry(device_id) if self.telemetry_store and device_id else None
+        if telemetry is not None and self.trends.sample_count(device_id) == 0:
+            self.trends.append(device_id, telemetry)
         self.status_panel.set_telemetry(telemetry)
         self._render_realtime()
 
@@ -1241,6 +1246,10 @@ class CommandDashboardPage(QWidget):
 
     def _toggle_fullscreen(self) -> None:
         self.fullscreen_requested.emit(not self.fullscreen)
+
+    def _viewer_escape_pressed(self) -> None:
+        if self.fullscreen:
+            self.fullscreen_requested.emit(False)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

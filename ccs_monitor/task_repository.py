@@ -66,6 +66,7 @@ def map_fingerprint(definition: MapDefinition) -> str:
 class TaskRepository(QObject):
     tasks_updated = Signal(object)
     execution_updated = Signal(object)
+    events_updated = Signal(str)
 
     def __init__(self, root: str | Path = DEFAULT_TASK_ROOT, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -303,6 +304,7 @@ class TaskRepository(QObject):
             "level": level.value, "task_id": task_id, "device_id": device_id,
             "payload": payload or {},
         })
+        self.events_updated.emit(task_id)
 
     def audit_events(self, task_id: str) -> list[TaskEvent]:
         task = self._require_task(task_id)
@@ -344,6 +346,7 @@ class TaskRepository(QObject):
             "level": level.value, "task_id": task_id, "execution_id": execution_id,
             "device_id": device_id, "payload": payload or {},
         })
+        self.events_updated.emit(task_id)
 
     def execution_events(self, task_id: str, execution_id: str) -> list[TaskEvent]:
         task = self._require_task(task_id)
