@@ -1,6 +1,7 @@
 import os
 import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -12,12 +13,16 @@ from PySide6.QtWidgets import QApplication
 from ccs_monitor.map_building_v2 import RemoteMappingSnapshot
 from ccs_monitor.models import (
     ConnectionStatus,
+    DeviceProfile,
     DeviceSnapshot,
+    DeviceTelemetrySnapshot,
+    MapDefinition,
     MapTransform,
     PoseTelemetry,
     TaskStatus,
 )
 from ccs_monitor.pages.map_page import (
+    MapPage,
     MapOnlineDevicePanel,
     PointCloudViewer,
     device_task_status_text,
@@ -67,6 +72,50 @@ class MapDeviceOverlayMathTests(unittest.TestCase):
         )
         self.assertEqual(device_task_status_text(device), "等待")
         self.assertEqual(device_task_status_text(device, remote), "建图中")
+
+    def test_missing_pose_during_relocalization_keeps_existing_trail(self):
+        device = DeviceSnapshot(
+            "UGV_001", "Scout", "UGV", connection_status=ConnectionStatus.ONLINE,
+            frame_id="odom",
+        )
+        profile = DeviceProfile(
+            "UGV_001", "Scout", "UGV", "127.0.0.1",
+            relocalization_profile="scout_mini",
+        )
+        telemetry = {
+            "value": DeviceTelemetrySnapshot(
+                "UGV_001", vision_pose=PoseTelemetry(1, 2, 0, 0, 0, 0),
+            )
+        }
+        rendered_trails = []
+        device_panel = SimpleNamespace(
+            selected_device_id="UGV_001", set_frame_note=lambda *_args: None,
+        )
+        viewer = SimpleNamespace(
+            set_device_markers=lambda *_args: None,
+            set_selected_device_pose=lambda *_args: None,
+            set_device_trails=lambda trails: rendered_trails.append(dict(trails)),
+        )
+        detail_page = SimpleNamespace(device_panel=device_panel, viewer=viewer)
+        page = SimpleNamespace(
+            current_map_id="map-1", detail_page=detail_page,
+            page_stack=SimpleNamespace(currentWidget=lambda: detail_page),
+            repository=SimpleNamespace(
+                map_by_id=lambda _map_id: MapDefinition("map-1", "Map", frame_id="odom")
+            ),
+            mapping_service=None, devices=[device],
+            _latest_telemetry={"ugv_001": telemetry["value"]},
+            telemetry_store=None,
+            source=SimpleNamespace(profile=lambda _device_id: profile),
+            _device_trails={},
+        )
+
+        MapPage._refresh_device_overlays(page)
+        self.assertEqual(page._device_trails["UGV_001"], [(1, 2, 0)])
+        page._latest_telemetry["ugv_001"] = DeviceTelemetrySnapshot("UGV_001")
+        MapPage._refresh_device_overlays(page)
+        self.assertEqual(page._device_trails["UGV_001"], [(1, 2, 0)])
+        self.assertEqual(rendered_trails[-1]["UGV_001"], [(1, 2, 0)])
 
 
 class MapOnlineDevicePanelTests(unittest.TestCase):

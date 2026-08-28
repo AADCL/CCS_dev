@@ -4,7 +4,7 @@ import socket
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Callable, Iterable
 
@@ -305,6 +305,7 @@ class RemoteMappingJobCoordinator(QObject):
             threading.Thread(target=self._fuse, name="ccs-joint-map-fusion", daemon=True).start()
 
     def _fuse(self) -> None:
+        succeeded = False
         try:
             definition = self.definition
             algorithm = self.algorithm
@@ -383,18 +384,33 @@ class RemoteMappingJobCoordinator(QObject):
                 self.repository.discard_mapping_session(
                     definition.map_id, result.session_id
                 )
-            self.completed.emit(completed)
-            for coordinator in self.coordinators.values():
-                coordinator.shutdown()
+            terminal = self.snapshot
+            coordinators = tuple(self.coordinators.values())
             self.coordinators.clear()
             self.artifacts.clear()
             self._latest_snapshots.clear()
+            self._fusing = False
+            for coordinator in coordinators:
+                coordinator.shutdown()
+            if terminal is not None:
+                terminal = replace(
+                    terminal,
+                    state="completed",
+                    message="联合建图成果已保存",
+                    fused_points=cloud.point_count,
+                    artifact_bytes_received=terminal.artifact_bytes_total,
+                )
+                self.updated.emit(terminal)
+            self.navigation_locked.emit(False)
+            succeeded = True
+            self.completed.emit(completed)
         except (MapFusionError, PgmFusionError, MapRepositoryError, OSError, ValueError,
                 RuntimeError) as exc:
             self.failed.emit(f"联合建图成果融合失败：{exc}")
         finally:
             self._fusing = False
-            self._emit()
+            if not succeeded:
+                self._emit()
 
     def _emit(self) -> None:
         snapshot = self.snapshot

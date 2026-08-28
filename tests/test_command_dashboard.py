@@ -18,6 +18,7 @@ if PYSIDE_AVAILABLE:
 
     from ccs_monitor.data_source import SimulatedDeviceSource, simulated_overview
     from ccs_monitor.device_config import DeviceConfigRepository
+    from ccs_monitor.device_colors import device_display_color
     from ccs_monitor.main_window import MainWindow
     from ccs_monitor.map_repository import MapRepository
     from ccs_monitor.task_repository import TaskRepository
@@ -34,7 +35,7 @@ if PYSIDE_AVAILABLE:
 
 @unittest.skipUnless(PYSIDE_AVAILABLE, "PySide6 is not installed")
 class TelemetryTrendBufferTests(unittest.TestCase):
-    def test_window_capacity_and_attitude_fallback(self):
+    def test_window_capacity_and_odom_pose_only(self):
         now = [0.0]
         buffer = TelemetryTrendBuffer(clock=lambda: now[0])
         for index in range(1300):
@@ -50,12 +51,12 @@ class TelemetryTrendBufferTests(unittest.TestCase):
         self.assertGreaterEqual(position["X"][0][0], -60.0)
 
         now[0] += 0.1
-        fallback = DeviceTelemetrySnapshot(
+        imu_only = DeviceTelemetrySnapshot(
             "UAV-2",
             imu=ImuTelemetry(10, 20, 30, 0, 0, 0, 0, 0, 0),
         )
-        self.assertTrue(buffer.append("UAV-2", fallback))
-        self.assertEqual(buffer.series("UAV-2", "attitude")["Yaw"][-1][1], 30)
+        self.assertFalse(buffer.append("UAV-2", imu_only))
+        self.assertEqual(buffer.series("UAV-2", "attitude")["Yaw"], [])
 
     def test_missing_pose_and_imu_are_not_fabricated(self):
         buffer = TelemetryTrendBuffer(clock=lambda: 1.0)
@@ -254,8 +255,21 @@ class CommandDashboardUiTests(unittest.TestCase):
         self.assertEqual(position_chart.series["X"].count(), 1)
         self.assertTrue(position_chart.series["X"].pointsVisible())
         self.assertEqual(position_chart.series["X"].pen().widthF(), 2.0)
+        self.assertEqual(position_chart.x_axis.min(), -5.0)
         position_chart.set_values({"X": [(-0.2, 1.0), (-0.1, 2.0)], "Y": [], "Z": []})
         self.assertFalse(position_chart.series["X"].pointsVisible())
+        position_chart.set_values({"X": [(-45.0, 1.0), (0.0, 2.0)], "Y": [], "Z": []})
+        self.assertEqual(position_chart.x_axis.min(), -45.0)
+
+        color = device_display_color(page.selected_device_id)
+        self.assertEqual(position_chart.series["X"].pen().color().name().upper(), color.upper())
+        self.assertEqual(position_chart.series["Y"].pen().color().name().upper(), color.upper())
+        self.assertNotEqual(
+            position_chart.series["X"].pen().style(),
+            position_chart.series["Y"].pen().style(),
+        )
+        self.assertNotIn("解锁", page.status_panel.fields)
+        self.assertNotIn("FCU", page.status_panel.fields)
 
         page.device_panel.set_mode(DevicePanelMode.DETAIL)
         self.assertEqual(page.device_panel.detail_button.property("appIconName"), "close")
@@ -310,9 +324,45 @@ class CommandDashboardUiTests(unittest.TestCase):
         self.assertEqual(page.status_panel.attitude_chart.series["Yaw"].at(0).y(), 6)
         page._select_device(device_ids[1])
         self.assertEqual(page.status_panel.position_chart.series["X"].count(), 0)
-        self.assertEqual(page.status_panel.attitude_chart.series["Yaw"].at(0).y(), 30)
+        self.assertEqual(page.status_panel.attitude_chart.series["Yaw"].count(), 0)
         self.assertTrue(page.viewer.cursor_check.isHidden())
         self.assertFalse(page.viewer.cursor_coordinates_enabled)
+
+    def test_profile_specific_local_odom_populates_position_and_attitude_together(self):
+        page = self.window.command_page
+        device_ids = [device.device_id for device in page.device_panel.devices]
+        self.assertGreaterEqual(len(device_ids), 2)
+        snapshots = {
+            device_ids[0]: DeviceTelemetrySnapshot(
+                device_ids[0],
+                vision_pose=PoseTelemetry(1, 2, 3, 4, 5, 6),
+                global_pose=PoseTelemetry(11, 12, 13, 14, 15, 16),
+            ),
+            device_ids[1]: DeviceTelemetrySnapshot(
+                device_ids[1], global_pose=PoseTelemetry(7, 8, 9, 10, 11, 12),
+            ),
+        }
+        page.telemetry_store = SimpleNamespace(
+            telemetry=lambda device_id: snapshots.get(
+                device_id, DeviceTelemetrySnapshot(device_id)
+            )
+        )
+        page.trends = TelemetryTrendBuffer()
+
+        def profile(device_id):
+            return SimpleNamespace(
+                relocalization_profile=(
+                    "scout_mini" if device_id == device_ids[0] else "go2_edu"
+                )
+            )
+
+        with patch.object(page.source, "profile", side_effect=profile):
+            page._select_device(device_ids[0])
+            self.assertEqual(page.status_panel.position_chart.series["X"].at(0).y(), 1)
+            self.assertEqual(page.status_panel.attitude_chart.series["Yaw"].at(0).y(), 6)
+            page._select_device(device_ids[1])
+            self.assertEqual(page.status_panel.position_chart.series["X"].at(0).y(), 7)
+            self.assertEqual(page.status_panel.attitude_chart.series["Yaw"].at(0).y(), 12)
 
     def test_escape_from_vispy_canvas_keeps_render_surface_alive(self):
         page = self.window.command_page

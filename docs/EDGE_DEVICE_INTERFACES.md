@@ -1,6 +1,6 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.22.0`，更新日期：2026-08-27。
+文档版本：`v0.22.7`，更新日期：2026-08-28。
 
 ## v0.19.2 地面站初始位姿选择器修复
 
@@ -22,7 +22,7 @@
 - UDP envelope 仍为 schema 1 / `ccs-udp-telemetry-v1`；地面站只额外接受配置中明确列出的 descriptor hash。
 - Scout 30 V 定义为满电，曲线未标定时百分比为 `null`；Go2 原生百分比不被估算覆盖。
 
-指控平台 v0.22.6 配套 `epgeneral_udp_telemetry` v0.3.0、`epgeneral_relocalization` v0.2.2 和 `epgeneral_map_stream` v0.12.0。MQTT schema 1.0、SRT 与 UDP 遥测 wire schema 保持兼容。
+指控平台 v0.22.7 配套 `epgeneral_udp_telemetry` v0.3.0、`epgeneral_relocalization` v0.2.2 和 `epgeneral_map_stream` v0.12.0。MQTT schema 1.0、SRT 与 UDP 遥测 wire schema 保持兼容。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -579,6 +579,8 @@ UDP 14560 全局位姿仍是地面站地图实时标记来源；14564 进度是�
 `ccs-relocalization-v1` 使用 MessagePack schema 1。地面站向端侧 UDP 14565 发送 `negotiate`、`map_offer`、`start_stack`、`initial_pose`；端侧向地面站 UDP 14566 发送 `negotiation_status`、`download_status`、`stack_status`、`relocalization_result`、`session_heartbeat`、`command_error`。
 
 公共信封字段为 `map_id/device_id/session_id/request_id/message_type/sequence/sent_at_ns/payload`。双方必须限制 1400 字节，按 request ID 幂等，拒绝错误设备、来源 IP、会话、乱序状态和非有限数值。
+
+地面站 v0.22.7 在同一地图内对重定位流程按设备互斥，并将选点十字星与公共信封中的 `device_id` 绑定。`start_stack` 和 `initial_pose` 必须使用同一设备 ID；端侧接口不增加重复的 payload 设备字段。无 `session_id` 的默认状态或协商中状态不得发送 `map_offer`，只有端侧在有效会话中返回 `map_required` 后才能下发地图。上述约束不改变 `ccs-relocalization-v1` schema 1、消息类型或端口。
 
 地图缺失时端侧返回 `map_required`。地面站 TCP 14601 的 `/relocalization/map.zip?token=...` 支持 HEAD、GET 和单段 Range，禁止重定向；ZIP 只允许 `manifest.json/public_map.pcd/map.pgm/map.yaml`。端侧校验声明大小、SHA-256、PCD/PGM/YAML 内容后原子安装至 profile 的 `ccs_download/<map_id>`。
 

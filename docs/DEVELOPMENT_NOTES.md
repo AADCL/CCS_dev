@@ -1,5 +1,15 @@
 # 开发笔记
 
+## v0.22.7 联合建图、重定位与本地 odom 遥测修复
+
+- 联合成果原子提交成功后，`MapBuildingService` 先分离并关闭全部子协调器，清除成果与融合状态，再发布 `completed` 和 `navigation_locked=False`。终态回调观察到的协调器必须已经 inactive，地图详情页据此恢复按钮、停止计时并允许切换页面。
+- 重定位互斥键为当前地图 ID。`stack_starting`、`awaiting_pose` 和 `relocalizing` 期间只允许活动设备继续操作；服务层拒绝第二台设备绕过 UI 启动。成功、失败和超时均释放互斥状态。
+- `PointCloudViewer.set_relocalization_picker(device_id | None)` 将十字星上下文绑定到设备；读取初始位姿时必须再次提供相同设备 ID。`start_stack` 和 `initial_pose` 继续仅通过 envelope 的 `device_id` 标识目标，不增加 payload 字段。
+- 初始无会话及协商中的快照均设置 `can_download=False`，只有带 `session_id` 的 `map_required` 状态允许下发地图。重复协商不会覆盖正在活动的重定位会话。
+- 本地 odom 按设备 profile 解析：Scout/WheelTech 使用 `vision_pose`，Go2 等使用 `global_pose`。当前地图轨迹最多保留 10,000 点；重定位、短暂无位姿、切换选择或同地图页面重进不清空，仅切换地图或开始新建图时清空。
+- 指控大屏状态和两组趋势共用同一份有效本地 odom 位姿，不以 IMU 补姿态。横轴从 5 秒按 5 秒扩展至 60 秒；各分量以实线、虚线和点线区分，颜色统一来自共享设备颜色注册表。
+- 本次仅升级平台至 v0.22.7。端侧 `epgeneral_relocalization` v0.2.2、`epgeneral_map_stream` v0.12.0、既有协议 schema、消息字段和端口保持不变。
+
 ## v0.22.6 / epgeneral_map_stream v0.12.0 多设备联合遥控建图
 
 - 联合模式必须选择至少两台设备且只有一个单位外参主设备。外参方向固定为 `主设备 map <- 从设备 map`；PCD 使用 XYZ/RPY，PGM 使用 X/Y/Yaw，因此联合模式拒绝非零 Roll/Pitch。
