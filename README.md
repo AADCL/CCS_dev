@@ -49,7 +49,10 @@ CCS_dev/
 ├── docs/EDGE_DEVICE_INTERFACES.md # 端侧交互协议总册
 ├── tests/
 ├── CHANGELOG.md
-└── requirements.txt
+├── pyproject.toml                 # uv 项目与直接依赖声明
+├── uv.lock                        # uv 跨平台依赖锁文件
+├── .python-version                # uv 默认 Python 3.10
+└── requirements.txt               # 传统 pip 安装兼容入口
 ```
 
 ## 环境要求
@@ -57,8 +60,8 @@ CCS_dev/
 ### 地面站
 
 - Windows 10/11，或带桌面环境的 Linux。
-- Python 3.10+、PySide6 6.6+。
-- `requirements.txt` 中的 amqtt、paho-mqtt、PyYAML、MessagePack、NumPy、VisPy、pypcd4 和 Open3D。
+- Python 3.10+、PySide6 6.6+；仓库的 `.python-version` 默认选择 Python 3.10。
+- `pyproject.toml` 声明 amqtt、paho-mqtt、PyYAML、MessagePack、NumPy、VisPy、pypcd4 和 Open3D 等直接依赖；`requirements.txt` 仅作为传统 pip 的兼容入口。
 - 三维地图需要 OpenGL 2.1+ 兼容驱动；视频播放需要 `PATH` 中带 libsrt 的系统 FFmpeg，可用 `ffmpeg -protocols` 检查输入协议 `srt`。
 - 最低窗口尺寸 800×600，建议 1440×900 或更高。
 
@@ -95,15 +98,16 @@ CCS_dev/
 
 ### 1. 获取并部署地面站
 
+推荐使用 `uv`。`uv sync --locked` 会根据 `.python-version` 创建或复用 `.venv`，并严格按
+`uv.lock` 安装依赖；后续启动不需要手动激活虚拟环境。
+
 ```powershell
 git clone https://github.com/AADCL/CCS_dev.git
 cd CCS_dev
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+uv sync --locked
 winget install --id Gyan.FFmpeg -e
 ffmpeg -hide_banner -protocols
+uv run python run.py
 ```
 
 Linux：
@@ -111,13 +115,14 @@ Linux：
 ```bash
 git clone https://github.com/AADCL/CCS_dev.git
 cd CCS_dev
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+uv sync --locked
 sudo apt install ffmpeg
 ffmpeg -hide_banner -protocols
+uv run python run.py
 ```
+
+无法使用 `uv` 时，仍可通过 `python -m venv .venv`、激活环境并执行
+`python -m pip install -r requirements.txt` 完成传统安装，之后使用 `python run.py` 启动。
 
 启动前核对：
 
@@ -148,7 +153,7 @@ Set-Service W32Time -StartupType Disabled
 New-NetFirewallRule -DisplayName "CCS NTP Server (Private LAN)" `
   -Direction Inbound -Action Allow -Protocol UDP -LocalPort 123 `
   -Profile Private -RemoteAddress LocalSubnet
-python run.py
+uv run python run.py
 ```
 
 首次启动会读取设备配置，并初始化地图和任务数据目录。

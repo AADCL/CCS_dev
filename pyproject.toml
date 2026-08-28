@@ -1,0 +1,21 @@
+[project]
+name = "ccs-monitor"
+version = "0.22.5"
+description = "多异构智能体指挥与控制地面站"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.6,<7",
+    "amqtt>=0.11,<1",
+    "paho-mqtt>=2,<3",
+    "zeroconf>=0.147,<1",
+    "PyYAML>=6,<7",
+    "msgpack>=1,<2",
+    "numpy>=1.24,<3",
+    "vispy>=0.14,<1",
+    "pypcd4>=1.3,<2",
+    "open3d>=0.18,<1",
+]
+
+[tool.uv]
+package = false
