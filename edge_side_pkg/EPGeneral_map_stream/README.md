@@ -1,8 +1,8 @@
 # epgeneral_map_stream
 
-<!-- epgeneral_map_stream_VERSION: 0.11.0 -->
+<!-- epgeneral_map_stream_VERSION: 0.12.0 -->
 
-版本：`v0.11.0`。
+版本：`v0.12.0`。
 
 Scout Mini profile 使用 `scout_finalize` backend。启动顺序固定为
 `fastlio_mapping_scout.launch rviz:=false`、`pointcloud_mapper.launch map_name:=MAP_NAME`、

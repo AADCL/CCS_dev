@@ -946,6 +946,8 @@ class MapRepository(QObject):
         map_id: str,
         artifact,
         metadata: MapBuildingResultMetadata,
+        provenance: MapBuildProvenance | None = None,
+        pgm_provenance: PgmFusionProvenance | None = None,
     ) -> MapDefinition:
         """Atomically replace all authoritative map layers from a validated v2 artifact."""
         current = self._require_map(map_id)
@@ -1020,6 +1022,8 @@ class MapRepository(QObject):
                 pgm=pgm_metadata,
                 trajectory_path=None,
                 last_mapping=committed_metadata,
+                build_provenance=provenance or current.build_provenance,
+                pgm_fusion=pgm_provenance or current.pgm_fusion,
                 updated_at=datetime.now(timezone.utc),
                 error_message=None,
             )

@@ -54,7 +54,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config["device_ip"], expected_device["ip"])
         self.assertEqual(config["protocol_id"], "ccs-map-stream-v2")
         self.assertEqual(config["schema_version"], 6)
-        self.assertEqual(config["capability_version"], "0.11.0")
+        self.assertEqual(config["capability_version"], "0.12.0")
         self.assertEqual(config["input_cloud_topic"], "/livox/lidar")
         self.assertEqual(config["input_imu_topic"], "/livox/imu")
         self.assertEqual(config["input_cloud_message_type"], "livox_ros_driver2/CustomMsg")

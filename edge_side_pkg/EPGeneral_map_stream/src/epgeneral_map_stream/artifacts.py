@@ -311,6 +311,9 @@ def build_archive(paths, config, identity):
         "generated_at": generated_at,
         "files": manifest_files,
     }
+    for name in ("job_id", "role", "primary_device_id"):
+        if identity.get(name):
+            manifest[name] = identity[name]
     map_name = paths.values.get("map_name")
     if map_name:
         manifest["map_name"] = map_name

@@ -12,7 +12,7 @@ PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class CompatibilityTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(__version__, "0.11.0")
+        self.assertEqual(__version__, "0.12.0")
         result = subprocess.run(
             [sys.executable, os.path.join(PACKAGE, "scripts", "check_version.py")],
             cwd=PACKAGE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,

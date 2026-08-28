@@ -79,6 +79,19 @@ def decode_command(datagram, config):
         raise ProtocolError("only mapping commands are accepted")
     payload = raw["payload"]
     _identifier(payload.get("request_id"), "request_id", 256)
+    joint = ["job_id", "role", "primary_device_id"]
+    present = [name in payload for name in joint]
+    if any(present) and not all(present):
+        raise ProtocolError("joint mapping fields must be provided together")
+    if all(present):
+        _identifier(payload["job_id"], "job_id")
+        _identifier(payload["primary_device_id"], "primary_device_id")
+        if payload["role"] not in ("primary", "secondary"):
+            raise ProtocolError("role is invalid")
+        if ((payload["role"] == "primary")
+                != (raw["device_id"].casefold()
+                    == payload["primary_device_id"].casefold())):
+            raise ProtocolError("role does not match primary_device_id")
     if message_type == "prepare_mapping":
         try:
             ipaddress.ip_address(str(payload.get("return_host")))
