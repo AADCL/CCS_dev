@@ -1,3 +1,4 @@
+# 传统 pip 安装兼容入口；项目依赖与锁定版本以 pyproject.toml 和 uv.lock 为准。
 PySide6>=6.6,<7
 amqtt>=0.11,<1
 paho-mqtt>=2,<3
