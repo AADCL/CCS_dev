@@ -7,6 +7,7 @@
 - `PointCloudViewer.set_relocalization_picker(device_id | None)` 将十字星上下文绑定到设备；读取初始位姿时必须再次提供相同设备 ID。`start_stack` 和 `initial_pose` 继续仅通过 envelope 的 `device_id` 标识目标，不增加 payload 字段。
 - 初始无会话及协商中的快照均设置 `can_download=False`，只有带 `session_id` 的 `map_required` 状态允许下发地图。重复协商不会覆盖正在活动的重定位会话。
 - 本地 odom 按设备 profile 解析：Scout/WheelTech 使用 `vision_pose`，Go2 等使用 `global_pose`。当前地图轨迹最多保留 10,000 点；重定位、短暂无位姿、切换选择或同地图页面重进不清空，仅切换地图或开始新建图时清空。
+- VisPy visual 使用冻结属性模型，轨迹是否有足够点数由 `PointCloudViewer._trail_visibility` 维护，不向 `Line` 实例写入动态属性；删除轨迹时同时清理 visual 和状态表。
 - 指控大屏状态和两组趋势共用同一份有效本地 odom 位姿，不以 IMU 补姿态。横轴从 5 秒按 5 秒扩展至 60 秒；各分量以实线、虚线和点线区分，颜色统一来自共享设备颜色注册表。
 - 本次仅升级平台至 v0.22.7。端侧 `epgeneral_relocalization` v0.2.2、`epgeneral_map_stream` v0.12.0、既有协议 schema、消息字段和端口保持不变。
 

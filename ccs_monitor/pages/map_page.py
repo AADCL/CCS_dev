@@ -1883,6 +1883,7 @@ class PointCloudViewer(QWidget):
         self._device_axis_visual = None
         self._trail_visual = None
         self._trail_visuals: dict[str, object] = {}
+        self._trail_visibility: dict[str, bool] = {}
         self._camera = None
         self.layer_mode = "overlay"
         self.devices_visible = True
@@ -2620,7 +2621,7 @@ class PointCloudViewer(QWidget):
             self._trail_visual.visible = self.devices_visible and len(self.device_trail) >= 2
         for device_id, visual in self._trail_visuals.items():
             visual.visible = self.devices_visible and bool(
-                getattr(visual, "_ccs_has_trail", False)
+                self._trail_visibility.get(device_id, False)
             )
 
     def _render_markers(self) -> None:
@@ -2744,6 +2745,7 @@ class PointCloudViewer(QWidget):
             if device_id in trails:
                 continue
             visual = self._trail_visuals.pop(device_id)
+            self._trail_visibility.pop(device_id, None)
             visual.parent = None
         for device_id, positions in trails.items():
             visual = self._trail_visuals.get(device_id)
@@ -2758,7 +2760,7 @@ class PointCloudViewer(QWidget):
             visual.set_data(
                 pos=points, color=device_display_color(device_id), width=2.5
             )
-            visual._ccs_has_trail = has_trail
+            self._trail_visibility[device_id] = has_trail
             visual.visible = self.devices_visible and has_trail
 
     @staticmethod

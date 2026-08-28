@@ -173,6 +173,23 @@ class MapOnlineDevicePanelTests(unittest.TestCase):
             self.assertEqual(visual.order, viewer.DEVICE_LAYER_ORDER)
         viewer.deleteLater()
 
+    def test_multiple_device_trails_do_not_add_attributes_to_frozen_visuals(self):
+        viewer = PointCloudViewer()
+        trails = {
+            "UGV_001": [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)],
+            "UGV_003": [(0.0, 1.0, 0.0)],
+        }
+        viewer.set_device_trails(trails)
+        self.assertTrue(viewer._trail_visibility["UGV_001"])
+        self.assertFalse(viewer._trail_visibility["UGV_003"])
+        self.assertNotIn("_ccs_has_trail", vars(viewer._trail_visuals["UGV_001"]))
+        viewer.set_devices_layer_visible(False)
+        viewer.set_devices_layer_visible(True)
+        viewer.set_device_trails({})
+        self.assertNotIn("UGV_001", viewer._trail_visuals)
+        self.assertNotIn("UGV_001", viewer._trail_visibility)
+        viewer.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()
