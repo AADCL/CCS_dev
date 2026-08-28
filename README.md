@@ -1,8 +1,8 @@
 # 多异构智能体指挥与控制系统
 
-当前指控平台版本：**v0.22.5**
+当前指控平台版本：**v0.22.6**
 
-端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.4.0**、epgeneral_udp_telemetry **v0.3.0**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.11.0**、epgeneral_task_control **v0.4.3**、epgeneral_relocalization **v0.2.2**
+端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.4.0**、epgeneral_udp_telemetry **v0.3.0**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.12.0**、epgeneral_task_control **v0.4.3**、epgeneral_relocalization **v0.2.2**
 
 ## 功能介绍
 
@@ -14,7 +14,7 @@
 - **设备管理**：支持搜索、筛选、新建、编辑、批量删除、详情查看、设备类型模板和配置持久化。类型模板统一管理预览图标、地图形状与默认功能卡片。
 - **实时监测**：设备页显示活动地图重定位位姿、本地 odom 位姿和 IMU；FAST_LIO2 以 Odometry 新鲜度判断，PGM 以端侧活动地图文件为准。
 - **视频监控**：通过系统 FFmpeg 按需连接端侧 UDP 9000 SRT Listener，显示 H.264/MPEG-TS 视频流。
-- **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原；新增 `ccs-map-stream-v2` 单机遥控建图，包括准备协商、实时预览、端侧成果生成、HTTP 断点下载及 PCD+PGM+YAML 原子提交。
+- **地图系统**：支持 PCD/PGM 创建、导入、编辑、下载和三维复原；`ccs-map-stream-v2` 支持单机及至少两台设备联合遥控建图，包括主从外参、实时预览、端侧成果生成、HTTP 断点下载及 PCD+PGM+YAML 原子提交。
 - **设备重定位**：完整地图可下发至 Scout，启动重定位栈后以地图中心十字星选择初始位姿；成功的 `map <- odom` 绑定持久化并用于各地图视图的在线设备标记。Go2 当前显示为不支持。
 - **任务系统**：通过共享地图图层控件进行 PCD/PGM 选点，支持多设备子任务、XYZ 编辑、轨迹冲突检查、持久化、UDP 14563/14564 下发与同步执行；任务日志统一展示审计和执行事件，可自动滚动并清除当前视图。
 - **指控大屏**：集中展示在线设备、三维地图、位置/姿态趋势和任务状态；设备始终置顶于地图图层，支持全屏、Esc 安全退出及面板折叠。
@@ -40,7 +40,7 @@ CCS_dev/
 │   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.1
 │   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
 │   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.3.0
-│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.11.0
+│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.12.0
 │   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
 │   ├── EPGeneral_relocalization/           # ROS 地图下发与重定位协调包，v0.2.2
 │   ├── epgeneral_mqtav.zip                  # 端侧部署归档
@@ -87,7 +87,7 @@ CCS_dev/
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
-当前配套端侧 `epgeneral_map_stream` v0.11.0。Scout 建图按 FAST-LIO、pointcloud mapper、TF manager、pose adapter 顺序启动；停止时由 mapper 刷新 filtered PCD，并以本次会话开始时生成的同一个 `map_name` 执行地图转换。Go2 继续使用 accumulator backend。
+当前配套端侧 `epgeneral_map_stream` v0.12.0。联合模式由地面站为各设备创建独立 v2 会话，要求至少两台设备并指定主设备；端侧回传联合作业身份，地面站按外参融合 PCD 和 PGM。Scout 建图仍按 FAST-LIO、pointcloud mapper、TF manager、pose adapter 顺序启动；Go2 继续使用 accumulator backend。
 
 地图详情页左侧显示可收起的在线设备栏，集中展示任务/建图状态、电量、坐标系和单路可控视频。设备位置直接复用 UDP `global_pose`，同坐标系直接显示，跨坐标系仅使用地图构建记录中与设备 ID 精确匹配的外参。所有地图点云按高度使用低红高紫的 rainbow 色谱。
 
@@ -347,7 +347,7 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 ### PGM 下载提示端侧版本不支持
 
-当前端侧 `epgeneral_map_stream` v0.11.0 已实现实时 PCD 分片、最终 PCD/PGM/YAML 成果 ZIP 和短期令牌 HTTP 服务。Scout 使用本地时间 `YYYYMMDD_HHMMSS` 作为固定 `map_name`，同一名称贯穿 pointcloud mapper、`filtered_camera_init.pcd`、`finalize_map.py --replace-raw` 和成果 manifest；Go2 继续使用 accumulator backend。
+当前端侧 `epgeneral_map_stream` v0.12.0 已实现实时 PCD 分片、最终 PCD/PGM/YAML 成果 ZIP、短期令牌 HTTP 服务和联合作业身份回传。Scout 使用本地时间 `YYYYMMDD_HHMMSS` 作为固定 `map_name`，同一名称贯穿 pointcloud mapper、`filtered_camera_init.pcd`、`finalize_map.py --replace-raw` 和成果 manifest；Go2 继续使用 accumulator backend。
 
 ### 融合算法无法导入或执行失败
 

@@ -99,6 +99,9 @@ class MapBuildingV2ProtocolTests(unittest.TestCase):
         self.assertEqual(self.config.final_map_frame, "map")
         self.assertEqual(self.config.preview_source_frame_for("UGV_001"), "odom")
         self.assertEqual(self.config.artifact_frame_for("UGV_001"), "map")
+        self.assertEqual(self.config.mapping_frame_for("UGV_003"), "odom")
+        self.assertEqual(self.config.preview_source_frame_for("UGV_003"), "odom")
+        self.assertEqual(self.config.artifact_frame_for("UGV_003"), "map")
         self.assertEqual(self.config.artifact_frame_for("QRD_001"), "lio_odom")
 
     def test_prepare_result_round_trip_and_consistency(self):
@@ -219,6 +222,136 @@ class ArtifactTests(unittest.TestCase):
 
 
 class CoordinatorTests(unittest.TestCase):
+    def test_prepare_frame_mismatch_auto_aborts(self):
+        config = load_map_building_config()
+        sent = []
+        snapshots = []
+        with tempfile.TemporaryDirectory() as directory:
+            repository = MapRepository(Path(directory) / "maps")
+            definition = repository.create(
+                "WheelTech", (MapCreatorDevice("UGV_003", "WheelTech", "UGV"),))
+            device = DeviceSnapshot(
+                "UGV_003", "WheelTech", "UGV", ip_address="127.0.0.1"
+            )
+            coordinator = RemoteMappingCoordinator(
+                config, repository, lambda raw, ip: sent.append((raw, ip))
+            )
+            coordinator.updated.connect(snapshots.append)
+            self.addCleanup(coordinator.shutdown)
+            session_id = coordinator.prepare(definition, device, "127.0.0.1", 14562)
+            prepare = coordinator.protocol.decode(sent[-1][0])
+
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id, "prepare_result", 1, 1,
+                {"request_id": prepare.payload["request_id"], "accepted": True,
+                 "checks": [{"name": "pointcloud", "available": True}],
+                 "sample_window_seconds": 0.2, "frame_id": "lio_odom",
+                 "capability_version": "0.11.0"}), "127.0.0.1")
+
+            self.assertEqual(coordinator.snapshot.state, "aborting")
+            self.assertEqual(coordinator.snapshot.error_code, "FRAME_MISMATCH")
+            abort = coordinator.protocol.decode(sent[-1][0])
+            self.assertEqual(abort.message_type, "abort_mapping")
+            self.assertIn("lio_odom", abort.payload["reason"])
+            self.assertIn("odom", abort.payload["reason"])
+
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id, "command_ack", 2, 2,
+                {"request_id": abort.payload["request_id"], "command": "abort_mapping",
+                 "accepted": True}), "127.0.0.1")
+            self.assertIsNone(coordinator.snapshot)
+            self.assertEqual(snapshots[-1].state, "aborted")
+            self.assertEqual(snapshots[-1].error_code, "FRAME_MISMATCH")
+            self.assertIn("坐标系校验失败，端侧已自动中止", snapshots[-1].message)
+
+    def test_wheeltec_frames_are_accepted_and_mismatch_auto_aborts(self):
+        config = load_map_building_config()
+        now = [10.0]
+        sent = []
+        snapshots = []
+        with tempfile.TemporaryDirectory() as directory:
+            repository = MapRepository(Path(directory) / "maps")
+            definition = repository.create(
+                "WheelTech", (MapCreatorDevice("UGV_003", "WheelTech", "UGV"),))
+            device = DeviceSnapshot(
+                "UGV_003", "WheelTech", "UGV", ip_address="127.0.0.1"
+            )
+            coordinator = RemoteMappingCoordinator(
+                config, repository, lambda raw, ip: sent.append((raw, ip)),
+                clock=lambda: now[0],
+            )
+            coordinator.updated.connect(snapshots.append)
+            self.addCleanup(coordinator.shutdown)
+            session_id = coordinator.prepare(definition, device, "127.0.0.1", 14562)
+            prepare = coordinator.protocol.decode(sent[-1][0])
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id, "prepare_result", 1, 1,
+                {"request_id": prepare.payload["request_id"], "accepted": True,
+                 "checks": [{"name": "pointcloud", "available": True}],
+                 "sample_window_seconds": 0.2, "frame_id": "odom",
+                 "capability_version": "0.11.0"}), "127.0.0.1")
+            coordinator.begin()
+            start = coordinator.protocol.decode(sent[-1][0])
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id, "command_ack", 2, 2,
+                {"request_id": start.payload["request_id"], "command": "start_mapping",
+                 "accepted": True}), "127.0.0.1")
+
+            fragment = {
+                "fragment_id": 1,
+                "url": "http://127.0.0.1:14600/preview.pcd?token=x",
+                "byte_count": 100, "sha256": "0" * 64, "point_count": 2,
+                "frame_id": "odom", "source_frame_id": "odom",
+                "display_from_source": {
+                    "x": 0.0, "y": 0.0, "z": 0.0,
+                    "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+                },
+                "started_at_ns": 1, "ended_at_ns": 2,
+                "expires_at": "2030-01-01T00:00:00+00:00",
+            }
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id,
+                "cloud_fragment_ready", 3, 3, fragment), "127.0.0.1")
+            self.assertEqual(coordinator.snapshot.state, "mapping")
+            self.assertNotEqual(coordinator.snapshot.error_code, "FRAME_MISMATCH")
+
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id,
+                "cloud_fragment_ready", 4, 4,
+                {**fragment, "fragment_id": 2, "source_frame_id": "lio_odom"}),
+                "127.0.0.1")
+            self.assertEqual(coordinator.snapshot.state, "aborting")
+            self.assertEqual(coordinator.snapshot.error_code, "FRAME_MISMATCH")
+            abort = coordinator.protocol.decode(sent[-1][0])
+            self.assertEqual(abort.message_type, "abort_mapping")
+            self.assertEqual(abort.payload["reason"], "PCD 分片源坐标系不匹配")
+
+            sent_before_duplicate = len(sent)
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id,
+                "cloud_fragment_ready", 5, 5,
+                {**fragment, "fragment_id": 3, "source_frame_id": "lio_odom"}),
+                "127.0.0.1")
+            self.assertEqual(len(sent), sent_before_duplicate)
+            self.assertEqual(coordinator.snapshot.state, "aborting")
+
+            sent_before_retry = len(sent)
+            now[0] += config.command_retry_seconds
+            coordinator.tick("127.0.0.1", 14562)
+            self.assertGreater(len(sent), sent_before_retry)
+            retry = coordinator.protocol.decode(sent[-1][0])
+            self.assertEqual(retry.message_type, "abort_mapping")
+            self.assertEqual(retry.payload["request_id"], abort.payload["request_id"])
+
+            coordinator.handle(MapBuildingEnvelope(
+                definition.map_id, device.device_id, session_id, "command_ack", 6, 6,
+                {"request_id": retry.payload["request_id"], "command": "abort_mapping",
+                 "accepted": True}), "127.0.0.1")
+            self.assertIsNone(coordinator.snapshot)
+            self.assertEqual(snapshots[-1].state, "aborted")
+            self.assertEqual(snapshots[-1].error_code, "FRAME_MISMATCH")
+            self.assertIn("坐标系校验失败，端侧已自动中止", snapshots[-1].message)
+
     def test_prepare_failure_retry_and_ready_gate(self):
         config = load_map_building_config()
         sent = []

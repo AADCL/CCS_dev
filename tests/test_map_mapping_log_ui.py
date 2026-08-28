@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -39,6 +39,39 @@ class MappingLogUiTests(unittest.TestCase):
         text = page.mapping_log.toPlainText()
         self.assertIn("entry 204", text)
         self.assertIn("重新协商", text)
+
+    def test_device_filter_and_view_only_clear(self):
+        page = MapDetailPage(viewer_factory=QWidget)
+        now = datetime.now(timezone.utc)
+        entries = (
+            RemoteMappingLogEntry(now, "RX", "status", "Scout ready", "INFO", "UGV_001"),
+            RemoteMappingLogEntry(now, "RX", "status", "WheelTech ready", "INFO", "UGV_003"),
+        )
+        snapshot = RemoteMappingSnapshot(
+            "map-1", "UGV_001", "job-1", "ready", "ready", now,
+            log_entries=entries,
+        )
+        page.update_remote_mapping(snapshot)
+        self.assertIn("UGV_001", page.mapping_log.toPlainText())
+        self.assertIn("UGV_003", page.mapping_log.toPlainText())
+        page.mapping_device_filter.setCurrentIndex(
+            page.mapping_device_filter.findData("UGV_003")
+        )
+        self.assertNotIn("Scout ready", page.mapping_log.toPlainText())
+        self.assertIn("WheelTech ready", page.mapping_log.toPlainText())
+        page._clear_mapping_log_view()
+        self.assertEqual(page.mapping_log.toPlainText(), "")
+        later = datetime.now(timezone.utc) + timedelta(seconds=1)
+        page.update_remote_mapping(RemoteMappingSnapshot(
+            "map-1", "UGV_001", "job-1", "mapping", "mapping", now,
+            log_entries=entries + (
+                RemoteMappingLogEntry(
+                    later, "RX", "fragment", "new fragment", "INFO", "UGV_003"
+                ),
+            ),
+        ))
+        self.assertIn("new fragment", page.mapping_log.toPlainText())
+        self.assertIsNot(page.mapping_log.parentWidget(), page.relocalization_log.parentWidget())
 
 
 if __name__ == "__main__":

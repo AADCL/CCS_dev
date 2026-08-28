@@ -244,7 +244,7 @@ def load_config(mapping_path, device_path):
     return {
         "schema_version": 6,
         "protocol_id": protocol_id,
-        "capability_version": "0.11.0",
+        "capability_version": "0.12.0",
         "integration_backend": backend,
         "device_id": device_id,
         "device_ip": device_ip,

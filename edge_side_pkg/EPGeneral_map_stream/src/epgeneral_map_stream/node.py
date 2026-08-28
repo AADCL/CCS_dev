@@ -57,6 +57,9 @@ class RosTfTransformLookup(object):
 class MappingSession(object):
     def __init__(self, command, destination, paths, pose_buffer_size, clock):
         self.identity = {"map_id": command["map_id"], "session_id": command["session_id"]}
+        for name in ("job_id", "role", "primary_device_id"):
+            if name in command["payload"]:
+                self.identity[name] = command["payload"][name]
         self.destination = destination
         self.paths = paths
         self.token = uuid.uuid4().hex
@@ -481,9 +484,14 @@ class RosMapStreamNode(object):
     def _handle_start(self, command):
         with self.lock:
             session = self.session
+            joint_matches = all(
+                command["payload"].get(name) == session.identity.get(name)
+                for name in ("job_id", "role", "primary_device_id")
+            ) if session is not None else False
             valid = (session is not None and session.state == "ready"
                      and command["map_id"] == session.identity["map_id"]
-                     and command["session_id"] == session.identity["session_id"])
+                     and command["session_id"] == session.identity["session_id"]
+                     and joint_matches)
         if not valid:
             self._reject(command, "prepared mapping session does not match",
                          "MAP_ID_MISMATCH", self._command_destination(

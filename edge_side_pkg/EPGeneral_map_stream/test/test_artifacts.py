@@ -107,6 +107,19 @@ class ArtifactTests(unittest.TestCase):
             device_id=self.config["device_id"], session_id=self.identity["session_id"])
         self.assertEqual(validated.frame_id, self.config["map_frame"])
 
+    def test_joint_identity_is_recorded_in_manifest(self):
+        write_outputs(self.paths)
+        identity = dict(
+            self.identity, job_id="job-1", role="secondary",
+            primary_device_id="UGV_001",
+        )
+        build_archive(self.paths, self.config, identity)
+        with zipfile.ZipFile(self.paths.archive_path) as archive:
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        self.assertEqual(manifest["job_id"], "job-1")
+        self.assertEqual(manifest["role"], "secondary")
+        self.assertEqual(manifest["primary_device_id"], "UGV_001")
+
     def test_invalid_yaml_and_symlink_are_rejected(self):
         write_outputs(self.paths)
         with io.open(self.paths.yaml_path, "w", encoding="utf-8") as stream:

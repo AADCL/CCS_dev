@@ -511,6 +511,7 @@ class DeviceMapMarker:
     status: str = "unknown"
     marker_shape: MapMarkerShape = MapMarkerShape.SPHERE
     yaw: float = 0.0
+    color: str | None = None
 
 
 @dataclass(frozen=True)

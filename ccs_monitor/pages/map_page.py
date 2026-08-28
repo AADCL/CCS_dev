@@ -6,11 +6,15 @@ import math
 import json
 import threading
 import uuid
+import hashlib
 from datetime import datetime, timezone
 
 import numpy as np
 from PySide6.QtCore import QEvent, QSettings, QTimer, Signal, Qt, QObject
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QLinearGradient, QMouseEvent, QPainter
+from PySide6.QtGui import (
+    QColor, QFont, QFontDatabase, QLinearGradient, QMouseEvent, QPainter,
+    QTextCharFormat, QTextCursor,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QButtonGroup,
@@ -37,6 +41,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QHeaderView,
     QStackedLayout,
     QStackedWidget,
@@ -106,6 +111,17 @@ RAINBOW_STOPS = np.asarray((
     (0.0, 0.0, 1.0, 1.0),
     (0.5, 0.0, 1.0, 1.0),
 ), dtype=np.float32)
+
+DEVICE_COLORS = (
+    "#22C55E", "#F59E0B", "#06B6D4", "#EF4444",
+    "#8B5CF6", "#EC4899", "#84CC16", "#0EA5E9",
+)
+
+
+def device_display_color(device_id: str) -> str:
+    """Return a stable, high-contrast color for a device ID."""
+    digest = hashlib.sha256(device_id.strip().casefold().encode("utf-8")).digest()
+    return DEVICE_COLORS[int.from_bytes(digest[:2], "big") % len(DEVICE_COLORS)]
 
 
 def height_rainbow_colors(
@@ -583,6 +599,7 @@ class MapCreationModeDialog(QDialog):
         root.addWidget(title)
         for mode, name, detail in (
             ("single", "单机遥控建图", "创建任务后先与端侧协商点云、位姿和成果能力"),
+            ("multi", "多设备联合遥控建图", "选择至少两台设备，设置主设备和设备间坐标外参"),
             ("empty", "空地图", "创建不绑定设备的地图档案，稍后导入或建图"),
         ):
             button = QPushButton(f"{name}\n{detail}")
@@ -780,6 +797,19 @@ class MappingSetupDialog(QDialog):
         if self.mode == "single":
             return (MapTransform(self.primary_device_id(), True),)
         return self.transform_table.transforms()
+
+    def validate_joint_transforms(self) -> None:
+        if self.mode != "multi":
+            return
+        invalid = [
+            item.source_id for item in self.transforms()
+            if abs(item.rotation_rpy_deg[0]) > 1e-9
+            or abs(item.rotation_rpy_deg[1]) > 1e-9
+        ]
+        if invalid:
+            raise ValueError(
+                "多设备 PGM 联合建图暂不支持非零 Roll/Pitch：" + "、".join(invalid)
+            )
 
     def algorithm_id(self) -> str:
         if self.mode == "single":
@@ -1409,6 +1439,10 @@ class MapDeviceCard(QFrame):
         self.setObjectName("mapOnlineDeviceCard")
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.device = device
+        self.device_color = device_display_color(device.device_id)
+        self.setStyleSheet(
+            f"QFrame#mapOnlineDeviceCard {{ border-left: 4px solid {self.device_color}; }}"
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 9, 10, 10)
         layout.setSpacing(6)
@@ -1490,6 +1524,12 @@ class MapDeviceCard(QFrame):
         map_complete: bool = False,
     ) -> None:
         self.device = device
+        color = device_display_color(device.device_id)
+        if color != self.device_color:
+            self.device_color = color
+            self.setStyleSheet(
+                f"QFrame#mapOnlineDeviceCard {{ border-left: 4px solid {color}; }}"
+            )
         self.name_button.setText(device.device_name)
         type_name = device.device_type_name or device.device_type
         self.identity.setText(f"类型 {type_name}  ·  ID {device.device_id}")
@@ -1567,6 +1607,7 @@ class MapOnlineDevicePanel(QFrame):
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.devices: list[DeviceSnapshot] = []
         self.remote: RemoteMappingSnapshot | None = None
+        self._remote_snapshots: dict[str, RemoteMappingSnapshot] = {}
         self.selected_device_id: str | None = None
         self.cards: dict[str, MapDeviceCard] = {}
         self._frame_notes: dict[str, str] = {}
@@ -1639,6 +1680,8 @@ class MapOnlineDevicePanel(QFrame):
     ) -> None:
         if relocalization_snapshots is not None:
             self._relocalization_snapshots = dict(relocalization_snapshots)
+        if remote is None:
+            self._remote_snapshots.clear()
         self._map_complete = bool(map_complete)
         online = [item for item in devices if item.connection_status == ConnectionStatus.ONLINE]
         remote_id = remote.device_id.casefold() if remote is not None else ""
@@ -1672,7 +1715,9 @@ class MapOnlineDevicePanel(QFrame):
                 self.cards[item.device_id] = card
                 self.card_layout.insertWidget(self.card_layout.count() - 1, card)
             card.update_snapshot(
-                item, remote, self._relocalization_snapshots.get(item.device_id.casefold()),
+                item,
+                self._remote_snapshots.get(item.device_id, remote),
+                self._relocalization_snapshots.get(item.device_id.casefold()),
                 self._map_complete,
             )
             card.set_selected(item.device_id == self.selected_device_id)
@@ -1708,6 +1753,17 @@ class MapOnlineDevicePanel(QFrame):
     def select_remote_device(self, remote: RemoteMappingSnapshot) -> None:
         if remote.device_id in self.cards:
             self.select_device(remote.device_id)
+
+    def set_remote_snapshots(
+        self, snapshots: dict[str, RemoteMappingSnapshot]
+    ) -> None:
+        self._remote_snapshots = dict(snapshots)
+        for device_id, card in self.cards.items():
+            card.update_snapshot(
+                card.device, self._remote_snapshots.get(device_id, self.remote),
+                self._relocalization_snapshots.get(device_id.casefold()),
+                self._map_complete,
+            )
 
     def _on_video_requested(self, device_id: str, enabled: bool) -> None:
         if not enabled:
@@ -1808,6 +1864,7 @@ class PointCloudViewer(QWidget):
         self._coordinate_visual = None
         self._device_axis_visual = None
         self._trail_visual = None
+        self._trail_visuals: dict[str, object] = {}
         self._camera = None
         self.layer_mode = "overlay"
         self.devices_visible = True
@@ -1973,7 +2030,38 @@ class PointCloudViewer(QWidget):
         self._grid_visual.visible = False
         self._coordinate_visual.order = 11
         self._coordinate_visual.visible = False
-        scene.visuals.XYZAxis(parent=self._view.scene)
+        self._map_axis_visual = scene.visuals.Line(parent=self._view.scene)
+        self._map_axis_visual.set_gl_state("translucent", depth_test=False)
+        self._map_axis_visual.order = 12
+        self._render_map_axes()
+
+    def _render_map_axes(self) -> None:
+        if getattr(self, "_map_axis_visual", None) is None:
+            return
+        length, head, wing = 2.4, 0.34, 0.16
+        positions = []
+        colors = []
+        for axis, color in (
+            (np.asarray((1.0, 0.0, 0.0), dtype=np.float32), "#EF4444"),
+            (np.asarray((0.0, 1.0, 0.0), dtype=np.float32), "#22C55E"),
+            (np.asarray((0.0, 0.0, 1.0), dtype=np.float32), "#3B82F6"),
+        ):
+            end = axis * length
+            side_a = np.roll(axis, 1) * wing
+            side_b = np.roll(axis, 2) * wing
+            segments = (
+                np.zeros(3), end,
+                end, end - axis * head + side_a,
+                end, end - axis * head - side_a,
+                end, end - axis * head + side_b,
+                end, end - axis * head - side_b,
+            )
+            positions.extend(segments)
+            colors.extend([self._rgba(color)] * len(segments))
+        self._map_axis_visual.set_data(
+            pos=np.asarray(positions, dtype=np.float32),
+            color=np.asarray(colors, dtype=np.float32), connect="segments", width=4.0,
+        )
 
     def load_map(self, definition: MapDefinition, pcd_path: str | Path) -> None:
         self.current_map = definition
@@ -2505,6 +2593,10 @@ class PointCloudViewer(QWidget):
             )
         if self._trail_visual is not None:
             self._trail_visual.visible = self.devices_visible and len(self.device_trail) >= 2
+        for device_id, visual in self._trail_visuals.items():
+            visual.visible = self.devices_visible and bool(
+                getattr(visual, "_ccs_has_trail", False)
+            )
 
     def _render_markers(self) -> None:
         if self._marker_visual is None:
@@ -2516,6 +2608,7 @@ class PointCloudViewer(QWidget):
                 pass
         self._shape_visuals.clear()
         fallback = []
+        fallback_colors = []
         for marker in self.markers:
             try:
                 visual = self._create_marker_mesh(marker)
@@ -2523,10 +2616,12 @@ class PointCloudViewer(QWidget):
                 self._shape_visuals.append(visual)
             except Exception:
                 fallback.append((marker.x, marker.y, marker.z))
+                fallback_colors.append(marker.color or device_display_color(marker.device_id))
         positions = np.asarray(fallback, dtype=np.float32)
         if not len(positions):
             positions = np.empty((0, 3), dtype=np.float32)
-        self._marker_visual.set_data(positions, face_color=self.theme_palette.warning, edge_color=self.theme_palette.text_strong, size=12)
+        face_color = fallback_colors if fallback_colors else self.theme_palette.warning
+        self._marker_visual.set_data(positions, face_color=face_color, edge_color=self.theme_palette.text_strong, size=12)
         self._marker_visual.visible = self.devices_visible
 
     def _create_marker_mesh(self, marker: DeviceMapMarker):
@@ -2534,11 +2629,12 @@ class PointCloudViewer(QWidget):
         from vispy.geometry import create_box, create_sphere
         from vispy.visuals.transforms import MatrixTransform
 
+        color = marker.color or device_display_color(marker.device_id)
         if marker.marker_shape == MapMarkerShape.CUBE:
             mesh_data = create_box(width=0.8, height=0.8, depth=0.8)
             visual = scene.visuals.Mesh(
                 vertices=mesh_data.get_vertices(), faces=mesh_data.get_faces(),
-                color=self.theme_palette.warning, parent=self._view.scene,
+                color=color, parent=self._view.scene,
             )
         elif marker.marker_shape == MapMarkerShape.ARROW:
             vertices = np.asarray([
@@ -2547,14 +2643,14 @@ class PointCloudViewer(QWidget):
             ], dtype=np.float32)
             faces = np.asarray([(0, 1, 2), (0, 2, 3)], dtype=np.uint32)
             visual = scene.visuals.Mesh(
-                vertices=vertices, faces=faces, color=self.theme_palette.warning,
+                vertices=vertices, faces=faces, color=color,
                 parent=self._view.scene,
             )
         else:
             mesh_data = create_sphere(rows=8, cols=12, radius=0.45)
             visual = scene.visuals.Mesh(
                 vertices=mesh_data.get_vertices(), faces=mesh_data.get_faces(),
-                color=self.theme_palette.warning, parent=self._view.scene,
+                color=color, parent=self._view.scene,
             )
         transform = MatrixTransform()
         transform.rotate(float(marker.yaw), (0, 0, 1))
@@ -2610,6 +2706,35 @@ class PointCloudViewer(QWidget):
             points = np.empty((0, 3), dtype=np.float32)
         self._trail_visual.set_data(pos=points, color=self.theme_palette.primary_strong, width=2.0)
         self._trail_visual.visible = self.devices_visible and has_trail
+
+    def set_device_trails(
+        self,
+        trails: dict[str, list[tuple[float, float, float]] | tuple[tuple[float, float, float], ...]],
+    ) -> None:
+        """Render all device trajectories with their stable device colors."""
+        if self._view is None:
+            return
+        from vispy import scene
+        for device_id in tuple(self._trail_visuals):
+            if device_id in trails:
+                continue
+            visual = self._trail_visuals.pop(device_id)
+            visual.parent = None
+        for device_id, positions in trails.items():
+            visual = self._trail_visuals.get(device_id)
+            if visual is None:
+                visual = scene.visuals.Line(parent=self._view.scene)
+                self._configure_device_visual(visual)
+                self._trail_visuals[device_id] = visual
+            points = np.asarray(positions, dtype=np.float32)
+            has_trail = len(points) >= 2
+            if not has_trail:
+                points = np.empty((0, 3), dtype=np.float32)
+            visual.set_data(
+                pos=points, color=device_display_color(device_id), width=2.5
+            )
+            visual._ccs_has_trail = has_trail
+            visual.visible = self.devices_visible and has_trail
 
     @staticmethod
     def _rgba(value: str) -> tuple[float, float, float, float]:
@@ -2717,7 +2842,6 @@ class MapDetailPage(QWidget):
         self.mapping_log.setFixedHeight(112)
         self.mapping_log.setFont(fixed_width_font())
         self.mapping_log.setVisible(False)
-        status_layout.addWidget(self.mapping_log)
         self.mapping_status.setVisible(False)
         root.addWidget(self.mapping_status)
         self.readiness_details = QLabel("")
@@ -2725,6 +2849,37 @@ class MapDetailPage(QWidget):
         self.readiness_details.setWordWrap(True)
         self.readiness_details.setVisible(False)
         root.addWidget(self.readiness_details)
+        log_row = QHBoxLayout()
+        log_row.setSpacing(10)
+        mapping_panel = QFrame()
+        mapping_panel.setObjectName("mappingLogPanel")
+        mapping_layout = QVBoxLayout(mapping_panel)
+        mapping_layout.setContentsMargins(0, 0, 0, 0)
+        mapping_header = QHBoxLayout()
+        mapping_header.addWidget(QLabel("建图日志"))
+        mapping_header.addStretch()
+        self.mapping_device_filter = QComboBox()
+        self.mapping_device_filter.addItem("全部设备", "")
+        self.mapping_device_filter.currentIndexChanged.connect(self._render_mapping_log)
+        self.mapping_clear_button = QPushButton("清除")
+        self.mapping_clear_button.clicked.connect(self._clear_mapping_log_view)
+        mapping_header.addWidget(self.mapping_device_filter)
+        mapping_header.addWidget(self.mapping_clear_button)
+        mapping_layout.addLayout(mapping_header)
+        mapping_layout.addWidget(self.mapping_log)
+        log_row.addWidget(mapping_panel, 1)
+
+        relocalization_panel = QFrame()
+        relocalization_panel.setObjectName("relocalizationLogPanel")
+        relocalization_layout = QVBoxLayout(relocalization_panel)
+        relocalization_layout.setContentsMargins(0, 0, 0, 0)
+        relocalization_header = QHBoxLayout()
+        relocalization_header.addWidget(QLabel("重定位日志"))
+        relocalization_header.addStretch()
+        self.relocalization_clear_button = QPushButton("清除")
+        self.relocalization_clear_button.clicked.connect(self._clear_relocalization_log_view)
+        relocalization_header.addWidget(self.relocalization_clear_button)
+        relocalization_layout.addLayout(relocalization_header)
         self.relocalization_log = QPlainTextEdit()
         self.relocalization_log.setObjectName("mappingProtocolLog")
         self.relocalization_log.setReadOnly(True)
@@ -2732,7 +2887,9 @@ class MapDetailPage(QWidget):
         self.relocalization_log.setFixedHeight(96)
         self.relocalization_log.setFont(fixed_width_font())
         self.relocalization_log.setVisible(False)
-        root.addWidget(self.relocalization_log)
+        relocalization_layout.addWidget(self.relocalization_log)
+        log_row.addWidget(relocalization_panel, 1)
+        root.addLayout(log_row)
         self.content_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.content_splitter.setChildrenCollapsible(False)
         self.device_panel = MapOnlineDevicePanel()
@@ -2747,6 +2904,10 @@ class MapDetailPage(QWidget):
         self.content_splitter.setSizes([380, 900])
         root.addWidget(self.content_splitter, 1)
         self._started_at = None
+        self._mapping_entries = ()
+        self._mapping_clear_cutoff: datetime | None = None
+        self._relocalization_lines: tuple[str, ...] = ()
+        self._relocalization_clear_count = 0
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.setInterval(1000)
         self._elapsed_timer.timeout.connect(self._refresh_elapsed)
@@ -2771,10 +2932,64 @@ class MapDetailPage(QWidget):
             devices, remote, relocalization_snapshots, map_complete
         )
 
+    def set_remote_snapshots(
+        self, snapshots: dict[str, RemoteMappingSnapshot]
+    ) -> None:
+        self.device_panel.set_remote_snapshots(snapshots)
+
     def update_relocalization(self, snapshot) -> None:
         self.device_panel.set_relocalization_snapshot(snapshot)
         if snapshot.device_id == self.device_panel.selected_device_id:
-            self._set_protocol_log(self.relocalization_log, snapshot.logs)
+            self._relocalization_lines = tuple(
+                f"{snapshot.device_id:<16} {line}" for line in snapshot.logs
+            )
+            self._render_relocalization_log()
+
+    def _clear_mapping_log_view(self) -> None:
+        self._mapping_clear_cutoff = datetime.now(timezone.utc)
+        self._render_mapping_log()
+
+    def _clear_relocalization_log_view(self) -> None:
+        self._relocalization_clear_count = len(self._relocalization_lines)
+        self._render_relocalization_log()
+
+    def _render_relocalization_log(self) -> None:
+        self._set_protocol_log(
+            self.relocalization_log,
+            self._relocalization_lines[self._relocalization_clear_count:],
+        )
+
+    def _render_mapping_log(self) -> None:
+        selected = str(self.mapping_device_filter.currentData() or "").casefold()
+        entries = [
+            entry for entry in self._mapping_entries
+            if (not selected or entry.device_id.casefold() == selected)
+            and (self._mapping_clear_cutoff is None
+                 or entry.timestamp > self._mapping_clear_cutoff)
+        ]
+        lines = []
+        for entry in entries[-200:]:
+            stamp = entry.timestamp.astimezone().strftime("%H:%M:%S.%f")[:-3]
+            lines.append(
+                f"[{stamp}] {entry.level:<5} {entry.device_id or '-':<16} "
+                f"{entry.direction:<5} {entry.event:<18} {entry.summary}"
+            )
+        self._set_protocol_log(self.mapping_log, lines)
+        selections = []
+        for index, entry in enumerate(entries[-200:]):
+            block = self.mapping_log.document().findBlockByNumber(index)
+            if not block.isValid() or not entry.device_id:
+                continue
+            selection = QTextEdit.ExtraSelection()
+            selection.cursor = QTextCursor(block)
+            selection.cursor.movePosition(
+                QTextCursor.MoveOperation.EndOfBlock,
+                QTextCursor.MoveMode.KeepAnchor,
+            )
+            selection.format = QTextCharFormat()
+            selection.format.setForeground(QColor(device_display_color(entry.device_id)))
+            selections.append(selection)
+        self.mapping_log.setExtraSelections(selections)
 
     @staticmethod
     def _set_protocol_log(widget: QPlainTextEdit, lines) -> None:
@@ -2854,13 +3069,18 @@ class MapDetailPage(QWidget):
     def update_remote_mapping(self, snapshot: RemoteMappingSnapshot) -> None:
         self.mapping_status.setVisible(True)
         self.mapping_state.setText(snapshot.message)
-        log_lines = []
-        for entry in snapshot.log_entries:
-            stamp = entry.timestamp.astimezone().strftime("%H:%M:%S.%f")[:-3]
-            log_lines.append(
-                f"[{stamp}] {entry.direction:<5} {entry.event:<18} {entry.summary}"
-            )
-        self._set_protocol_log(self.mapping_log, log_lines)
+        self._mapping_entries = tuple(snapshot.log_entries)
+        selected = self.mapping_device_filter.currentData()
+        device_ids = sorted({entry.device_id for entry in self._mapping_entries if entry.device_id})
+        self.mapping_device_filter.blockSignals(True)
+        self.mapping_device_filter.clear()
+        self.mapping_device_filter.addItem("全部设备", "")
+        for device_id in device_ids:
+            self.mapping_device_filter.addItem(device_id, device_id)
+        index = self.mapping_device_filter.findData(selected)
+        self.mapping_device_filter.setCurrentIndex(max(0, index))
+        self.mapping_device_filter.blockSignals(False)
+        self._render_mapping_log()
         last_data = (
             snapshot.last_data_at.astimezone().strftime("%H:%M:%S")
             if snapshot.last_data_at else "--"
@@ -2965,6 +3185,7 @@ class MapPage(QWidget):
         self.pgm_fusion_engine = PgmFusionEngine()
         self.telemetry_store = telemetry_store
         self._remote_trail: list[tuple[float, float, float]] = []
+        self._device_trails: dict[str, list[tuple[float, float, float]]] = {}
         self._trail_device_id: str | None = None
         self._latest_telemetry: dict[str, object] = {}
         self._selected_remote_session_id: str | None = None
@@ -3168,12 +3389,23 @@ class MapPage(QWidget):
             for item in selected_devices
         )
         try:
+            dialog.validate_joint_transforms()
             definition = self.repository.create(dialog.name_input.text(), creators)
             self.show_detail(definition.map_id)
-            if len(selected_devices) != 1:
-                raise ValueError("v0.16.0 只支持单机遥控建图")
             self._remote_trail.clear()
-            self.mapping_service.prepare_remote_mapping(definition, selected_devices[0])
+            self._device_trails.clear()
+            if mode == "multi":
+                algorithm = self.fusion_repository.algorithm(dialog.algorithm_id())
+                if algorithm is None:
+                    raise ValueError("融合算法不存在或已禁用")
+                self.mapping_service.prepare_joint_remote_mapping(
+                    definition, selected_devices, dialog.primary_device_id(),
+                    dialog.transforms(), algorithm,
+                )
+            elif len(selected_devices) == 1:
+                self.mapping_service.prepare_remote_mapping(definition, selected_devices[0])
+            else:
+                raise ValueError("单机遥控建图必须选择一台设备")
         except (MapRepositoryError, RuntimeError, ValueError) as exc:
             QMessageBox.critical(self, "地图创建失败", str(exc))
 
@@ -3710,7 +3942,7 @@ class MapPage(QWidget):
         if not candidates:
             QMessageBox.warning(self, "无法开始建图", "没有可用的已保存设备")
             return
-        mode = "single"
+        mode = "multi" if len(candidates) >= 2 else "single"
         dialog = MappingSetupDialog(
             mode, candidates, self.fusion_repository.algorithms(enabled_only=True),
             name=definition.name, name_editable=False, parent=self,
@@ -3720,10 +3952,21 @@ class MapPage(QWidget):
         selected_ids = set(dialog.selected_device_ids())
         selected_devices = [item for item in candidates if item.device_id in selected_ids]
         try:
-            if len(selected_devices) != 1:
-                raise ValueError("v0.16.0 只支持单机遥控建图")
+            dialog.validate_joint_transforms()
             self._remote_trail.clear()
-            self.mapping_service.prepare_remote_mapping(definition, selected_devices[0])
+            self._device_trails.clear()
+            if mode == "multi":
+                algorithm = self.fusion_repository.algorithm(dialog.algorithm_id())
+                if algorithm is None:
+                    raise ValueError("融合算法不存在或已禁用")
+                self.mapping_service.prepare_joint_remote_mapping(
+                    definition, selected_devices, dialog.primary_device_id(),
+                    dialog.transforms(), algorithm,
+                )
+            elif len(selected_devices) == 1:
+                self.mapping_service.prepare_remote_mapping(definition, selected_devices[0])
+            else:
+                raise ValueError("单机遥控建图必须选择一台设备")
         except (RuntimeError, ValueError) as exc:
             QMessageBox.critical(self, "建图启动失败", str(exc))
 
@@ -3753,6 +3996,10 @@ class MapPage(QWidget):
         if snapshot.map_id == self.current_map_id:
             self.detail_page.update_remote_mapping(snapshot)
             self.detail_page.set_devices(self.devices, snapshot)
+            self.detail_page.set_remote_snapshots(
+                self.mapping_service.current_remote_device_snapshots
+                if self.mapping_service is not None else {}
+            )
             if snapshot.session_id != self._selected_remote_session_id:
                 self._selected_remote_session_id = snapshot.session_id
                 self.detail_page.device_panel.select_remote_device(snapshot)
@@ -3919,21 +4166,27 @@ class MapPage(QWidget):
                 status=device.task_status.value,
                 marker_shape=device.map_marker_shape,
                 yaw=transformed.yaw,
+                color=device_display_color(device.device_id),
             ))
             if device.device_id == selected_id:
                 selected_pose = transformed
         self.detail_page.viewer.set_device_markers(markers)
         self.detail_page.viewer.set_selected_device_pose(selected_pose)
-        if selected_id != self._trail_device_id:
-            self._trail_device_id = selected_id
-            self._remote_trail.clear()
-        if selected_pose is not None:
-            position = (selected_pose.x, selected_pose.y, selected_pose.z)
-            if not self._remote_trail or math.dist(self._remote_trail[-1], position) >= 0.02:
-                self._remote_trail.append(position)
-                if len(self._remote_trail) > 10000:
-                    del self._remote_trail[:-10000]
-        self.detail_page.viewer.set_device_trail(self._remote_trail)
+        for marker in markers:
+            trail = self._device_trails.setdefault(marker.device_id, [])
+            position = (marker.x, marker.y, marker.z)
+            if not trail or math.dist(trail[-1], position) >= 0.02:
+                trail.append(position)
+                if len(trail) > 10000:
+                    del trail[:-10000]
+        valid_ids = {marker.device_id for marker in markers}
+        self._device_trails = {
+            device_id: trail for device_id, trail in self._device_trails.items()
+            if device_id in valid_ids
+        }
+        set_trails = getattr(self.detail_page.viewer, "set_device_trails", None)
+        if set_trails is not None:
+            set_trails(self._device_trails)
 
     def _on_mapping_degraded(self, snapshot: object) -> None:
         failed = [item for item in snapshot.device_sessions if item.state == "failed"]

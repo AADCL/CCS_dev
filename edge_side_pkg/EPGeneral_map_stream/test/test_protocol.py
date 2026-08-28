@@ -41,6 +41,23 @@ class ProtocolTests(unittest.TestCase):
         decoded = decode_command(encoded, self.config)
         self.assertTrue(decoded["payload"]["restart_active"])
 
+    def test_joint_mapping_fields_are_optional_but_atomic(self):
+        payload = dict(
+            self.prepare_payload, job_id="job-1", role="primary",
+            primary_device_id=self.config["device_id"],
+        )
+        decoded = decode_command(
+            encode_envelope(self.config, self.identity, "prepare_mapping", 1, payload),
+            self.config,
+        )
+        self.assertEqual(decoded["payload"]["job_id"], "job-1")
+        del payload["role"]
+        with self.assertRaisesRegex(ProtocolError, "provided together"):
+            decode_command(
+                encode_envelope(self.config, self.identity, "prepare_mapping", 2, payload),
+                self.config,
+            )
+
     def test_wrong_protocol_is_rejected(self):
         encoded = encode_envelope(self.config, self.identity, "prepare_mapping", 0, self.prepare_payload)
         raw = msgpack.unpackb(encoded, raw=False)

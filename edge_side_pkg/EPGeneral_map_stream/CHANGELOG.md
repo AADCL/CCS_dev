@@ -1,6 +1,11 @@
 # 更新记录
 
-<!-- epgeneral_map_stream_VERSION: 0.11.0 -->
+<!-- epgeneral_map_stream_VERSION: 0.12.0 -->
+
+## v0.12.0 - 2026-08-28
+
+- `ccs-map-stream-v2` 增加可选的联合建图作业、主从角色和主设备标识；单机消息保持兼容。
+- 最终成果 manifest 回传联合建图元数据，供地面站校验和审计；schema、协议 ID、UDP/TCP 端口不变。
 
 ## v0.11.0 - 2026-08-27
 

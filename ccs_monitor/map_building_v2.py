@@ -60,6 +60,7 @@ class RemoteMappingLogEntry:
     event: str
     summary: str
     level: str = "INFO"
+    device_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,15 @@ class ValidatedArtifact:
     file_sha256: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class RemoteMappingArtifactResult:
+    map_id: str
+    device_id: str
+    session_id: str
+    artifact: ValidatedArtifact
+    metadata: MapBuildingResultMetadata
+
+
 class MapBuildingV2Protocol:
     MESSAGE_TYPES = {
         "prepare_mapping", "prepare_result", "start_mapping", "stop_mapping", "abort_mapping",
@@ -269,6 +279,7 @@ class MapBuildingV2Protocol:
         if payload.get("preview_transport") != self.config.preview_transport:
             raise RemoteMappingProtocolError("prepare_mapping.preview_transport 无效")
         self._number(payload, "fragment_interval_seconds", 0.1)
+        self._validate_joint_fields(payload)
 
     def _validate_prepare_result(self, payload: dict[str, Any]) -> None:
         self._string(payload, "request_id")
@@ -304,6 +315,18 @@ class MapBuildingV2Protocol:
         if payload.get("preview_transport") != self.config.preview_transport:
             raise RemoteMappingProtocolError("实时预览传输方式无效")
         self._number(payload, "fragment_interval_seconds", 0.1)
+        self._validate_joint_fields(payload)
+
+    def _validate_joint_fields(self, payload: dict[str, Any]) -> None:
+        present = [key in payload for key in ("job_id", "role", "primary_device_id")]
+        if any(present) and not all(present):
+            raise RemoteMappingProtocolError("联合建图字段必须同时提供")
+        if not any(present):
+            return
+        self._string(payload, "job_id", maximum=128)
+        self._string(payload, "primary_device_id", maximum=128)
+        if payload.get("role") not in {"primary", "secondary"}:
+            raise RemoteMappingProtocolError("联合建图 role 无效")
 
     def _validate_stop_mapping(self, payload: dict[str, Any]) -> None:
         self._string(payload, "request_id")
@@ -512,7 +535,8 @@ class ArtifactPackageValidator:
         self.pgm_loader = pgm_loader or PgmMapLoader()
 
     def validate(self, archive: Path, output_root: Path, *, map_id: str,
-                 device_id: str, session_id: str) -> ValidatedArtifact:
+                 device_id: str, session_id: str,
+                 joint_metadata: dict[str, str] | None = None) -> ValidatedArtifact:
         shutil.rmtree(output_root, ignore_errors=True)
         output_root.mkdir(parents=True, exist_ok=True)
         try:
@@ -533,7 +557,7 @@ class ArtifactPackageValidator:
                 except (KeyError, UnicodeError, json.JSONDecodeError) as exc:
                     raise ArtifactValidationError(f"成果清单无效：{exc}") from exc
                 files, frame_id, generated_at = self._validate_manifest(
-                    manifest, map_id, device_id, session_id
+                    manifest, map_id, device_id, session_id, joint_metadata
                 )
                 declared = {"manifest.json", *(item["path"] for item in files.values())}
                 if set(names) != declared:
@@ -589,13 +613,23 @@ class ArtifactPackageValidator:
             raise ArtifactValidationError("成果 ZIP 不允许符号链接")
 
     def _validate_manifest(self, manifest: Any, map_id: str, device_id: str,
-                           session_id: str) -> tuple[dict[str, dict[str, Any]], str, datetime]:
+                           session_id: str,
+                           joint_metadata: dict[str, str] | None = None
+                           ) -> tuple[dict[str, dict[str, Any]], str, datetime]:
         if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
             raise ArtifactValidationError("成果清单 schema_version 无效")
         for key, expected in (("map_id", map_id), ("device_id", device_id),
                               ("session_id", session_id)):
             if manifest.get(key) != expected:
                 raise ArtifactValidationError(f"成果清单 {key} 不匹配")
+        joint_keys = ("job_id", "role", "primary_device_id")
+        present = [key in manifest for key in joint_keys]
+        if any(present) and not all(present):
+            raise ArtifactValidationError("成果清单联合建图字段不完整")
+        if joint_metadata is not None:
+            for key in joint_keys:
+                if manifest.get(key) != joint_metadata.get(key):
+                    raise ArtifactValidationError(f"成果清单 {key} 不匹配")
         frame_id = manifest.get("frame_id")
         if not isinstance(frame_id, str) or not frame_id.strip():
             raise ArtifactValidationError("成果清单 frame_id 无效")
@@ -704,6 +738,9 @@ class _RemoteSession:
     queued_fragments: set[int] = field(default_factory=set)
     processed_fragments: dict[int, None] = field(default_factory=dict)
     outbound_sequence: int = 1000
+    job_id: str = ""
+    role: str = ""
+    primary_device_id: str = ""
 
 
 class RemoteMappingCoordinator(QObject):
@@ -712,16 +749,19 @@ class RemoteMappingCoordinator(QObject):
     completed = Signal(object)
     failed = Signal(str)
     navigation_locked = Signal(bool)
+    artifact_ready = Signal(object)
 
     def __init__(self, config: MapBuildingConfig, repository: MapRepository,
                  sender: Callable[[bytes, str], None], *,
                  clock: Callable[[], float] = time.monotonic,
+                 auto_commit: bool = True,
                  parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.config = config
         self.repository = repository
         self.sender = sender
         self.clock = clock
+        self.auto_commit = bool(auto_commit)
         self.protocol = MapBuildingV2Protocol(config)
         self.downloader = ArtifactDownloader(config)
         self.validator = ArtifactPackageValidator(config)
@@ -747,7 +787,8 @@ class RemoteMappingCoordinator(QObject):
         return bool(snapshot and snapshot.navigation_locked)
 
     def prepare(self, definition: MapDefinition, device: DeviceSnapshot,
-                return_host: str, return_port: int) -> str:
+                return_host: str, return_port: int, *, job_id: str = "",
+                role: str = "", primary_device_id: str = "") -> str:
         if not device.ip_address:
             raise ValueError("建图设备必须配置 IP 地址")
         with self._lock:
@@ -759,6 +800,7 @@ class RemoteMappingCoordinator(QObject):
                 definition, device, session_id, os.urandom(16).hex(),
                 PreviewAccumulator(self.config.voxel_size_m, self.config.max_preview_points),
                 now, self.clock(), frame_id=self.config.remote_mapping_frame,
+                job_id=job_id, role=role, primary_device_id=primary_device_id,
             )
             self.session = session
             self._start_command(
@@ -841,6 +883,12 @@ class RemoteMappingCoordinator(QObject):
         thread = self._artifact_thread
         if thread and thread.is_alive():
             thread.join(timeout=2.0)
+
+    def release_staged_session(self) -> None:
+        """Release a completed non-committing session after its owner consumes the artifact."""
+        with self._lock:
+            if self.session is not None and self.session.state == "completed":
+                self.session = None
 
     def handle(self, envelope: MapBuildingEnvelope, peer_ip: str) -> bool:
         with self._lock:
@@ -935,11 +983,10 @@ class RemoteMappingCoordinator(QObject):
                 f"端侧已清理活动会话 {active_id[:8]}（原状态 {previous}）",
             )
         if session.frame_id != self.config.remote_mapping_frame:
-            self._fail(
+            self._fail_and_abort(
                 session,
                 f"端侧实时建图坐标系 {session.frame_id} 与要求的"
                 f" {self.config.remote_mapping_frame} 不一致",
-                "FRAME_MISMATCH",
             )
         elif payload["accepted"]:
             session.restart_active = False
@@ -974,7 +1021,11 @@ class RemoteMappingCoordinator(QObject):
             self._emit(session)
         elif session.command == "abort_mapping" and session.state == "aborting":
             session.state = "aborted"
-            session.message = "端侧建图会话已强制结束，可重新开始建图"
+            session.message = (
+                "坐标系校验失败，端侧已自动中止，可重新开始建图"
+                if session.error_code == "FRAME_MISMATCH"
+                else "端侧建图会话已强制结束，可重新开始建图"
+            )
             self._log(session, "LOCAL", "aborted", session.message, "WARN")
             self._emit(session)
             self.session = None
@@ -986,10 +1037,10 @@ class RemoteMappingCoordinator(QObject):
         expected_mapping_frame = self.config.mapping_frame_for(session.device.device_id)
         expected_source_frame = self.config.preview_source_frame_for(session.device.device_id)
         if descriptor.frame_id != expected_mapping_frame:
-            self._fail(session, "PCD 分片坐标系不匹配", "FRAME_MISMATCH")
+            self._fail_and_abort(session, "PCD 分片坐标系不匹配")
             return
         if descriptor.source_frame_id != expected_source_frame:
-            self._fail(session, "PCD 分片源坐标系不匹配", "FRAME_MISMATCH")
+            self._fail_and_abort(session, "PCD 分片源坐标系不匹配")
             return
         if descriptor.fragment_id in session.processed_fragments:
             self._send_fragment_ack(session, descriptor.fragment_id)
@@ -1114,6 +1165,11 @@ class RemoteMappingCoordinator(QObject):
                 artifact = self.validator.validate(
                     archive, root / "validated", map_id=session.definition.map_id,
                     device_id=session.device.device_id, session_id=session.session_id,
+                    joint_metadata={
+                        "job_id": session.job_id,
+                        "role": session.role,
+                        "primary_device_id": session.primary_device_id,
+                    } if session.job_id else None,
                 )
                 expected_artifact_frame = self.config.artifact_frame_for(
                     session.device.device_id)
@@ -1137,9 +1193,15 @@ class RemoteMappingCoordinator(QObject):
                     artifact.file_sha256["pcd"], artifact.file_sha256["pgm"],
                     artifact.file_sha256["yaml"],
                 )
-                definition = self.repository.commit_remote_mapping_artifact(
-                    session.definition.map_id, artifact, metadata
+                result = RemoteMappingArtifactResult(
+                    session.definition.map_id, session.device.device_id,
+                    session.session_id, artifact, metadata,
                 )
+                definition = None
+                if self.auto_commit:
+                    definition = self.repository.commit_remote_mapping_artifact(
+                        session.definition.map_id, artifact, metadata
+                    )
             except (ArtifactDownloadError, ArtifactValidationError, MapRepositoryError,
                     OSError, ValueError) as exc:
                 with self._lock:
@@ -1151,11 +1213,20 @@ class RemoteMappingCoordinator(QObject):
                     return
                 session.frame_id = self.config.final_map_frame
                 session.state = "completed"
-                session.message = "遥控建图成果已保存"
-                self._log(session, "LOCAL", "completed", "成果已提交，坐标系切换为 map")
+                session.message = (
+                    "遥控建图成果已保存" if self.auto_commit else "设备建图成果已校验"
+                )
+                self._log(
+                    session, "LOCAL", "completed",
+                    "成果已提交，坐标系切换为 map"
+                    if self.auto_commit else "成果已暂存，等待联合融合",
+                )
                 self._emit(session)
-                self.completed.emit(definition)
-                self.session = None
+                if self.auto_commit:
+                    self.completed.emit(definition)
+                    self.session = None
+                else:
+                    self.artifact_ready.emit(result)
 
         self._artifact_thread = threading.Thread(
             target=run, name="ccs-remote-map-artifact", daemon=True
@@ -1185,6 +1256,12 @@ class RemoteMappingCoordinator(QObject):
             }
         else:
             payload = {"request_id": session.request_id, "reason": reason or "用户结束建图"}
+        if session.job_id:
+            payload.update({
+                "job_id": session.job_id,
+                "role": session.role,
+                "primary_device_id": session.primary_device_id,
+            })
         envelope = MapBuildingEnvelope(
             session.definition.map_id, session.device.device_id, session.session_id,
             session.command, session.command_attempts, time.time_ns(), payload,
@@ -1230,6 +1307,19 @@ class RemoteMappingCoordinator(QObject):
         self._log(session, "LOCAL", code, message, "ERROR")
         self._emit(session)
         self.failed.emit(message)
+
+    def _fail_and_abort(self, session: _RemoteSession, message: str) -> None:
+        if session.state == "aborting" and session.command == "abort_mapping":
+            return
+        self._fail(session, message, "FRAME_MISMATCH")
+        session.state = "aborting"
+        session.message = f"{message}；正在自动中止端侧建图会话"
+        self._start_command(
+            session, "abort_mapping", self.config.recovery_command_timeout_seconds
+        )
+        self._log(session, "LOCAL", "auto_abort", session.message, "WARN")
+        self._send_command(session, reason=message, force=True)
+        self._emit(session)
 
     def _require(self, states: set[str]) -> _RemoteSession:
         if self.session is None or self.session.state not in states:
@@ -1280,6 +1370,7 @@ class RemoteMappingCoordinator(QObject):
              level: str = "INFO") -> None:
         session.log_entries.append(RemoteMappingLogEntry(
             datetime.now(timezone.utc), direction, event, summary, level,
+            session.device.device_id,
         ))
         if len(session.log_entries) > 200:
             del session.log_entries[:-200]

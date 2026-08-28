@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Iterable
 
+import numpy as np
+
 from PySide6.QtCore import QObject, Signal
 
 from .map_building import (
@@ -17,15 +19,387 @@ from .map_building import (
 )
 from .map_building_config import MapBuildingConfig
 from .map_building_v2 import (
-    MapBuildingV2Protocol, RemoteMappingCoordinator, RemoteMappingProtocolError,
+    MapBuildingV2Protocol, RemoteMappingArtifactResult, RemoteMappingCoordinator,
+    RemoteMappingProtocolError, RemoteMappingSnapshot,
+    ValidatedArtifact,
 )
-from .map_fusion import MapFusionRepository, MapFusionRunner, transform_points
+from .map_fusion import MapFusionError, MapFusionRepository, MapFusionRunner, transform_points
 from .map_repository import MapRepository, MapRepositoryError
-from .pgm_fusion import PgmDownloadCoordinator
+from .pgm_fusion import PgmDownloadCoordinator, PgmFusionEngine, PgmFusionError, pcd_sha256
 from .models import (
     DeviceSnapshot, MapBuildMode, MapBuildProvenance, MapBuildingResultMetadata,
     MapDefinition, MapFusionAlgorithm, MapTransform,
+    PgmFusionProvenance, PgmFusionSource, PgmTransform2D,
 )
+
+
+MINIMUM_JOINT_CAPABILITY = (0, 12, 0)
+
+
+def _semantic_version(value: str) -> tuple[int, int, int]:
+    try:
+        parts = tuple(int(item) for item in value.split("."))
+    except ValueError:
+        return (0, 0, 0)
+    return parts if len(parts) == 3 else (0, 0, 0)
+
+
+class RemoteMappingJobCoordinator(QObject):
+    """Coordinate multiple independent ccs-map-stream-v2 device sessions."""
+
+    updated = Signal(object)
+    preview_updated = Signal(str, object, object)
+    completed = Signal(object)
+    failed = Signal(str)
+    navigation_locked = Signal(bool)
+
+    def __init__(self, config: MapBuildingConfig, repository: MapRepository,
+                 fusion_runner: MapFusionRunner,
+                 sender: Callable[[bytes, str], None], *,
+                 clock: Callable[[], float] = time.monotonic,
+                 parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.repository = repository
+        self.fusion_runner = fusion_runner
+        self.sender = sender
+        self.clock = clock
+        self.pgm_fusion = PgmFusionEngine()
+        self.definition: MapDefinition | None = None
+        self.job_id = ""
+        self.primary_device_id = ""
+        self.algorithm: MapFusionAlgorithm | None = None
+        self.transforms: dict[str, MapTransform] = {}
+        self.coordinators: dict[str, RemoteMappingCoordinator] = {}
+        self.artifacts: dict[str, RemoteMappingArtifactResult] = {}
+        self._latest_snapshots: dict[str, RemoteMappingSnapshot] = {}
+        self.excluded: set[str] = set()
+        self._fusing = False
+        self._lock = threading.RLock()
+
+    @property
+    def active(self) -> bool:
+        return bool(self.coordinators) or self._fusing
+
+    @property
+    def snapshot(self) -> RemoteMappingSnapshot | None:
+        snapshots = list(self._latest_snapshots.values())
+        for device_id, coordinator in self.coordinators.items():
+            if coordinator.snapshot is not None:
+                self._latest_snapshots[device_id] = coordinator.snapshot
+        snapshots = list(self._latest_snapshots.values())
+        if not snapshots or self.definition is None:
+            return None
+        primary = next(
+            (item for item in snapshots
+             if item.device_id.casefold() == self.primary_device_id.casefold()),
+            snapshots[0],
+        )
+        states = {item.state for item in snapshots if item.device_id not in self.excluded}
+        if self._fusing:
+            state, message = "validating", "正在融合多设备 PCD 和 PGM 成果"
+        elif states and states <= {"ready"}:
+            state, message = "ready", "所有设备建图条件已就绪"
+        elif "mapping" in states or "warning" in states:
+            state, message = "mapping", "多设备联合遥控建图中"
+        elif "stopping" in states or "generating" in states:
+            state, message = "generating", "正在生成各设备建图成果"
+        elif "downloading" in states or "validating" in states or "completed" in states:
+            state, message = "downloading", "正在下载并校验各设备成果"
+        elif "failed" in states:
+            state, message = "failed", "联合建图设备协商失败"
+        else:
+            state, message = primary.state, primary.message
+        logs = sorted(
+            (entry for item in snapshots for entry in item.log_entries),
+            key=lambda entry: entry.timestamp,
+        )[-200:]
+        last_data = max(
+            (item.last_data_at for item in snapshots if item.last_data_at), default=None
+        )
+        checks = tuple(
+            check for item in snapshots for check in item.readiness_checks
+        )
+        return RemoteMappingSnapshot(
+            self.definition.map_id, self.primary_device_id, self.job_id,
+            state, message, min(item.started_at for item in snapshots), checks,
+            primary.sample_window_seconds, self.config.final_map_frame,
+            ", ".join(sorted({item.capability_version for item in snapshots if item.capability_version})),
+            sum(item.complete_frames for item in snapshots),
+            sum(item.dropped_frames for item in snapshots),
+            sum(item.received_points for item in snapshots),
+            sum(item.fused_points for item in snapshots), last_data,
+            sum(item.artifact_bytes_received for item in snapshots),
+            sum(item.artifact_bytes_total for item in snapshots),
+            primary.error_code, tuple(logs),
+        )
+
+    def prepare(self, definition: MapDefinition, devices: Iterable[DeviceSnapshot],
+                primary_device_id: str, transforms: Iterable[MapTransform],
+                algorithm: MapFusionAlgorithm,
+                return_address: Callable[[str], tuple[str, int]]) -> str:
+        selected = tuple(devices)
+        if len(selected) < 2:
+            raise ValueError("多设备联合遥控建图至少需要两台设备")
+        transform_items = tuple(transforms)
+        by_id = {item.source_id.casefold(): item for item in transform_items}
+        if {item.device_id.casefold() for item in selected} != set(by_id):
+            raise ValueError("设备列表与外参列表不一致")
+        primary = by_id.get(primary_device_id.casefold())
+        if primary is None or not primary.is_primary:
+            raise ValueError("必须指定所选设备中的一台作为主设备")
+        if primary.translation_m != (0.0, 0.0, 0.0) or primary.rotation_rpy_deg != (0.0, 0.0, 0.0):
+            raise ValueError("主设备必须使用单位外参")
+        if any(abs(item.rotation_rpy_deg[0]) > 1e-9
+               or abs(item.rotation_rpy_deg[1]) > 1e-9 for item in transform_items):
+            raise ValueError("多设备 PGM 融合不支持非零 Roll/Pitch")
+        with self._lock:
+            if self.active:
+                raise RuntimeError("多设备遥控建图任务正在运行")
+            self.definition = definition
+            self.job_id = uuid.uuid4().hex
+            self.primary_device_id = primary_device_id
+            self.algorithm = algorithm
+            self.transforms = {item.source_id: item for item in transform_items}
+            self.artifacts.clear()
+            self._latest_snapshots.clear()
+            self.excluded.clear()
+            for device in selected:
+                coordinator = RemoteMappingCoordinator(
+                    self.config, self.repository, self.sender,
+                    clock=self.clock, auto_commit=False, parent=self,
+                )
+                coordinator.updated.connect(
+                    lambda _snapshot, device_id=device.device_id: self._on_updated(device_id)
+                )
+                coordinator.preview_updated.connect(
+                    lambda _session, points, _bounds, device_id=device.device_id:
+                    self._on_preview(device_id, points)
+                )
+                coordinator.artifact_ready.connect(self._on_artifact)
+                coordinator.failed.connect(
+                    lambda message, device_id=device.device_id:
+                    self._on_failure(device_id, message)
+                )
+                self.coordinators[device.device_id] = coordinator
+                host, port = return_address(device.ip_address)
+                coordinator.prepare(
+                    definition, device, host, port, job_id=self.job_id,
+                    role="primary" if device.device_id.casefold() == primary_device_id.casefold()
+                    else "secondary", primary_device_id=primary_device_id,
+                )
+        self._emit()
+        return self.job_id
+
+    def begin(self) -> None:
+        candidates = [
+            item for device_id, item in self.coordinators.items()
+            if device_id not in self.excluded
+        ]
+        snapshots = [item.snapshot for item in candidates]
+        if len(candidates) < 2:
+            raise RuntimeError("联合遥控建图启动时至少需要两台就绪设备")
+        if not snapshots or any(item is None or item.state != "ready" for item in snapshots):
+            raise RuntimeError("所有设备完成协商后才能开始联合建图")
+        unsupported = [
+            item.device_id for item in snapshots
+            if _semantic_version(item.capability_version) < MINIMUM_JOINT_CAPABILITY
+        ]
+        if unsupported:
+            raise RuntimeError("以下设备不支持联合遥控建图 v0.12.0：" + "、".join(unsupported))
+        for coordinator in candidates:
+            coordinator.begin()
+
+    def stop_mapping(self, reason: str = "用户结束联合建图") -> None:
+        active = 0
+        for device_id, coordinator in self.coordinators.items():
+            if device_id in self.excluded or coordinator.snapshot is None:
+                continue
+            if coordinator.snapshot.state in {"mapping", "warning"}:
+                coordinator.stop_mapping(reason)
+                active += 1
+        if not active:
+            raise RuntimeError("当前没有可结束的联合建图会话")
+
+    def abort_mapping(self, reason: str = "用户强制结束联合建图") -> None:
+        for coordinator in self.coordinators.values():
+            snapshot = coordinator.snapshot
+            if snapshot and snapshot.state in {"ready", "starting", "mapping", "warning", "failed"}:
+                coordinator.abort_mapping(reason)
+
+    def cancel(self, reason: str = "用户取消联合建图任务") -> None:
+        for coordinator in self.coordinators.values():
+            coordinator.cancel(reason)
+            coordinator.shutdown()
+        self.coordinators.clear()
+        self.artifacts.clear()
+        self._latest_snapshots.clear()
+        self._emit()
+
+    def shutdown(self) -> None:
+        self.cancel("应用退出")
+
+    def handle(self, envelope: MapBuildingEnvelope, peer_ip: str) -> bool:
+        coordinator = next(
+            (item for device_id, item in self.coordinators.items()
+             if device_id.casefold() == envelope.device_id.casefold()), None
+        )
+        return coordinator.handle(envelope, peer_ip) if coordinator else False
+
+    def tick(self, return_address: Callable[[str], tuple[str, int]]) -> None:
+        for coordinator in tuple(self.coordinators.values()):
+            session = coordinator.session
+            if session is not None:
+                host, port = return_address(session.device.ip_address)
+                coordinator.tick(host, port)
+
+    def _on_updated(self, device_id: str) -> None:
+        coordinator = self.coordinators.get(device_id)
+        if coordinator is not None and coordinator.snapshot is not None:
+            self._latest_snapshots[device_id] = coordinator.snapshot
+        self._emit()
+
+    def _on_preview(self, device_id: str, _points: object) -> None:
+        arrays = []
+        for current_id, coordinator in self.coordinators.items():
+            session = coordinator.session
+            if session is None or current_id in self.excluded:
+                continue
+            points = session.accumulator.points()
+            transform = self.transforms.get(current_id)
+            if len(points) and transform is not None:
+                arrays.append(transform_points(points, transform))
+        merged = np.concatenate(arrays, axis=0) if arrays else np.empty((0, 3), dtype=np.float32)
+        bounds = None
+        if len(merged):
+            minimum, maximum = merged.min(axis=0), merged.max(axis=0)
+            from .models import MapBounds
+            bounds = MapBounds(*minimum.tolist(), *maximum.tolist())
+        self.preview_updated.emit(self.job_id, merged, bounds)
+
+    def _on_failure(self, device_id: str, message: str) -> None:
+        if device_id.casefold() == self.primary_device_id.casefold():
+            for other_id, coordinator in self.coordinators.items():
+                if other_id != device_id and coordinator.snapshot and coordinator.snapshot.navigation_locked:
+                    coordinator.cancel("主设备失败，联合建图已中止")
+            self.failed.emit(f"主设备 {device_id} 失败：{message}")
+        else:
+            self.excluded.add(device_id)
+            coordinator = self.coordinators.get(device_id)
+            if coordinator:
+                coordinator.cancel(f"从设备失败并从融合中剔除：{message}")
+            self._emit()
+
+    def _on_artifact(self, result: RemoteMappingArtifactResult) -> None:
+        self.artifacts[result.device_id] = result
+        coordinator = self.coordinators.get(result.device_id)
+        if coordinator:
+            coordinator.release_staged_session()
+        expected = set(self.coordinators) - self.excluded
+        if expected and expected <= set(self.artifacts) and not self._fusing:
+            if self.primary_device_id not in self.artifacts:
+                self.failed.emit("联合建图主设备成果缺失，无法提交")
+                return
+            self._fusing = True
+            threading.Thread(target=self._fuse, name="ccs-joint-map-fusion", daemon=True).start()
+
+    def _fuse(self) -> None:
+        try:
+            definition = self.definition
+            algorithm = self.algorithm
+            if definition is None or algorithm is None:
+                raise RuntimeError("联合建图上下文已丢失")
+            ordered = [
+                device_id for device_id in self.coordinators
+                if device_id in self.artifacts and device_id not in self.excluded
+            ]
+            transforms = [self.transforms[device_id] for device_id in ordered]
+            artifacts = [self.artifacts[device_id] for device_id in ordered]
+            root = self.repository.mapping_session_directory(
+                definition.map_id, self.job_id, create=True
+            ) / "fused"
+            root.mkdir(parents=True, exist_ok=True)
+            now = datetime.now(timezone.utc)
+            provenance = MapBuildProvenance(
+                MapBuildMode.MULTI, self.job_id, self.primary_device_id,
+                tuple(ordered), tuple(transforms), algorithm.algorithm_id,
+                algorithm.version, algorithm.sha256, tuple(sorted(self.excluded)),
+                min(item.metadata.started_at for item in artifacts), now,
+            )
+            pgm_provenance = None
+            if len(artifacts) >= 2:
+                pcd_path = root / "map.pcd"
+                self.fusion_runner.run(
+                    algorithm, [item.artifact.pcd_path for item in artifacts],
+                    definition.frame_id, transforms, pcd_path,
+                )
+                cloud = self.repository.loader.load(pcd_path)
+                sources = tuple(
+                    PgmFusionSource(
+                        device_id, definition.map_id,
+                        PgmTransform2D(
+                            transform.translation_m[0], transform.translation_m[1],
+                            transform.rotation_rpy_deg[2],
+                        ), definition.frame_id, device_id=device_id,
+                        pgm_path=str(result.artifact.pgm_path),
+                        yaml_path=str(result.artifact.yaml_path),
+                        artifact_sha256=result.artifact.file_sha256.get("pgm"),
+                    )
+                    for device_id, transform, result in zip(
+                        ordered, transforms, artifacts
+                    )
+                )
+                pgm_path, yaml_path = root / "map.pgm", root / "map.yaml"
+                pgm_result = self.pgm_fusion.fuse(
+                    sources, cloud.bounds, pgm_path, yaml_path
+                )
+                pgm_provenance = PgmFusionProvenance(
+                    self.job_id, pcd_sha256(pcd_path), sources,
+                    pgm_result.metadata.resolution,
+                    clipped_cells=pgm_result.clipped_cells,
+                    clipped_area_m2=pgm_result.clipped_area_m2,
+                )
+                validated = ValidatedArtifact(
+                    root, pcd_path, pgm_path, yaml_path, definition.frame_id, now,
+                    {"pcd": pcd_sha256(pcd_path)},
+                )
+            else:
+                validated = artifacts[0].artifact
+                cloud = self.repository.loader.load(validated.pcd_path)
+            metadata = MapBuildingResultMetadata(
+                self.job_id, self.primary_device_id,
+                min(item.metadata.started_at for item in artifacts), now,
+                self.config.protocol_v2_id, self.config.voxel_size_m,
+                sum(item.metadata.complete_frames for item in artifacts),
+                sum(item.metadata.dropped_frames for item in artifacts),
+                sum(item.metadata.received_points for item in artifacts),
+                cloud.point_count,
+            )
+            completed = self.repository.commit_remote_mapping_artifact(
+                definition.map_id, validated, metadata, provenance, pgm_provenance
+            )
+            for result in artifacts:
+                self.repository.discard_mapping_session(
+                    definition.map_id, result.session_id
+                )
+            self.completed.emit(completed)
+            for coordinator in self.coordinators.values():
+                coordinator.shutdown()
+            self.coordinators.clear()
+            self.artifacts.clear()
+            self._latest_snapshots.clear()
+        except (MapFusionError, PgmFusionError, MapRepositoryError, OSError, ValueError,
+                RuntimeError) as exc:
+            self.failed.emit(f"联合建图成果融合失败：{exc}")
+        finally:
+            self._fusing = False
+            self._emit()
+
+    def _emit(self) -> None:
+        snapshot = self.snapshot
+        if snapshot is not None:
+            self.updated.emit(snapshot)
+            self.navigation_locked.emit(snapshot.navigation_locked)
 
 
 @dataclass
@@ -100,11 +474,20 @@ class MapBuildingService(QObject):
         self.remote = RemoteMappingCoordinator(
             config, repository, self._send_v2_datagram, clock=clock,
         )
+        self.joint_remote = RemoteMappingJobCoordinator(
+            config, repository, self.fusion_runner, self._send_v2_datagram,
+            clock=clock,
+        )
         self.remote.updated.connect(self.remote_updated)
         self.remote.preview_updated.connect(self.preview_updated)
         self.remote.completed.connect(self.completed)
         self.remote.failed.connect(self.failed)
         self.remote.navigation_locked.connect(self.remote_navigation_locked)
+        self.joint_remote.updated.connect(self.remote_updated)
+        self.joint_remote.preview_updated.connect(self.preview_updated)
+        self.joint_remote.completed.connect(self.completed)
+        self.joint_remote.failed.connect(self.failed)
+        self.joint_remote.navigation_locked.connect(self.remote_navigation_locked)
         self.pgm_download = PgmDownloadCoordinator(
             config, self._send_pgm_envelope, return_host=config.bind_host, clock=clock,
         )
@@ -123,12 +506,13 @@ class MapBuildingService(QObject):
     @property
     def active(self) -> bool:
         with self._lock:
-            return self._job is not None or self.pgm_download.active or self.remote.active
+            return (self._job is not None or self.pgm_download.active
+                    or self.remote.active or self.joint_remote.active)
 
     @property
     def mapping_active(self) -> bool:
         with self._lock:
-            return self._job is not None or self.remote.active
+            return self._job is not None or self.remote.active or self.joint_remote.active
 
     @property
     def pgm_download_active(self) -> bool:
@@ -141,11 +525,24 @@ class MapBuildingService(QObject):
                 (self._job is not None and device_id.casefold() in self._job.sessions)
                 or (remote and remote.navigation_locked
                     and remote.device_id.casefold() == device_id.casefold())
+                or (device_id in self.joint_remote.coordinators
+                    and self.joint_remote.coordinators[device_id].active)
             )
 
     @property
     def current_remote_snapshot(self):
-        return self.remote.snapshot
+        return self.joint_remote.snapshot or self.remote.snapshot
+
+    @property
+    def current_remote_device_snapshots(self) -> dict[str, RemoteMappingSnapshot]:
+        if self.joint_remote.active:
+            return {
+                device_id: coordinator.snapshot
+                for device_id, coordinator in self.joint_remote.coordinators.items()
+                if coordinator.snapshot is not None
+            }
+        snapshot = self.remote.snapshot
+        return {snapshot.device_id: snapshot} if snapshot is not None else {}
 
     @property
     def current_job_snapshot(self) -> MapBuildingJobSnapshot | None:
@@ -197,6 +594,7 @@ class MapBuildingService(QObject):
         self._thread.start()
 
     def stop(self) -> None:
+        self.joint_remote.shutdown()
         self.remote.shutdown()
         self.interrupt_mapping("应用退出")
         self.pgm_download.cancel()
@@ -225,7 +623,24 @@ class MapBuildingService(QObject):
             self.config.data_port,
         )
 
+    def prepare_joint_remote_mapping(
+        self, definition: MapDefinition, devices: Iterable[DeviceSnapshot],
+        primary_device_id: str, transforms: Iterable[MapTransform],
+        algorithm: MapFusionAlgorithm,
+    ) -> str:
+        if not self.available or self._socket is None:
+            raise RuntimeError(self.module_message)
+        with self._lock:
+            if self._job is not None or self.pgm_download.active or self.remote.active:
+                raise RuntimeError("其他建图或 PGM 下载任务正在运行")
+        return self.joint_remote.prepare(
+            definition, devices, primary_device_id, transforms, algorithm,
+            lambda ip: (self._local_address_for(ip), self.config.data_port),
+        )
+
     def retry_remote_preparation(self) -> None:
+        if self.joint_remote.active:
+            raise RuntimeError("联合建图协商失败后请取消并重新创建任务")
         with self._lock:
             if self._job is not None or self.pgm_download.active:
                 raise RuntimeError("其他建图或 PGM 下载任务正在运行")
@@ -238,16 +653,28 @@ class MapBuildingService(QObject):
         )
 
     def begin_remote_mapping(self) -> None:
-        self.remote.begin()
+        if self.joint_remote.active:
+            self.joint_remote.begin()
+        else:
+            self.remote.begin()
 
     def stop_remote_mapping(self, reason: str = "用户结束建图") -> None:
-        self.remote.stop_mapping(reason)
+        if self.joint_remote.active:
+            self.joint_remote.stop_mapping(reason)
+        else:
+            self.remote.stop_mapping(reason)
 
     def abort_remote_mapping(self, reason: str = "用户强制结束建图") -> None:
-        self.remote.abort_mapping(reason)
+        if self.joint_remote.active:
+            self.joint_remote.abort_mapping(reason)
+        else:
+            self.remote.abort_mapping(reason)
 
     def cancel_remote_mapping(self, reason: str = "用户取消建图任务") -> None:
-        self.remote.cancel(reason)
+        if self.joint_remote.active:
+            self.joint_remote.cancel(reason)
+        else:
+            self.remote.cancel(reason)
 
     def start_mapping(self, definition: MapDefinition, device: DeviceSnapshot) -> str:
         return self.start_job(
@@ -282,7 +709,8 @@ class MapBuildingService(QObject):
             raise ValueError("主设备必须是唯一使用单位变换的坐标系")
         selected_algorithm = self._resolve_algorithm(algorithm)
         with self._lock:
-            if self._job is not None or self.pgm_download.active or self.remote.active:
+            if (self._job is not None or self.pgm_download.active
+                    or self.remote.active or self.joint_remote.active):
                 raise RuntimeError("建图或 PGM 下载任务正在运行")
             now = datetime.now(timezone.utc)
             started = self.clock()
@@ -314,7 +742,7 @@ class MapBuildingService(QObject):
             return job_id
 
     def stop_mapping(self, reason: str = "用户结束建图") -> None:
-        if self.remote.active:
+        if self.remote.active or self.joint_remote.active:
             self.stop_remote_mapping(reason)
         else:
             self.stop_job(reason)
@@ -457,7 +885,8 @@ class MapBuildingService(QObject):
         except RemoteMappingProtocolError:
             envelope = self.protocol.decode(datagram)
         else:
-            self.remote.handle(envelope, peer_ip)
+            if not self.joint_remote.handle(envelope, peer_ip):
+                self.remote.handle(envelope, peer_ip)
             return
         if self.pgm_download.handle_envelope(envelope, peer_ip):
             return
@@ -557,6 +986,10 @@ class MapBuildingService(QObject):
 
     def _tick(self) -> None:
         self.pgm_download.tick()
+        if self.joint_remote.active:
+            self.joint_remote.tick(
+                lambda ip: (self._local_address_for(ip), self.config.data_port)
+            )
         remote = self.remote.session
         if remote is not None:
             self.remote.tick(

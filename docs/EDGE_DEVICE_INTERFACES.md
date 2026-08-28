@@ -22,7 +22,7 @@
 - UDP envelope 仍为 schema 1 / `ccs-udp-telemetry-v1`；地面站只额外接受配置中明确列出的 descriptor hash。
 - Scout 30 V 定义为满电，曲线未标定时百分比为 `null`；Go2 原生百分比不被估算覆盖。
 
-指控平台 v0.22.0 配套 `epgeneral_udp_telemetry` v0.3.0、`epgeneral_relocalization` v0.2.1 和 `epgeneral_map_stream` v0.11.0。MQTT schema 1.0、SRT 与 UDP 遥测 wire schema 保持兼容。
+指控平台 v0.22.6 配套 `epgeneral_udp_telemetry` v0.3.0、`epgeneral_relocalization` v0.2.2 和 `epgeneral_map_stream` v0.12.0。MQTT schema 1.0、SRT 与 UDP 遥测 wire schema 保持兼容。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -35,7 +35,7 @@
 | SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.0 |
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | 保留后端 |
-| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.11.0 |
+| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.12.0 |
 | UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v2` | epgeneral_task_control v0.4.3 |
 | UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v2` | epgeneral_task_control v0.4.3 |
 
@@ -167,9 +167,9 @@ IPv6 地址使用方括号。地面站先执行 `ffmpeg -hide_banner -protocols`
 
 端侧和地面站的延迟配置均以毫秒保存；SRT URL 的 `latency` 查询参数使用微秒，因此地面站乘以 1000。端侧应开放 UDP 9000，并通过 `gst-inspect-1.0 srtsink` 检查插件。系统 FFmpeg 必须由用户安装且带 libsrt。
 
-## UDP 14561/14562 单机遥控建图 v2（指控平台 v0.22.0）
+## UDP 14561/14562 单机与联合遥控建图 v2（指控平台 v0.22.6）
 
-v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.11.0` 按设备选择 backend：Scout 协调 FAST-LIO、pointcloud mapper、坐标转换链和地图转换工具，Go2 保持 map accumulator 流程。最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
+v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.12.0` 按设备选择 backend：Scout 协调 FAST-LIO、pointcloud mapper、坐标转换链和地图转换工具，Go2 保持 map accumulator 流程。联合模式在 prepare/start payload 中同时携带 `job_id`、`role` 和 `primary_device_id`，端侧在 artifact manifest 原样回传；这些字段在单机模式可省略。最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
 
 v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sent_at_ns/payload`。v0.18.3 使用 `cloud_fragment_ready` 和 `cloud_fragment_ack`：UDP 只承载控制、状态与轻量描述符，PCD 内容通过 TCP 14600 下载。端侧未收到 ACK 时最多重发描述符 3 次，未确认文件和后台队列均有硬上限。
 
@@ -181,7 +181,7 @@ v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sen
   "checks": [{"name": "pointcloud", "available": True, "reason": ""}],
   "sample_window_seconds": 1.0,
   "frame_id": "odom",
-  "capability_version": "0.11.0",
+  "capability_version": "0.12.0",
   "preview_transport": "pcd_fragment_http",
   "fragment_interval_seconds": 1.0,
   "restarted": False, "previous_state": "", "active_session_id": "",
@@ -423,7 +423,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 - stop 后停止发送，释放 ROS subscriber、位姿缓存和会话资源；控制 socket 保持监听以接受下一次 start，进程退出时再关闭。
 - 在 localhost/局域网测试乱序、重复、缺片、CRC 错误、点云/位姿超时、重复命令和干净退出。
 
-当前结论：v1 作为历史后端保留；v0.22.0 地面站与端侧 `epgeneral_map_stream` v0.11.0 保持 `ccs-map-stream-v2` 兼容。Scout 使用同一会话 `map_name` 驱动 mapper、filtered PCD、finalize 和 manifest，Go2 保持 accumulator 保存与新鲜度校验。真机部署结果见对应版本部署记录。
+当前结论：v1 作为历史后端保留；v0.22.6 地面站与端侧 `epgeneral_map_stream` v0.12.0 保持 `ccs-map-stream-v2` 兼容。联合模式要求所有设备能力至少为 0.12.0，并由地面站融合端侧独立成果。Scout 使用同一会话 `map_name` 驱动 mapper、filtered PCD、finalize 和 manifest，Go2 保持 accumulator 保存与新鲜度校验。真机部署结果见对应版本部署记录。
 
 ## UDP 地图任务控制接口（ccs-task-control-v2）
 
