@@ -233,7 +233,7 @@ class UiTests(unittest.TestCase):
         page = self.window.devices_page
         page.show_detail("USV-003")
         self.assertEqual(page.page_stack.currentWidget(), page.detail_page)
-        self.assertEqual(page.detail_page.fields["设备 IP"].text(), "192.168.40.3")
+        self.assertEqual(page.detail_page.fields["设备地址"].text(), "192.168.40.3")
         error_index = page.detail_page.log_filter.findData(DeviceLogLevel.ERROR)
         page.detail_page.log_filter.setCurrentIndex(error_index)
         self.app.processEvents()

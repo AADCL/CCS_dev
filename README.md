@@ -121,7 +121,7 @@ ffmpeg -hide_banner -protocols
 
 启动前核对：
 
-- `config/devices.json`：设备 ID、名称、类型、IP 和设备级状态卡覆盖。
+- `config/devices.json`：设备 ID、名称、类型、IP 或 `.local` mDNS 主机名，以及设备级状态卡覆盖。
 - `config/device_types.json`：类型显示名称、图标路径、地图形状和默认状态卡片。
 - `config/mqtt.json`：MQTT Broker 与心跳阈值。
 - `config/udp_telemetry.json`：UDP 14560 描述项与分级频率。
@@ -132,6 +132,11 @@ ffmpeg -hide_banner -protocols
 - `config/ntp.json`：内置 NTP Server 的监听地址、端口、层级和参考时钟标识。
 
 `ffmpeg -protocols` 的 Input 列表必须包含 `srt`；不同发行版提供的 FFmpeg 构建选项可能不同。
+
+设备页的“设备地址”接受 IPv4、IPv6 或以 `.local` 结尾的 mDNS 主机名，例如
+`nrc17.local`。程序优先使用操作系统名称解析器，并在系统未注册 `.local` 解析时
+通过 multicast DNS 主动查询；“测试连接”会先显示解析后的 IP，再执行 Ping。
+解析结果缓存 10 秒，并用于 MQTT、建图、任务、重定位和 PGM 数据来源校验。
 
 放行地面站 TCP 1883、UDP 123、14560、14562、14564，然后启动。Windows 自带
 `W32Time` 若正在占用 UDP 123，需要在管理员 PowerShell 中停止并禁用该服务，再为
@@ -327,7 +332,7 @@ MQTT 与 UDP 是独立链路。检查 `destination_host`、ROS 话题频率和 U
 
 ### SRT 无画面
 
-先执行 `ffmpeg -protocols`，确认 Input 列表包含 `srt`。再检查设备 IP、UDP 9000、防火墙、设备页端口/延迟，以及 ROS 图像话题的实际类型和频率。端侧必须启动 `epgeneral_video_srt v0.1.0`，并可用下列命令验证本机 Listener：
+先执行 `ffmpeg -protocols`，确认 Input 列表包含 `srt`。再检查设备地址（IP 或 `.local` mDNS）、UDP 9000、防火墙、设备页端口/延迟，以及 ROS 图像话题的实际类型和频率。端侧必须启动 `epgeneral_video_srt v0.1.0`，并可用下列命令验证本机 Listener：
 
 ```bash
 ffplay "srt://127.0.0.1:9000?mode=caller&transtype=live&latency=120000"

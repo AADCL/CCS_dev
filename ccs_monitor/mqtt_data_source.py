@@ -9,6 +9,7 @@ from typing import Callable
 
 from PySide6.QtCore import QTimer, Signal, Slot
 
+from .device_address import device_address_matches
 from .data_source import SimulatedDeviceSource
 from .models import (
     ConnectionStatus,
@@ -178,8 +179,12 @@ class MqttDeviceSource(SimulatedDeviceSource):
         if device is None:
             self._warn(f"忽略未登记设备：{event.device_id}")
             return
-        if event.ip_address != device.ip_address:
-            self._append_log(device.device_id, DeviceLogLevel.WARNING, f"消息 IP {event.ip_address} 与配置 IP {device.ip_address} 不一致")
+        if not device_address_matches(device.ip_address, event.ip_address):
+            self._append_log(
+                device.device_id,
+                DeviceLogLevel.WARNING,
+                f"消息地址 {event.ip_address} 与配置地址 {device.ip_address} 不一致或无法解析",
+            )
         if not self._update_session(device.device_id, event):
             return
         if event.sequence is not None:

@@ -3,15 +3,18 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import socket
 import tempfile
 import unittest
 import zipfile
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
+from ccs_monitor.device_address import clear_device_address_cache
 from ccs_monitor.map_building import MapBuildingEnvelope
 from ccs_monitor.map_building_config import load_map_building_config
 from ccs_monitor.map_building_v2 import (
@@ -170,6 +173,20 @@ class ArtifactTests(unittest.TestCase):
             )
             self.assertEqual(target.read_bytes(), data)
             self.assertEqual(opener.requests[0].headers["Range"], "bytes=5-")
+
+    def test_mdns_device_address_accepts_resolved_artifact_host(self):
+        descriptor = ArtifactDescriptor(
+            "http://192.168.50.17:14600/result.zip?token=x",
+            10,
+            "0" * 64,
+            datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+        clear_device_address_cache()
+        records = [
+            (socket.AF_INET, socket.SOCK_DGRAM, 17, "", ("192.168.50.17", 0)),
+        ]
+        with patch("ccs_monitor.device_address.socket.getaddrinfo", return_value=records):
+            ArtifactDownloader(self.config).validate_descriptor(descriptor, "nrc17.local")
 
     def test_validate_and_commit_complete_artifact(self):
         with tempfile.TemporaryDirectory() as directory:

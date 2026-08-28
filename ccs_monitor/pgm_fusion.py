@@ -16,6 +16,7 @@ import numpy as np
 import yaml
 from PySide6.QtCore import QObject, Signal
 
+from .device_address import device_address_matches
 from .map_building import MapBuildingEnvelope, MapBuildingProtocol, MapBuildingProtocolError
 from .map_building_config import MapBuildingConfig
 from .models import (
@@ -216,8 +217,8 @@ class PgmDownloadCoordinator(QObject):
                 or envelope.device_id.casefold() != str(transfer.source.device_id).casefold()
                 or envelope.session_id != transfer.session_id):
             return False
-        if peer_ip != transfer.source.device_ip:
-            self._fail(transfer, "PGM 数据报来源 IP 与设备配置不一致")
+        if not device_address_matches(transfer.source.device_ip, peer_ip):
+            self._fail(transfer, "PGM 数据报来源地址与设备配置不一致或无法解析")
             return True
         if envelope.message_type == "pgm_chunk":
             if transfer.seen_chunk_sequences is None:
