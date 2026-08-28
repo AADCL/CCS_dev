@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -32,6 +33,8 @@ from PySide6.QtWidgets import (
 
 from ..data_source import DeviceDataSource
 from ..app_icons import apply_button_icon
+from ..device_colors import device_display_color
+from ..device_map_context import resolve_local_odom_pose
 from ..map_repository import MapRepository, MapRepositoryError
 from ..models import (
     ConnectionStatus,
@@ -59,6 +62,9 @@ class TrendSample:
     attitude: tuple[float, float, float] | None
 
 
+_POSE_UNSET = object()
+
+
 class TelemetryTrendBuffer:
     def __init__(
         self,
@@ -78,15 +84,11 @@ class TelemetryTrendBuffer:
         device_id: str,
         telemetry: DeviceTelemetrySnapshot,
         timestamp: float | None = None,
+        pose: PoseTelemetry | None | object = _POSE_UNSET,
     ) -> bool:
-        pose = telemetry.global_pose
+        pose = telemetry.global_pose if pose is _POSE_UNSET else pose
         position = None if pose is None else (pose.x, pose.y, pose.z)
-        if pose is not None:
-            attitude = (pose.roll, pose.pitch, pose.yaw)
-        elif telemetry.imu is not None:
-            attitude = (telemetry.imu.roll, telemetry.imu.pitch, telemetry.imu.yaw)
-        else:
-            attitude = None
+        attitude = None if pose is None else (pose.roll, pose.pitch, pose.yaw)
         if position is None and attitude is None:
             return False
         now = self.clock() if timestamp is None else float(timestamp)
@@ -332,6 +334,7 @@ class CollapsibleDevicePanel(QFrame):
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, device.device_id)
             item.setToolTip(f"{device.device_name} / {device.device_id}")
+            item.setForeground(QColor(device_display_color(device.device_id)))
             self.list.addItem(item)
             if device.device_id == self.selected_device_id:
                 self.list.setCurrentItem(item)
@@ -419,6 +422,10 @@ class TelemetryChart(QFrame):
         super().__init__()
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self._series_names = names
+        self._device_color = self.theme_palette.primary
+        self._line_styles = (
+            Qt.PenStyle.SolidLine, Qt.PenStyle.DashLine, Qt.PenStyle.DotLine,
+        )
         self.setObjectName("dashboardChartPanel")
         self.setMinimumHeight(148)
         root = QVBoxLayout(self)
@@ -435,10 +442,10 @@ class TelemetryChart(QFrame):
         header.addWidget(self.unit_label)
         header.addStretch()
         self.legend_labels: dict[str, QLabel] = {}
-        for name, color in zip(names, self.theme_palette.route_colors):
-            label = QLabel(f"■ {name}")
+        for name, prefix in zip(names, ("━", "┅", "┈")):
+            label = QLabel(f"{prefix} {name}")
             label.setObjectName("dashboardChartLegend")
-            label.setStyleSheet(f"color: {color};")
+            label.setStyleSheet(f"color: {self._device_color};")
             header.addWidget(label)
             self.legend_labels[name] = label
         root.addLayout(header)
@@ -471,10 +478,12 @@ class TelemetryChart(QFrame):
         chart.addAxis(self.x_axis, Qt.AlignmentFlag.AlignBottom)
         chart.addAxis(self.y_axis, Qt.AlignmentFlag.AlignLeft)
         self.series: dict[str, QLineSeries] = {}
-        for name, color in zip(names, self.theme_palette.route_colors):
+        for index, name in enumerate(names):
             line = QLineSeries()
             line.setName(name)
-            line.setPen(QPen(QColor(color), 2.0))
+            pen = QPen(QColor(self._device_color), 2.0)
+            pen.setStyle(self._line_styles[index])
+            line.setPen(pen)
             chart.addSeries(line)
             line.attachAxis(self.x_axis)
             line.attachAxis(self.y_axis)
@@ -482,25 +491,40 @@ class TelemetryChart(QFrame):
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
-        for name, label in self.legend_labels.items():
-            index = self._series_names.index(name)
-            label.setStyleSheet(f"color: {palette.route_colors[index]};")
+        for label in self.legend_labels.values():
+            label.setStyleSheet(f"color: {self._device_color};")
         self.chart.setPlotAreaBackgroundBrush(QColor(palette.chart_background))
         self.x_axis.setLabelsColor(QColor(palette.muted))
         self.y_axis.setLabelsColor(QColor(palette.muted))
         self.x_axis.setGridLineColor(QColor(palette.chart_grid))
         self.y_axis.setGridLineColor(QColor(palette.chart_grid))
-        for name, line in self.series.items():
-            line.setPen(QPen(QColor(palette.route_colors[self._series_names.index(name)]), 2.0))
+        self._apply_series_pens()
         self.update()
+
+    def set_device_color(self, color: str) -> None:
+        self._device_color = color
+        for label in self.legend_labels.values():
+            label.setStyleSheet(f"color: {color};")
+        self._apply_series_pens()
+
+    def _apply_series_pens(self) -> None:
+        for index, name in enumerate(self._series_names):
+            pen = QPen(QColor(self._device_color), 2.0)
+            pen.setStyle(self._line_styles[index])
+            self.series[name].setPen(pen)
 
     def set_values(self, values: dict[str, list[tuple[float, float]]]) -> None:
         all_y: list[float] = []
+        all_x: list[float] = []
         for name, series in self.series.items():
             points = [QPointF(x, y) for x, y in values.get(name, [])]
             series.replace(points)
             series.setPointsVisible(len(points) == 1)
             all_y.extend(point.y() for point in points)
+            all_x.extend(point.x() for point in points)
+        duration = max((-min(all_x)) if all_x else 0.0, 0.0)
+        span = min(60.0, max(5.0, math.ceil(duration / 5.0) * 5.0))
+        self.x_axis.setRange(-span, 0)
         if all_y:
             minimum, maximum = min(all_y), max(all_y)
             padding = max((maximum - minimum) * 0.12, 0.5)
@@ -550,7 +574,7 @@ class TelemetryStatusPanel(QFrame):
         fields.setVerticalSpacing(5)
         self.fields: dict[str, QLabel] = {}
         for index, label in enumerate((
-            "MQTT", "UDP", "健康", "电量", "任务", "运行模式", "解锁", "FCU",
+            "MQTT", "UDP", "健康", "电量", "任务", "运行模式",
             "位置 X/Y/Z", "姿态 R/P/Y", "最后数据",
         )):
             caption = QLabel(label)
@@ -584,10 +608,17 @@ class TelemetryStatusPanel(QFrame):
         self.device = device
         if device is None:
             self.identity.setText("尚未选择设备")
+            self.identity.setStyleSheet("")
             for value in self.fields.values():
                 value.setText("--")
             return
         self.identity.setText(f"{device.device_name}\n{device.device_id}")
+        color = device_display_color(device.device_id)
+        self.identity.setStyleSheet(
+            f"color: {color}; border-left: 3px solid {color}; padding-left: 6px;"
+        )
+        self.position_chart.set_device_color(color)
+        self.attitude_chart.set_device_color(color)
         self.fields["MQTT"].setText("在线" if device.connection_status == ConnectionStatus.ONLINE else "离线")
         self.fields["健康"].setText({
             HealthStatus.NORMAL: "正常",
@@ -598,10 +629,12 @@ class TelemetryStatusPanel(QFrame):
         self.fields["电量"].setText("--" if device.battery_percent is None else f"{device.battery_percent:.1f}%")
         self.fields["任务"].setText(device.task_status.value)
         self.fields["运行模式"].setText(device.flight_mode)
-        self.fields["解锁"].setText("--" if device.armed is None else "已解锁" if device.armed else "未解锁")
-        self.fields["FCU"].setText("--" if device.system_status is None else str(device.system_status))
 
-    def set_telemetry(self, telemetry: DeviceTelemetrySnapshot | None) -> None:
+    def set_telemetry(
+        self,
+        telemetry: DeviceTelemetrySnapshot | None,
+        local_pose: PoseTelemetry | None = None,
+    ) -> None:
         if telemetry is None:
             self.fields["UDP"].setText("未知")
             self.fields["位置 X/Y/Z"].setText("--")
@@ -615,18 +648,12 @@ class TelemetryStatusPanel(QFrame):
             UdpLinkStatus.UNKNOWN: "未知",
             UdpLinkStatus.MODULE_ERROR: "模块故障",
         }[telemetry.udp_link_status])
-        pose = telemetry.global_pose
+        pose = local_pose
         if pose is None:
             self.fields["位置 X/Y/Z"].setText("--")
         else:
             self.fields["位置 X/Y/Z"].setText(f"{pose.x:.2f} / {pose.y:.2f} / {pose.z:.2f}")
-        attitude = pose
-        if attitude is not None:
-            values = (attitude.roll, attitude.pitch, attitude.yaw)
-        elif telemetry.imu is not None:
-            values = (telemetry.imu.roll, telemetry.imu.pitch, telemetry.imu.yaw)
-        else:
-            values = None
+        values = None if pose is None else (pose.roll, pose.pitch, pose.yaw)
         self.fields["姿态 R/P/Y"].setText(
             "--" if values is None else f"{values[0]:.1f} / {values[1]:.1f} / {values[2]:.1f}°"
         )
@@ -1101,15 +1128,17 @@ class CommandDashboardPage(QWidget):
         ):
             self.status_panel.set_expanded(True)
         telemetry = self.telemetry_store.telemetry(device_id) if self.telemetry_store and device_id else None
+        local_pose = resolve_local_odom_pose(self.source, telemetry, device_id) if telemetry else None
         if telemetry is not None and self.trends.sample_count(device_id) == 0:
-            self.trends.append(device_id, telemetry)
-        self.status_panel.set_telemetry(telemetry)
+            self.trends.append(device_id, telemetry, pose=local_pose)
+        self.status_panel.set_telemetry(telemetry, local_pose)
         self._render_realtime()
 
     def _telemetry_updated(self, device_id: str, telemetry: DeviceTelemetrySnapshot) -> None:
-        self.trends.append(device_id, telemetry)
+        local_pose = resolve_local_odom_pose(self.source, telemetry, device_id)
+        self.trends.append(device_id, telemetry, pose=local_pose)
         if device_id == self.selected_device_id:
-            self.status_panel.set_telemetry(telemetry)
+            self.status_panel.set_telemetry(telemetry, local_pose)
 
     def _map_changed(self) -> None:
         map_id = self.map_combo.currentData()
@@ -1193,8 +1222,12 @@ class CommandDashboardPage(QWidget):
             self.trends.series(device_id, "attitude"),
         )
         telemetry = self.telemetry_store.telemetry(device_id) if self.telemetry_store else None
-        pose = telemetry.global_pose if telemetry else None
-        self.viewer.set_selected_device_pose(pose)
+        local_pose = resolve_local_odom_pose(self.source, telemetry, device_id) if telemetry else None
+        display_pose = (
+            bound_map_pose(self.source, telemetry, device_id, self.selected_map_id or "")
+            if telemetry else None
+        )
+        self.viewer.set_selected_device_pose(display_pose or local_pose)
         self.viewer.set_device_trail(self.trends.trail(device_id))
         markers: list[DeviceMapMarker] = []
         if self.telemetry_store is not None:
@@ -1202,12 +1235,13 @@ class CommandDashboardPage(QWidget):
                 snapshot = self.telemetry_store.telemetry(device.device_id)
                 pose_item = bound_map_pose(
                     self.source, snapshot, device.device_id, self.selected_map_id or ""
-                ) or snapshot.global_pose
+                ) or resolve_local_odom_pose(self.source, snapshot, device.device_id)
                 if pose_item is not None:
                     markers.append(DeviceMapMarker(
                         device.device_id, device.device_name,
                         pose_item.x, pose_item.y, pose_item.z, "online",
                         device.map_marker_shape, pose_item.yaw,
+                        color=device_display_color(device.device_id),
                     ))
         self.viewer.set_device_markers(markers)
         self._update_console_status()

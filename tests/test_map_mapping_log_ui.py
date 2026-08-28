@@ -73,6 +73,18 @@ class MappingLogUiTests(unittest.TestCase):
         self.assertIn("new fragment", page.mapping_log.toPlainText())
         self.assertIsNot(page.mapping_log.parentWidget(), page.relocalization_log.parentWidget())
 
+    def test_completed_joint_mapping_restores_primary_action(self):
+        page = MapDetailPage(viewer_factory=QWidget)
+        snapshot = RemoteMappingSnapshot(
+            "map-1", "UGV_001", "job-1", "completed", "联合建图成果已保存",
+            datetime.now(timezone.utc),
+        )
+        page.update_remote_mapping(snapshot)
+        self.assertEqual(page.mapping_button.text(), "重新建图")
+        self.assertTrue(page.mapping_button.isEnabled())
+        self.assertTrue(page.cancel_mapping_button.isHidden())
+        self.assertFalse(page._elapsed_timer.isActive())
+
 
 if __name__ == "__main__":
     unittest.main()

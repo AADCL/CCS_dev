@@ -39,15 +39,29 @@ class _FakeSource:
             "UGV_001", "Scout", "UGV", "192.168.50.120",
             relocalization_profile="scout_mini",
         )
+        self.secondary_device = DeviceSnapshot(
+            "UGV_003", "WheelTech", "UGV", ip_address="192.168.50.122",
+            connection_status=ConnectionStatus.ONLINE,
+        )
+        self.secondary_profile = DeviceProfile(
+            "UGV_003", "WheelTech", "UGV", "192.168.50.122",
+            relocalization_profile="wheeltec_r550p",
+        )
         self.logs = []
         self.removed_bindings = []
         self.saved_bindings = []
 
     def device(self, device_id):
-        return self.device_item if device_id.casefold() == "ugv_001" else None
+        return {
+            "ugv_001": self.device_item,
+            "ugv_003": self.secondary_device,
+        }.get(device_id.casefold())
 
     def profile(self, device_id):
-        return self.profile_item if device_id.casefold() == "ugv_001" else None
+        return {
+            "ugv_001": self.profile_item,
+            "ugv_003": self.secondary_profile,
+        }.get(device_id.casefold())
 
     def append_external_log(self, *args):
         self.logs.append(args)
@@ -235,6 +249,43 @@ class RelocalizationServiceTests(unittest.TestCase):
             RelocalizationStatus.MAP_READY,
         )
 
+    def test_default_and_negotiating_snapshots_cannot_download_before_reply(self):
+        initial = self.service.snapshot("map-1", "UGV_001")
+        self.assertFalse(initial.session_id)
+        self.assertFalse(initial.can_download)
+
+        negotiating = self.service.negotiate("map-1", "UGV_001")
+        self.assertTrue(negotiating.session_id)
+        self.assertFalse(negotiating.can_download)
+        ready_to_download = self.service._set(
+            "map-1", "UGV_001", RelocalizationStatus.UNKNOWN_SPACE,
+            "端侧需要下发地图",
+        )
+        self.assertTrue(ready_to_download.can_download)
+
+    def test_relocalization_is_mutually_exclusive_per_map(self):
+        for device_id in ("UGV_001", "UGV_003"):
+            self.service._snapshots[("map-1", device_id.casefold())] = RelocalizationSnapshot(
+                "map-1", device_id, f"{device_id}-session",
+                RelocalizationStatus.MAP_READY, "map ready", can_start=True,
+            )
+
+        self.service.start_stack("map-1", "UGV_001")
+        self.assertEqual(self.service.active_device_id("map-1"), "UGV_001")
+        with self.assertRaisesRegex(RuntimeError, "UGV_001"):
+            self.service.start_stack("map-1", "UGV_003")
+        with self.assertRaisesRegex(RuntimeError, "UGV_001"):
+            self.service.submit_initial_pose("map-1", "UGV_003", 1.0, 2.0, 0.5)
+
+        self.service._set(
+            "map-1", "UGV_001", RelocalizationStatus.FAILED, "failed"
+        )
+        self.assertIsNone(self.service.active_device_id("map-1"))
+        self.service.start_stack("map-1", "UGV_003")
+        sent = self.service.protocol.decode(self.service._socket.sent[-1][0])
+        self.assertEqual(sent.device_id, "UGV_003")
+        self.assertEqual(sent.message_type, "start_stack")
+
     def test_invalid_inbound_transition_is_ignored(self):
         snapshot = RelocalizationSnapshot(
             "map-1", "UGV_001", "session-1", RelocalizationStatus.MAP_TRANSFERRING,
@@ -346,7 +397,10 @@ class RelocalizationServiceTests(unittest.TestCase):
 
 try:
     from PySide6.QtWidgets import QApplication, QPlainTextEdit
-    from ccs_monitor.pages.map_page import MapDetailPage, MapDeviceCard
+    from ccs_monitor.pages.map_page import (
+        MapDetailPage, MapDeviceCard, MapOnlineDevicePanel, MapPage,
+        RelocalizationReticle,
+    )
     from ccs_monitor.styles import ThemeMode, theme_palette
 except ImportError:
     QApplication = None
@@ -396,6 +450,63 @@ class RelocalizationCardTests(unittest.TestCase):
         scrollbar = widget.verticalScrollBar()
         self.assertEqual(scrollbar.value(), scrollbar.maximum())
         widget.close()
+
+    def test_other_device_relocalization_button_is_disabled_while_active(self):
+        source = _FakeSource()
+        panel = MapOnlineDevicePanel()
+        snapshots = {
+            "ugv_001": RelocalizationSnapshot(
+                "map-1", "UGV_001", "one", RelocalizationStatus.AWAITING_POSE,
+                "等待初始位姿", can_submit_pose=True,
+            ),
+            "ugv_003": RelocalizationSnapshot(
+                "map-1", "UGV_003", "three", RelocalizationStatus.MAP_READY,
+                "地图已就绪", can_start=True,
+            ),
+        }
+        panel.set_devices(
+            [source.device_item, source.secondary_device], None, snapshots, True,
+            "UGV_001",
+        )
+        self.assertTrue(panel.cards["UGV_001"].relocalization_button.isEnabled())
+        self.assertFalse(panel.cards["UGV_003"].relocalization_button.isEnabled())
+        self.assertIn("UGV_001", panel.cards["UGV_003"].relocalization_button.toolTip())
+        self.assertEqual(RelocalizationReticle.LINE_WIDTH, 3.0)
+        panel.deleteLater()
+
+    def test_secondary_device_action_selects_and_submits_matching_pose(self):
+        events = []
+        snapshot = RelocalizationSnapshot(
+            "map-1", "UGV_003", "session-3", RelocalizationStatus.AWAITING_POSE,
+            "等待初始位姿", can_submit_pose=True,
+        )
+        service = SimpleNamespace(
+            snapshot=lambda _map_id, _device_id: snapshot,
+            submit_initial_pose=lambda map_id, device_id, x, y, yaw:
+                events.append(("submit", map_id, device_id, x, y, yaw)),
+        )
+        viewer = SimpleNamespace(
+            relocalization_pose=lambda device_id:
+                (events.append(("pose", device_id)) or (1.0, 2.0, 0.5)),
+        )
+        page = SimpleNamespace(
+            relocalization_service=service, current_map_id="map-1",
+            detail_page=SimpleNamespace(
+                device_panel=SimpleNamespace(
+                    select_device=lambda device_id: events.append(("select", device_id))
+                ),
+                viewer=viewer,
+            ),
+            _sync_relocalization_picker=lambda device_id:
+                events.append(("picker", device_id)),
+        )
+        MapPage._handle_relocalization_action(page, "UGV_003")
+        self.assertEqual(events[0], ("select", "UGV_003"))
+        self.assertEqual(events[1], ("picker", "UGV_003"))
+        self.assertEqual(events[2], ("pose", "UGV_003"))
+        self.assertEqual(
+            events[3], ("submit", "map-1", "UGV_003", 1.0, 2.0, 0.5)
+        )
 
 
 if __name__ == "__main__":

@@ -79,10 +79,10 @@ class MapPickingTests(unittest.TestCase):
 
     def test_relocalization_picker_refresh_does_not_reset_direction(self):
         viewer = PointCloudViewer()
-        viewer.set_relocalization_picker(True)
+        viewer.set_relocalization_picker("UGV_001")
         viewer._camera.azimuth = 47.0
         viewer._camera.center = (4.0, 5.0, 0.0)
-        viewer.set_relocalization_picker(True)
+        viewer.set_relocalization_picker("UGV_001")
         self.assertEqual(viewer._camera.azimuth, 47.0)
         self.assertEqual(tuple(viewer._camera.center), (4.0, 5.0, 0.0))
 
@@ -106,7 +106,7 @@ class MapPickingTests(unittest.TestCase):
             viewer.set_selected_device_pose(None)
             viewer.set_device_trail([])
             viewer._render_coordinate_grid()
-            viewer.set_relocalization_picker(True)
+            viewer.set_relocalization_picker("UGV_001")
 
             self.assertFalse(viewer._device_axis_visual.visible)
             self.assertFalse(viewer._trail_visual.visible)
@@ -133,7 +133,7 @@ class MapPickingTests(unittest.TestCase):
         viewer.show()
         self.app.processEvents()
         self.assertTrue(viewer._relocalization_reticle.isHidden())
-        viewer.set_relocalization_picker(True)
+        viewer.set_relocalization_picker("UGV_001")
         self.app.processEvents()
         self.assertFalse(viewer._relocalization_reticle.isHidden())
         self.assertEqual(viewer._relocalization_reticle.size(), viewer._map_overlay.size())
@@ -148,7 +148,7 @@ class MapPickingTests(unittest.TestCase):
         viewer.resize(960, 720)
         self.app.processEvents()
         self.assertEqual(viewer._relocalization_reticle.size(), viewer._map_overlay.size())
-        viewer.set_relocalization_picker(False)
+        viewer.set_relocalization_picker(None)
         self.assertTrue(viewer._relocalization_reticle.isHidden())
         viewer.close()
 
@@ -168,11 +168,12 @@ class MapPickingTests(unittest.TestCase):
     def test_relocalization_pose_uses_center_and_screen_up(self):
         viewer = PointCloudViewer()
         viewer._relocalization_picker_enabled = True
+        viewer._relocalization_device_id = "UGV_001"
         native = viewer._canvas.native
         native.resize(400, 300)
         viewer._screen_to_map = lambda x, y, _width, _height: (x / 10.0, -y / 10.0)
         viewer._screen_to_plane = lambda x, y: (x / 10.0, -y / 10.0)
-        x, y, yaw = viewer.relocalization_pose()
+        x, y, yaw = viewer.relocalization_pose("UGV_001")
         self.assertAlmostEqual(x, native.width() / 20.0)
         self.assertAlmostEqual(y, -native.height() / 20.0)
         self.assertAlmostEqual(yaw, math.pi / 2.0)
@@ -180,24 +181,30 @@ class MapPickingTests(unittest.TestCase):
     def test_relocalization_pose_allows_direction_sample_outside_map(self):
         viewer = PointCloudViewer()
         viewer._relocalization_picker_enabled = True
+        viewer._relocalization_device_id = "UGV_001"
         viewer._canvas.native.resize(400, 300)
         viewer._screen_to_map = lambda *_args: (12.0, 8.0)
         viewer._screen_to_plane = lambda *_args: (12.0, 18.0)
-        self.assertEqual(viewer.relocalization_pose(), (12.0, 8.0, math.pi / 2.0))
+        self.assertEqual(
+            viewer.relocalization_pose("UGV_001"),
+            (12.0, 8.0, math.pi / 2.0),
+        )
+        self.assertIsNone(viewer.relocalization_pose("UGV_003"))
 
     def test_relocalization_pose_rejects_invalid_center_or_direction(self):
         viewer = PointCloudViewer()
         viewer._relocalization_picker_enabled = True
+        viewer._relocalization_device_id = "UGV_001"
         viewer._canvas.native.resize(400, 300)
         viewer._screen_to_map = lambda *_args: None
         viewer._screen_to_plane = lambda *_args: (12.0, 18.0)
-        self.assertIsNone(viewer.relocalization_pose())
+        self.assertIsNone(viewer.relocalization_pose("UGV_001"))
 
         viewer._screen_to_map = lambda *_args: (12.0, 8.0)
         viewer._screen_to_plane = lambda *_args: (12.0, 8.0)
-        self.assertIsNone(viewer.relocalization_pose())
+        self.assertIsNone(viewer.relocalization_pose("UGV_001"))
         viewer._screen_to_plane = lambda *_args: (float("nan"), 18.0)
-        self.assertIsNone(viewer.relocalization_pose())
+        self.assertIsNone(viewer.relocalization_pose("UGV_001"))
 
     def test_screen_world_round_trip_respects_real_map_bounds(self):
         viewer = PointCloudViewer()

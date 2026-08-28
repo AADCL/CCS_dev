@@ -15,7 +15,7 @@ from ccs_monitor.map_building import MapBuildingEnvelope, write_binary_pcd
 from ccs_monitor.map_building_config import load_map_building_config
 from ccs_monitor.map_building_services import RemoteMappingJobCoordinator
 from ccs_monitor.map_building_v2 import (
-    RemoteMappingArtifactResult, ValidatedArtifact,
+    RemoteMappingArtifactResult, RemoteMappingSnapshot, ValidatedArtifact,
 )
 from ccs_monitor.map_fusion import MapFusionRepository, MapFusionRunner
 from ccs_monitor.map_repository import MapRepository
@@ -123,12 +123,22 @@ class JointRemoteMappingTests(unittest.TestCase):
         coordinator.algorithm = fusion_repository.default_algorithm()
         coordinator.transforms = {item.source_id: item for item in self.transforms}
 
+        map_id = self.definition.map_id
+
         class DummyCoordinator:
+            def __init__(self, device_id):
+                self.snapshot = RemoteMappingSnapshot(
+                    map_id, device_id, f"{device_id}-session",
+                    "completed", "成果已暂存", datetime.now(timezone.utc),
+                    artifact_bytes_received=100, artifact_bytes_total=100,
+                )
+
             def shutdown(self):
                 pass
 
         coordinator.coordinators = {
-            "UGV_001": DummyCoordinator(), "UGV_003": DummyCoordinator()
+            "UGV_001": DummyCoordinator("UGV_001"),
+            "UGV_003": DummyCoordinator("UGV_003"),
         }
         now = datetime.now(timezone.utc)
         device_results = {}
@@ -160,11 +170,26 @@ class JointRemoteMappingTests(unittest.TestCase):
             coordinator.artifacts[device.device_id] = device_results[device.device_id]
         completed = []
         failures = []
-        coordinator.completed.connect(completed.append)
+        terminal_updates = []
+        navigation_locks = []
+        active_when_completed = []
+        coordinator.updated.connect(terminal_updates.append)
+        coordinator.navigation_locked.connect(navigation_locks.append)
+        coordinator.completed.connect(
+            lambda definition: (
+                completed.append(definition), active_when_completed.append(coordinator.active)
+            )
+        )
         coordinator.failed.connect(failures.append)
         coordinator._fuse()
         self.assertEqual(failures, [])
         self.assertEqual(len(completed), 1)
+        self.assertEqual(active_when_completed, [False])
+        self.assertFalse(coordinator.active)
+        self.assertIsNone(coordinator.snapshot)
+        self.assertEqual(navigation_locks[-1], False)
+        self.assertEqual(terminal_updates[-1].state, "completed")
+        self.assertFalse(terminal_updates[-1].navigation_locked)
         result = self.repository.map_by_id(self.definition.map_id)
         self.assertEqual(result.status, MapStatus.READY)
         self.assertIsNotNone(result.pgm)
@@ -183,7 +208,8 @@ class JointRemoteMappingTests(unittest.TestCase):
         degraded.algorithm = fusion_repository.default_algorithm()
         degraded.transforms = {item.source_id: item for item in self.transforms}
         degraded.coordinators = {
-            "UGV_001": DummyCoordinator(), "UGV_003": DummyCoordinator()
+            "UGV_001": DummyCoordinator("UGV_001"),
+            "UGV_003": DummyCoordinator("UGV_003"),
         }
         degraded.excluded = {"UGV_003"}
         degraded.artifacts = {

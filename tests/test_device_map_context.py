@@ -2,7 +2,9 @@ import math
 import unittest
 from datetime import datetime, timezone
 
-from ccs_monitor.device_map_context import resolve_device_map_context
+from ccs_monitor.device_map_context import (
+    resolve_device_map_context, resolve_local_odom_pose,
+)
 from ccs_monitor.models import (
     DeviceAvailability, DeviceMapBinding, DeviceProfile, DeviceTelemetrySnapshot,
     FrameTransform, PoseTelemetry,
@@ -48,6 +50,25 @@ class DeviceMapContextTests(unittest.TestCase):
         self.assertIsNone(no_map.map_pose)
         stale = resolve_device_map_context(FakeSource(self.profile()), None, telemetry, "UGV_001")
         self.assertIsNone(stale.map_pose)
+
+    def test_local_odom_pose_uses_profile_specific_field(self):
+        vision = PoseTelemetry(1, 2, 3, 4, 5, 6)
+        global_pose = PoseTelemetry(10, 20, 30, 40, 50, 60)
+        telemetry = DeviceTelemetrySnapshot(
+            "UGV_001", global_pose=global_pose, vision_pose=vision,
+        )
+        self.assertIs(
+            resolve_local_odom_pose(FakeSource(self.profile()), telemetry, "UGV_001"),
+            vision,
+        )
+        go2 = DeviceProfile(
+            "QRD_001", "Go2", "QRD", "127.0.0.2",
+            relocalization_profile="go2_edu",
+        )
+        self.assertIs(
+            resolve_local_odom_pose(FakeSource(go2), telemetry, "QRD_001"),
+            global_pose,
+        )
 
 
 if __name__ == "__main__":

@@ -60,6 +60,12 @@ STATUS_TEXT = {
     RelocalizationStatus.FAILED: "重定位失败",
 }
 
+ACTIVE_RELOCALIZATION_STATUSES = {
+    RelocalizationStatus.STACK_STARTING,
+    RelocalizationStatus.AWAITING_POSE,
+    RelocalizationStatus.RELOCALIZING,
+}
+
 
 class RelocalizationService(QObject):
     snapshot_updated = Signal(object)
@@ -134,9 +140,18 @@ class RelocalizationService(QObject):
         status = RelocalizationStatus.UNKNOWN_SPACE if profile_config.supported else RelocalizationStatus.UNSUPPORTED
         return RelocalizationSnapshot(
             map_id, device_id, "", status, STATUS_TEXT[status],
-            can_download=profile_config.supported and self.map_complete(map_id),
+            can_download=False,
             updated_at=datetime.now(timezone.utc),
         )
+
+    def active_device_id(self, map_id: str) -> str | None:
+        active = [
+            snapshot.device_id
+            for (snapshot_map_id, _device_id), snapshot in self._snapshots.items()
+            if snapshot_map_id == map_id
+            and snapshot.status in ACTIVE_RELOCALIZATION_STATUSES
+        ]
+        return active[0] if active else None
 
     def map_complete(self, map_id: str) -> bool:
         try:
@@ -148,6 +163,9 @@ class RelocalizationService(QObject):
 
     def negotiate(self, map_id: str, device_id: str) -> RelocalizationSnapshot:
         device = self._require_device(device_id)
+        existing = self._snapshots.get((map_id, device_id.casefold()))
+        if existing is not None and existing.status in ACTIVE_RELOCALIZATION_STATUSES:
+            return existing
         profile = self.source.profile(device_id)
         if hasattr(self.source, "set_device_active_map"):
             self.source.set_device_active_map(device_id, map_id)
@@ -158,7 +176,7 @@ class RelocalizationService(QObject):
         session_id = uuid.uuid4().hex
         snapshot = RelocalizationSnapshot(
             map_id, device.device_id, session_id, RelocalizationStatus.UNKNOWN_SPACE,
-            "正在协商端侧地图状态", can_download=self.map_complete(map_id),
+            "正在协商端侧地图状态", can_download=False,
             updated_at=datetime.now(timezone.utc),
         )
         self._store(snapshot, "TX negotiate")
@@ -193,6 +211,9 @@ class RelocalizationService(QObject):
 
     def start_stack(self, map_id: str, device_id: str) -> None:
         device = self._require_device(device_id)
+        active_device_id = self.active_device_id(map_id)
+        if active_device_id and active_device_id.casefold() != device_id.casefold():
+            raise RuntimeError(f"设备 {active_device_id} 正在重定位，其他设备暂不可启动")
         snapshot = self.snapshot(map_id, device_id)
         if snapshot.status not in {RelocalizationStatus.MAP_READY, RelocalizationStatus.FAILED,
                                    RelocalizationStatus.SUCCEEDED}:
@@ -213,6 +234,9 @@ class RelocalizationService(QObject):
         if not all(math.isfinite(value) for value in (x, y, yaw)):
             raise ValueError("初始位姿包含无效数值")
         device = self._require_device(device_id)
+        active_device_id = self.active_device_id(map_id)
+        if active_device_id and active_device_id.casefold() != device_id.casefold():
+            raise RuntimeError(f"初始位姿与活动重定位设备 {active_device_id} 不匹配")
         snapshot = self.snapshot(map_id, device_id)
         if snapshot.status not in {RelocalizationStatus.AWAITING_POSE, RelocalizationStatus.FAILED}:
             raise RuntimeError("端侧尚未准备接收初始位姿")
@@ -428,7 +452,7 @@ class RelocalizationService(QObject):
         updated = replace(
             current, status=status, message=message,
             can_download=status in {RelocalizationStatus.UNKNOWN_SPACE, RelocalizationStatus.FAILED}
-                         and self.map_complete(map_id),
+                         and bool(current.session_id) and self.map_complete(map_id),
             can_start=(
                 status in {RelocalizationStatus.MAP_READY, RelocalizationStatus.SUCCEEDED}
                 or status == RelocalizationStatus.FAILED and (

@@ -25,6 +25,22 @@ class DeviceMapContext:
     pose_message: str
 
 
+def resolve_local_odom_pose(source, telemetry, device_id: str) -> PoseTelemetry | None:
+    """Resolve the profile-specific telemetry field that represents local odom."""
+    profile = source.profile(device_id) if source is not None else None
+    if profile is None or telemetry is None:
+        return None
+    field = (
+        "vision_pose"
+        if profile.relocalization_profile in {"scout_mini", "wheeltec_r550p"}
+        else "global_pose"
+    )
+    pose = getattr(telemetry, field, None)
+    if pose is not None and pose.sample_age_seconds > 2.0:
+        return None
+    return pose
+
+
 def _rotate(qx, qy, qz, qw, vector):
     # Quaternion-vector rotation without a GUI/numpy dependency.
     vx, vy, vz = vector
@@ -69,14 +85,7 @@ def resolve_device_map_context(source, relocalization_service, telemetry, device
     profile = source.profile(device_id)
     if profile is None:
         return DeviceMapContext(None, "未知空间", None, None, "设备配置不存在")
-    local_source = (
-        "vision_pose"
-        if profile.relocalization_profile in {"scout_mini", "wheeltec_r550p"}
-        else "global_pose"
-    )
-    local_pose = getattr(telemetry, local_source, None) if telemetry is not None else None
-    if local_pose is not None and local_pose.sample_age_seconds > 2.0:
-        local_pose = None
+    local_pose = resolve_local_odom_pose(source, telemetry, device_id)
     map_id = profile.active_map_id
     if not map_id:
         return DeviceMapContext(None, "未知空间", local_pose, None, "尚未设置活动地图")
