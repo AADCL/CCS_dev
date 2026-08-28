@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSettings, Signal
+from PySide6.QtCore import Qt, QSettings, QTimer, Signal
 from PySide6.QtGui import QIcon, QKeyEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -229,6 +229,8 @@ class MainWindow(QMainWindow):
             self.showMaximized()
         else:
             self.showNormal()
+        if not enabled:
+            QTimer.singleShot(0, self.command_page.viewer.refresh_canvas)
 
     def closeEvent(self, event) -> None:  # noqa: N802
         remote = self.mapping_service.current_remote_snapshot if self.mapping_service else None

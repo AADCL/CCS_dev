@@ -19,6 +19,7 @@ from ccs_monitor.models import (
 )
 from ccs_monitor.pages.map_page import (
     MapOnlineDevicePanel,
+    PointCloudViewer,
     device_task_status_text,
     height_rainbow_colors,
     transform_device_pose,
@@ -110,6 +111,18 @@ class MapOnlineDevicePanelTests(unittest.TestCase):
         panel.toggle_collapsed()
         self.assertEqual(panel.collapse_button.property("appIconName"), "expand")
         panel.deleteLater()
+
+    def test_device_visuals_are_configured_above_map_layers(self):
+        viewer = PointCloudViewer()
+        self.assertLess(viewer.MAP_LAYER_ORDER, viewer.DEVICE_LAYER_ORDER)
+        self.assertEqual(viewer._points_visual.order, viewer.MAP_LAYER_ORDER)
+        for visual in (
+            viewer._marker_visual,
+            viewer._device_axis_visual,
+            viewer._trail_visual,
+        ):
+            self.assertEqual(visual.order, viewer.DEVICE_LAYER_ORDER)
+        viewer.deleteLater()
 
 
 if __name__ == "__main__":

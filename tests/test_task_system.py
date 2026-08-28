@@ -48,6 +48,22 @@ class TaskSystemTests(unittest.TestCase):
         trash = self.repository.delete(task.task_id)
         self.assertTrue(trash.is_dir())
 
+    def test_event_appends_notify_without_deleting_history(self):
+        task = self.repository.create("联合巡检", self.map, self.devices, now=self.now)
+        notified = []
+        self.repository.events_updated.connect(notified.append)
+        self.repository.append_audit(task.task_id, "edge_state", "ready")
+        self.repository.append_execution_event(
+            task.task_id, "execution-1", "task_status", "running",
+            device_id="UAV-1",
+        )
+        self.assertEqual(notified, [task.task_id, task.task_id])
+        self.assertEqual(self.repository.audit_events(task.task_id)[-1].message, "ready")
+        self.assertEqual(
+            self.repository.execution_events(task.task_id, "execution-1")[-1].message,
+            "running",
+        )
+
     def test_conflict_detector_respects_time_altitude_and_delay(self):
         first = DeviceSubtask("s1", "A", "A", "UAV", "127.0.0.1", waypoints=(
             TaskWaypoint("a1", -5, 0, 1), TaskWaypoint("a2", 5, 0, 1),
