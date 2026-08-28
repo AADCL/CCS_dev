@@ -10,6 +10,7 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, Signal
 
+from .device_address import device_address_matches
 from .models import DeviceSnapshot, utc_now
 from .task_config import TaskSystemConfig
 from .task_models import (
@@ -236,8 +237,8 @@ class TaskExecutionService(QObject):
             self.protocol_warning.emit(str(exc))
             return
         device = self.device_lookup(envelope.device_id)
-        if device is None or device.ip_address != peer_ip:
-            self.protocol_warning.emit("任务消息来源设备或 IP 不匹配")
+        if device is None or not device_address_matches(device.ip_address, peer_ip):
+            self.protocol_warning.emit("任务消息来源设备或地址不匹配")
             return
         with self._lock:
             if envelope.message_type == "command_ack":
@@ -507,7 +508,7 @@ class TaskExecutionService(QObject):
             raise RuntimeError(self.module_message)
         device = self.device_lookup(device_id)
         if device is None or not device.ip_address:
-            raise ValueError(f"设备 {device_id} 不存在或缺少 IP")
+            raise ValueError(f"设备 {device_id} 不存在或缺少有效地址")
         return device
 
     def _log(

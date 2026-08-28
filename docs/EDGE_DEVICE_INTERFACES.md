@@ -69,7 +69,7 @@ Broker 由地面站监听 `0.0.0.0:1883`，QoS 1，无认证/TLS。设备 ID 为
 | `session_id` | string | 可选；端侧进程每次启动生成新 UUID，presence/heartbeat/status 共用 |
 | `sequence` | integer | heartbeat/status 非负递增序列；presence 可省略 |
 | `device.id` | string | 必须与主题 ID 和地面站配置一致 |
-| `device.ip` | string | 必须与静态设备 IP 一致，不一致只记录告警，不自动修改 |
+| `device.ip` | string | 必须等于地面站静态 IP，或属于地面站 `.local` mDNS 地址的解析结果；不一致只记录告警，不自动修改 |
 
 presence 额外包含 `status: online|offline`。连接成功发布 retained online；Last Will 和正常退出发布 retained offline。heartbeat 不增加业务 payload。
 
@@ -189,7 +189,7 @@ v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sen
 }
 ```
 
-`accepted` 必须等于所有 checks 的逻辑与。`start_mapping` 带 `coordinate_contract=sensor+map_body+body_sensor`、`preview_transport=pcd_fragment_http` 和 1 秒周期。每个 `cloud_fragment_ready` 包含 `fragment_id/url/byte_count/sha256/point_count/frame_id/source_frame_id/display_from_source/started_at_ns/ended_at_ns/expires_at`。其中 `frame_id=odom`、`source_frame_id=lio_odom`，`display_from_source` 为端侧实际用于点变换的 `{x,y,z,qx,qy,qz,qw}`。平台限制 URL 主机为设备 IP，校验坐标契约、字节数、SHA-256 和二进制 XYZ PCD 后以 `odom` 增量显示，再以 request ID 和 fragment ID 确认。
+`accepted` 必须等于所有 checks 的逻辑与。`start_mapping` 带 `coordinate_contract=sensor+map_body+body_sensor`、`preview_transport=pcd_fragment_http` 和 1 秒周期。每个 `cloud_fragment_ready` 包含 `fragment_id/url/byte_count/sha256/point_count/frame_id/source_frame_id/display_from_source/started_at_ns/ended_at_ns/expires_at`。其中 `frame_id=odom`、`source_frame_id=lio_odom`，`display_from_source` 为端侧实际用于点变换的 `{x,y,z,qx,qy,qz,qw}`。平台限制 URL 主机为设备地址或其 mDNS 解析结果，校验坐标契约、字节数、SHA-256 和二进制 XYZ PCD 后以 `odom` 增量显示，再以 request ID 和 fragment ID 确认。
 
 实时预览坐标生命周期为 `lio_odom --(odom <- lio_odom TF)--> odom`。端侧以点云窗口最后一帧时间戳查询 TF，将窗口统一到 `lio_odom` 后再实际变换全部点坐标，禁止只修改 PCD 的 frame 标签。Scout 最终成果 ZIP 的 manifest 声明 `frame_id=map`；Go2 accumulator 成果保持 `frame_id=lio_odom`。平台按设备契约完整校验后再原子提交。
 
@@ -213,7 +213,7 @@ FAST_LIO 点云和里程计按 header 时间戳在 50 ms 窗口内匹配。点�
 }
 ```
 
-指控平台只允许 URL 主机等于设备 IP 的明文 HTTP，禁止重定向，并使用 Range 续传。端侧默认在 TCP 14600 提供固定路径 `/mapping/result.zip?token=<短期令牌>`，令牌有效期默认 15 分钟。ZIP 必须且只能包含 `manifest.json` 及清单声明的一个 PCD、一个 PGM、一个 ROS YAML。清单 schema 1 包含 `map_id/device_id/session_id/frame_id/generated_at`，以及 `files.pcd/pgm/yaml` 的 `path/byte_count/sha256`。路径穿越、符号链接、重复或未声明文件、异常压缩比和任何校验不匹配均会拒绝整个成果。
+指控平台只允许 URL 主机等于设备地址或属于其 mDNS 解析结果的明文 HTTP，禁止重定向，并使用 Range 续传。端侧默认在 TCP 14600 提供固定路径 `/mapping/result.zip?token=<短期令牌>`，令牌有效期默认 15 分钟。ZIP 必须且只能包含 `manifest.json` 及清单声明的一个 PCD、一个 PGM、一个 ROS YAML。清单 schema 1 包含 `map_id/device_id/session_id/frame_id/generated_at`，以及 `files.pcd/pgm/yaml` 的 `path/byte_count/sha256`。路径穿越、符号链接、重复或未声明文件、异常压缩比和任何校验不匹配均会拒绝整个成果。
 
 端侧配置 schema 6 通过 `integrations.backend` 区分设备流程。Go2 的 `go2_accumulator` backend 启动 `go2_map_accumulator/map_accumulator.launch`，停止时调用 `/go2_map_accumulator/save` 并验证新鲜 PCD；既有行为保持兼容。
 
@@ -223,7 +223,7 @@ Scout 的 `scout_finalize` backend 在收到 `start_mapping` 时只生成一次 
 
 ## UDP 14561/14562 实时建图 v1（保留后端）
 
-此协议独立于 UDP 14560。地面站绑定 14562，并使用该 socket 向所选设备 IP 的 14561 发送控制指令。端侧必须把上行数据发回 `start_mapping.return_host:return_port`，并保持 source IP 与 `devices.json` 一致。
+此协议独立于 UDP 14560。地面站绑定 14562，并使用该 socket 向所选设备地址的 14561 发送控制指令。端侧必须把上行数据发回 `start_mapping.return_host:return_port`；若 `devices.json` 配置 `.local` 主机名，source IP 必须属于该名称当前的解析结果。
 
 ### 公共 MessagePack 信封
 
@@ -408,9 +408,9 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 | `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP |
 | `config/mqtt.json` | `epgeneral_mqtav/config/config.yaml` | Broker IP/端口、topic root、QoS、频率 |
 | `config/udp_telemetry.json` | `epgeneral_udp_telemetry/config/telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
-| `config/devices.json`、`config/srt_video.json` | `EPGeneral_video_srt/config/video.yaml` | 设备 IP、UDP 9000、延迟、H.264/MPEG-TS/SRT |
+| `config/devices.json`、`config/srt_video.json` | `EPGeneral_video_srt/config/video.yaml` | 设备 IP 或 `.local` mDNS 地址、UDP 9000、延迟、H.264/MPEG-TS/SRT |
 | `config/map_building.json` | `epgeneral_map_stream/config/mapping.yaml` | protocol ID、14561/14562、包长、压缩、格式、速率、体素和资源上限 |
-| `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP；本地 `device_types.json` 不参与端侧协议 |
+| `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP 或 `.local` mDNS 地址；本地 `device_types.json` 不参与端侧协议 |
 
 ## 端侧建图实现检查清单
 

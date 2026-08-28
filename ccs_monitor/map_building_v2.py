@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
-import ipaddress
 import json
 import math
 import os
@@ -24,6 +23,7 @@ import msgpack
 import numpy as np
 from PySide6.QtCore import QObject, Signal
 
+from .device_address import device_address_matches
 from .map_building import (
     MapBuildingEnvelope,
 )
@@ -423,13 +423,8 @@ class ArtifactDownloader:
         parsed = urlsplit(descriptor.url)
         if parsed.scheme != "http" or not parsed.hostname or not parsed.path or not parsed.query:
             raise ArtifactDownloadError("成果 URL 必须是完整 HTTP 地址")
-        try:
-            expected = ipaddress.ip_address(device_ip.strip())
-            actual = ipaddress.ip_address(parsed.hostname)
-        except ValueError as exc:
-            raise ArtifactDownloadError("设备 IP 或成果 URL 主机不是有效 IP") from exc
-        if expected != actual:
-            raise ArtifactDownloadError("成果 URL 主机与建图设备 IP 不一致")
+        if not device_address_matches(device_ip, parsed.hostname):
+            raise ArtifactDownloadError("成果 URL 主机与建图设备地址不一致或无法解析")
         if descriptor.expires_at <= datetime.now(timezone.utc):
             raise ArtifactDownloadError("成果 URL 已过期")
         if not 0 < descriptor.byte_count <= self.config.max_artifact_bytes:
@@ -749,7 +744,7 @@ class RemoteMappingCoordinator(QObject):
     def prepare(self, definition: MapDefinition, device: DeviceSnapshot,
                 return_host: str, return_port: int) -> str:
         if not device.ip_address:
-            raise ValueError("建图设备必须配置 IP 地址")
+            raise ValueError("建图设备必须配置有效设备地址")
         with self._lock:
             if self.active:
                 raise RuntimeError("单机遥控建图任务正在运行")
@@ -851,8 +846,8 @@ class RemoteMappingCoordinator(QObject):
                     or envelope.device_id.casefold() != session.device.device_id.casefold()
                     or envelope.session_id != session.session_id):
                 raise RemoteMappingProtocolError("v2 数据报设备或会话标识不一致")
-            if peer_ip != session.device.ip_address:
-                raise RemoteMappingProtocolError("v2 数据报来源 IP 与设备配置不一致")
+            if not device_address_matches(session.device.ip_address, peer_ip):
+                raise RemoteMappingProtocolError("v2 数据报来源地址与设备配置不一致或无法解析")
             if envelope.sequence <= session.last_sequence:
                 return True
             session.last_sequence = envelope.sequence

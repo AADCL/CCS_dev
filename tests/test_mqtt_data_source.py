@@ -1,9 +1,13 @@
 import json
+import socket
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
+from ccs_monitor.device_address import clear_device_address_cache
 from ccs_monitor.device_config import DeviceConfigRepository
 from ccs_monitor.models import ConnectionStatus, DeviceLogLevel, HealthStatus, TaskStatus
 from ccs_monitor.mqtt_config import MqttMonitoringConfig
@@ -160,6 +164,23 @@ class MqttDeviceSourceTests(unittest.TestCase):
         self.clock.value = 5.1
         self.source.check_heartbeats()
         self.assertEqual(self.source.device(self.device_id).connection_status, ConnectionStatus.OFFLINE)
+
+    def test_mdns_device_address_matches_resolved_message_ip(self):
+        profile = self.source.profile(self.device_id)
+        self.source.update_device(
+            self.device_id, replace(profile, ip_address="nrc17.local")
+        )
+        clear_device_address_cache()
+        records = [
+            (socket.AF_INET, socket.SOCK_DGRAM, 17, "", (self.ip, 0)),
+        ]
+        with patch("ccs_monitor.device_address.socket.getaddrinfo", return_value=records):
+            self.message("heartbeat", 1, ip=self.ip)
+        messages = [entry.message for entry in self.source.logs(self.device_id)]
+        self.assertFalse(any("不一致或无法解析" in message for message in messages))
+        self.assertEqual(
+            self.source.device(self.device_id).connection_status, ConnectionStatus.ONLINE
+        )
 
     def test_mission_aliases(self):
         self.assertEqual(normalize_mission_status("running"), TaskStatus.EXECUTING)

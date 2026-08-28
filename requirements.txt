@@ -1,6 +1,7 @@
 PySide6>=6.6,<7
 amqtt>=0.11,<1
 paho-mqtt>=2,<3
+zeroconf>=0.147,<1
 PyYAML>=6,<7
 msgpack>=1,<2
 numpy>=1.24,<3

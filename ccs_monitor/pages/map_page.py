@@ -692,7 +692,7 @@ class MappingSetupDialog(QDialog):
             root.addWidget(QLabel("选择建图设备"))
             root.addWidget(self.single_device_combo)
         else:
-            root.addWidget(QLabel("选择至少两台设备（离线设备允许协商，缺少 IP 的设备不可选）"))
+            root.addWidget(QLabel("选择至少两台设备（离线设备允许协商，缺少地址的设备不可选）"))
             for device in self.devices:
                 item = QListWidgetItem(
                     f"{device.device_name} · {device.device_id} · {device.connection_status.value}"
@@ -749,7 +749,7 @@ class MappingSetupDialog(QDialog):
         valid_name = bool(self.name_input.text().strip())
         if self.mode == "single":
             valid_devices = self.single_device_combo.currentData() is not None
-            message = "请填写名称并选择一台具有有效 IP 的设备"
+            message = "请填写名称并选择一台具有有效地址的设备"
         else:
             valid_devices = len(self.selected_device_ids()) >= 2 and self.primary_combo.currentData() is not None
             message = "请填写名称、选择至少两台设备并指定主设备"
@@ -945,12 +945,12 @@ class PgmFusionDialog(QDialog):
         for row, device in enumerate(devices):
             selected = QCheckBox()
             selected.setEnabled(bool(device.ip_address))
-            selected.setToolTip("" if device.ip_address else "设备缺少有效 IP，不能下载")
-            name = QLabel(f"{device.device_name}\n{device.device_id} · {device.ip_address or '无 IP'}")
+            selected.setToolTip("" if device.ip_address else "设备缺少有效地址，不能下载")
+            name = QLabel(f"{device.device_name}\n{device.device_id} · {device.ip_address or '无地址'}")
             source_map = QLineEdit()
             source_map.setPlaceholderText("端侧地图 ID")
             x, y, yaw = self._transform_input(), self._transform_input(), self._transform_input()
-            status = QLabel("待选择" if device.ip_address else "缺少 IP")
+            status = QLabel("待选择" if device.ip_address else "缺少地址")
             for column, widget in enumerate((selected, name, source_map, x, y, yaw, status)):
                 self.table.setCellWidget(row, column, widget)
             self._controls[device.device_id] = (selected, source_map, x, y, yaw, status)
@@ -1323,7 +1323,7 @@ class MappingDeviceDialog(QDialog):
             else:
                 udp = telemetry_store.telemetry(device.device_id).udp_link_status if telemetry_store else UdpLinkStatus.UNKNOWN
                 detail = (
-                    f"IP {device.ip_address or '未配置'}  ·  MQTT {device.connection_status.value}"
+                    f"地址 {device.ip_address or '未配置'}  ·  MQTT {device.connection_status.value}"
                     f"  ·  UDP {udp.value}"
                 )
                 enabled = bool(device.ip_address)

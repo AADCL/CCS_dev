@@ -252,7 +252,7 @@ class DeviceDetailPage(QWidget):
         self.info_grid.setHorizontalSpacing(28)
         self.info_grid.setVerticalSpacing(14)
         field_names = (
-            "设备名称", "设备类型", "设备 ID", "设备 IP", "最近可用状态",
+            "设备名称", "设备类型", "设备 ID", "设备地址", "最近可用状态",
             "任务状态", "电量", "定位状态", "健康状态",
             "运行模式", "电池电压", "电池电流",
             "原始任务状态", "最后心跳", "UDP 链路状态", "UDP 最后心跳",
@@ -369,7 +369,7 @@ class DeviceDetailPage(QWidget):
             "设备名称": device.device_name,
             "设备类型": device.device_type,
             "设备 ID": device.device_id,
-            "设备 IP": device.ip_address or "--",
+            "设备地址": device.ip_address or "--",
             "最近可用状态": AVAILABILITY_TEXT[device.availability],
             "任务状态": STATUS_TEXT[device.task_status],
             "电量": self._battery_text(device),

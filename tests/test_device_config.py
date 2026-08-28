@@ -75,6 +75,19 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.repository.create(DeviceProfile("UGV-099", "Invalid", "UGV", "not-an-ip"))
 
+    def test_mdns_address_is_accepted_normalized_and_persisted(self):
+        self.repository.load()
+        profiles = self.repository.create(
+            DeviceProfile("UGV-099", "mDNS vehicle", "UGV", "NRC17.LOCAL.")
+        )
+        created = next(item for item in profiles if item.device_id == "UGV-099")
+        self.assertEqual(created.ip_address, "nrc17.local")
+        reloaded = DeviceConfigRepository(self.path).load()
+        self.assertEqual(
+            next(item for item in reloaded if item.device_id == "UGV-099").ip_address,
+            "nrc17.local",
+        )
+
     def test_corrupt_config_is_read_only_and_not_overwritten(self):
         original = "{ invalid json"
         self.path.write_text(original, encoding="utf-8")

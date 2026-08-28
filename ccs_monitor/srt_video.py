@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import shutil
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from .app_icons import apply_button_icon
+from .device_address import format_device_address_for_url, normalize_device_address
 from .models import DeviceSnapshot
 from .styles import ThemeMode, ThemePalette, theme_palette
 
@@ -51,7 +51,7 @@ class SrtEndpoint:
     latency_ms: int = 120
 
     def __post_init__(self) -> None:
-        ipaddress.ip_address(self.ip_address.strip())
+        normalize_device_address(self.ip_address)
         if not 1 <= self.port <= 65535:
             raise ValueError("SRT port must be between 1 and 65535")
         if not 20 <= self.latency_ms <= 8000:
@@ -61,8 +61,7 @@ class SrtEndpoint:
 def build_srt_url(endpoint: SrtEndpoint | str, port: int = 9000,
                   latency_ms: int = 120) -> str:
     endpoint = endpoint if isinstance(endpoint, SrtEndpoint) else SrtEndpoint(endpoint, port, latency_ms)
-    address = ipaddress.ip_address(endpoint.ip_address.strip())
-    host = f"[{address}]" if address.version == 6 else str(address)
+    host = format_device_address_for_url(endpoint.ip_address)
     query = urlencode({
         "mode": "caller",
         "transtype": "live",
@@ -541,7 +540,7 @@ class SrtVideoWidget(QFrame):
             self.stream_switch.setEnabled(False)
             return
         if device is None or not device.ip_address:
-            self.url_label.setText("设备未配置 IP，无法生成 SRT 地址")
+            self.url_label.setText("设备未配置地址，无法生成 SRT 地址")
             self.stream_switch.setEnabled(False)
             return
         try:

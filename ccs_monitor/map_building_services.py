@@ -10,6 +10,7 @@ from typing import Callable, Iterable
 
 from PySide6.QtCore import QObject, Signal
 
+from .device_address import device_address_matches
 from .map_building import (
     CloudFrameAssembler, MapBuildingEnvelope, MapBuildingJobSnapshot,
     MapBuildingProtocol, MapBuildingProtocolError, MapBuildingSessionSnapshot,
@@ -267,7 +268,7 @@ class MapBuildingService(QObject):
         if len(set(ids)) != len(ids):
             raise ValueError("建图设备不能重复")
         if any(not item.ip_address for item in device_list):
-            raise ValueError("所有建图设备都必须配置有效 IP 地址")
+            raise ValueError("所有建图设备都必须配置有效设备地址")
         primary_folded = primary_device_id.casefold()
         if primary_folded not in ids:
             raise ValueError("主设备必须属于建图设备")
@@ -468,8 +469,8 @@ class MapBuildingService(QObject):
             session = job.sessions.get(envelope.device_id.casefold())
             if session is None or envelope.session_id != session.session_id:
                 raise MapBuildingProtocolError("数据报设备或会话标识不一致")
-            if peer_ip != session.device.ip_address:
-                raise MapBuildingProtocolError("数据报来源 IP 与设备配置不一致")
+            if not device_address_matches(session.device.ip_address, peer_ip):
+                raise MapBuildingProtocolError("数据报来源地址与设备配置不一致或无法解析")
             if envelope.message_type == "cloud_chunk":
                 if envelope.sequence in session.seen_cloud_sequences:
                     return

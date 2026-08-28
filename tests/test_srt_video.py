@@ -55,8 +55,12 @@ class SrtVideoTests(unittest.TestCase):
             build_srt_url(SrtEndpoint("2001:db8::1", 9010, 250)),
             "srt://[2001:db8::1]:9010?mode=caller&transtype=live&latency=250000",
         )
+        self.assertEqual(
+            build_srt_url("camera.local"),
+            "srt://camera.local:9000?mode=caller&transtype=live&latency=120000",
+        )
         with self.assertRaises(ValueError):
-            build_srt_url("camera.local")
+            build_srt_url("example.com")
 
     def test_endpoint_validates_boundaries(self):
         SrtEndpoint("127.0.0.1", 1, 20)
@@ -72,6 +76,14 @@ class SrtVideoTests(unittest.TestCase):
         self.assertEqual(dialog.srt_latency_input.value(), 120)
         self.assertEqual(dialog.srt_port_input.buttonSymbols(), dialog.srt_port_input.ButtonSymbols.NoButtons)
         self.assertEqual(dialog.srt_latency_input.buttonSymbols(), dialog.srt_latency_input.ButtonSymbols.NoButtons)
+        dialog.close()
+
+    def test_new_device_dialog_accepts_mdns_address(self):
+        dialog = NewDeviceDialog(lambda _device_id: False)
+        dialog.name_input.setText("NRC device")
+        dialog.id_input.setText("FGV-017")
+        dialog.ip_input.setText("nrc17.local")
+        self.assertIsNone(dialog._validate_fields())
         dialog.close()
 
     def test_protocol_check_only_accepts_srt_input(self):

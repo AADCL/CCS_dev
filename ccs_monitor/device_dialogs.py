@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -27,6 +26,7 @@ from .models import (
     DEVICE_STATUS_CARD_DEFINITIONS, DeviceAvailability, DeviceProfile,
     DeviceTypeTemplate, MapMarkerShape,
 )
+from .device_address import DeviceAddressError, normalize_device_address
 from .device_types import DeviceTypeConfigError
 from .ping_service import PingResult, PingWorker
 from .widgets import NoButtonSpinBox
@@ -69,7 +69,7 @@ class NewDeviceDialog(QDialog):
         self.id_input.setPlaceholderText("例如：UGV-001")
         self.ip_input = QLineEdit()
         self.ip_input.setObjectName("deviceIpInput")
-        self.ip_input.setPlaceholderText("例如：192.168.1.10")
+        self.ip_input.setPlaceholderText("例如：192.168.1.10 或 nrc17.local")
         self.srt_port_input = NoButtonSpinBox()
         self.srt_port_input.setRange(1, 65535)
         self.srt_port_input.setValue(9000)
@@ -80,7 +80,7 @@ class NewDeviceDialog(QDialog):
         form.addRow("设备名称", self.name_input)
         form.addRow("设备类型", self.type_input)
         form.addRow("设备 ID", self.id_input)
-        form.addRow("设备 IP", self.ip_input)
+        form.addRow("设备地址", self.ip_input)
         form.addRow("SRT 端口", self.srt_port_input)
         form.addRow("SRT 延迟", self.srt_latency_input)
         root.addLayout(form)
@@ -120,13 +120,13 @@ class NewDeviceDialog(QDialog):
         device_id = self.id_input.text().strip().upper()
         ip_address = self.ip_input.text().strip()
         if not name or not device_id or not ip_address:
-            return "设备名称、设备 ID 和设备 IP 均不能为空"
+            return "设备名称、设备 ID 和设备地址均不能为空"
         if self.id_exists(device_id):
             return f"设备 ID {device_id} 已存在"
         try:
-            ipaddress.ip_address(ip_address)
-        except ValueError:
-            return "请输入有效的 IPv4 或 IPv6 地址"
+            normalize_device_address(ip_address)
+        except DeviceAddressError as exc:
+            return str(exc)
         return None
 
     def _invalidate_test(self) -> None:
@@ -145,7 +145,7 @@ class NewDeviceDialog(QDialog):
         if error:
             self.validation_label.setText(error)
             return
-        ip_address = self.ip_input.text().strip()
+        ip_address = normalize_device_address(self.ip_input.text())
         self.validation_label.clear()
         self.test_button.setEnabled(False)
         self.create_button.setEnabled(False)
@@ -157,7 +157,11 @@ class NewDeviceDialog(QDialog):
 
     def _handle_ping_result(self, result: PingResult) -> None:
         self.test_button.setEnabled(True)
-        if result.ip_address != self.ip_input.text().strip():
+        try:
+            current_address = normalize_device_address(self.ip_input.text())
+        except DeviceAddressError:
+            return
+        if result.ip_address != current_address:
             return
         self._tested_ip = result.ip_address
         self._ping_result = result
@@ -174,7 +178,10 @@ class NewDeviceDialog(QDialog):
             self.validation_label.setText(error)
             self.create_button.setEnabled(False)
             return
-        if self._ping_result is None or self._tested_ip != self.ip_input.text().strip():
+        if (
+            self._ping_result is None
+            or self._tested_ip != normalize_device_address(self.ip_input.text())
+        ):
             self.validation_label.setText("请先完成当前 IP 的连接测试")
             self.create_button.setEnabled(False)
             return
@@ -187,7 +194,7 @@ class NewDeviceDialog(QDialog):
             device_id=self.id_input.text().strip().upper(),
             device_name=self.name_input.text().strip(),
             device_type=str(self.type_input.currentData()),
-            ip_address=self.ip_input.text().strip(),
+            ip_address=normalize_device_address(self.ip_input.text()),
             availability=(
                 DeviceAvailability.AVAILABLE
                 if self._ping_result.reachable

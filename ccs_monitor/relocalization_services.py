@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
+from .device_address import device_address_matches
 from .models import (
     DeviceLogLevel, DeviceMapBinding, FrameTransform, RelocalizationStatus,
 )
@@ -253,7 +254,7 @@ class RelocalizationService(QObject):
             self.protocol_warning.emit(str(exc))
             return
         device = self.source.device(envelope.device_id)
-        if device is None or device.ip_address != peer_ip:
+        if device is None or not device_address_matches(device.ip_address, peer_ip):
             self.protocol_warning.emit(f"忽略来源不匹配的重定位消息：{peer_ip}")
             return
         snapshot = self.snapshot(envelope.map_id, envelope.device_id)
@@ -464,7 +465,7 @@ class RelocalizationService(QObject):
             raise RuntimeError(self.module_message)
         device = self.source.device(device_id)
         if device is None or not device.ip_address:
-            raise ValueError(f"设备 {device_id} 不存在或缺少 IP")
+            raise ValueError(f"设备 {device_id} 不存在或缺少有效地址")
         return device
 
     @staticmethod

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
 import json
 import math
 import os
@@ -9,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .device_address import normalize_device_address
 from .models import (
     DEFAULT_DEVICE_STATUS_CARDS,
     DEVICE_STATUS_CARD_CATALOG,
@@ -258,16 +258,12 @@ class DeviceConfigRepository:
         device_id = profile.device_id.strip().upper()
         device_name = profile.device_name.strip()
         device_type = profile.device_type.strip().upper()
-        ip_address = profile.ip_address.strip()
+        ip_address = normalize_device_address(profile.ip_address)
         if not device_id or not device_name or not device_type or not ip_address:
-            raise ValueError("设备名称、类型、ID 和 IP 均不能为空")
+            raise ValueError("设备名称、类型、ID 和地址均不能为空")
         valid_types = self.valid_device_types() if self.valid_device_types is not None else {"UGV", "UAV", "AMR", "USV"}
         if device_type.casefold() not in {item.casefold() for item in valid_types}:
             raise ValueError(f"不支持的设备类型：{device_type}")
-        try:
-            ipaddress.ip_address(ip_address)
-        except ValueError as exc:
-            raise ValueError(f"IP 地址无效：{ip_address}") from exc
         if not 1 <= profile.srt_port <= 65535:
             raise ValueError("SRT 端口必须在 1–65535 之间")
         if not 20 <= profile.srt_latency_ms <= 8000:
