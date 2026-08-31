@@ -3,7 +3,7 @@
   "profiles": {
     "scout_mini": {
       "full_voltage": 30.0,
-      "retention_days": 90,
+      "retention_days": 2,
       "curve": []
     }
   }
