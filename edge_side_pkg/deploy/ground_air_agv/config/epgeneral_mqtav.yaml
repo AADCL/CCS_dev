@@ -1,0 +1,27 @@
+mqtt:
+  ground_station_ip: "192.168.50.101"
+  port: 1883
+  client_id_prefix: "mqtav-"
+  qos: 1
+  keepalive_seconds: 10
+  heartbeat_hz: 1
+  telemetry_hz: 1
+  topics:
+    presence: "mqtav/{device_id}/presence"
+    heartbeat: "mqtav/{device_id}/heartbeat"
+    status: "mqtav/{device_id}/status"
+
+ros:
+  node_name: "epgeneral_mqtav"
+  state:
+    topic: "/mavros/state"
+    message_type: "mavros_msgs/State"
+    connected_on_message: false
+    timeout_seconds: 3.0
+    mapping: {connected: "connected", armed: "armed", system_status: "system_status", mode: "mode"}
+  battery:
+    topic: "/mavros/battery"
+    message_type: "sensor_msgs/BatteryState"
+    mapping: {percentage: "percentage", voltage: "voltage", current: "current"}
+  mission:
+    enabled: false

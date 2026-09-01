@@ -133,7 +133,7 @@
       "device_id": "AGV_001",
       "device_name": "金城空地无人机",
       "device_type": "AGV",
-      "ip_address": "192.168.50.200",
+      "ip_address": "192.168.50.130",
       "availability": "unavailable",
       "last_tested_at": "2026-08-26T10:15:23.693467+00:00",
       "status_cards": null,
