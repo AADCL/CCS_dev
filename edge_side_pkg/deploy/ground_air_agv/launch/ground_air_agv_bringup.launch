@@ -1,0 +1,5 @@
+<launch>
+  <!-- Manual aggregate entrypoint. The managed script starts these separately. -->
+  <include file="$(dirname)/mavros_base.launch" />
+  <include file="$(dirname)/livox_mid360_base.launch" />
+</launch>
