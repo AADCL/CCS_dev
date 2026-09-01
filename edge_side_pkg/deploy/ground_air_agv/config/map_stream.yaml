@@ -1,0 +1,55 @@
+# Placeholder only. The AGV mapping lifecycle will be supplied later and this
+# file is intentionally excluded from the deployed bringup launch.
+deployment: {state: placeholder, enabled: false}
+schema_version: 6
+protocol_id: "ccs-map-stream-v2"
+network: {bind_host: "0.0.0.0", control_port: 14561, ground_station_ip: "192.168.50.101", data_port: 14562, max_datagram_bytes: 1400}
+http: {bind_host: "0.0.0.0", port: 14600, token_ttl_seconds: 900.0}
+ros:
+  inputs:
+    lidar: {topic: "/livox/lidar", message_type: "livox_ros_driver2/CustomMsg", frame: "base_link"}
+    imu: {topic: "/livox/imu", message_type: "sensor_msgs/Imu", frame: "base_link"}
+  stream:
+    cloud: {topic: "/cloud_registered_body", message_type: "sensor_msgs/PointCloud2", frame: "body", coordinates: "sensor"}
+    pose: {topic: "/Odometry", message_type: "nav_msgs/Odometry", position_path: "pose.pose.position", orientation_path: "pose.pose.orientation"}
+  frames: {map: "camera_init", preview: "camera_init", body: "body", sensor: "body"}
+  body_from_sensor: {x: 0.0, y: 0.0, z: 0.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0}
+integrations:
+  backend: "managed_finalize"
+  mapping_prerequisites: {setup_file: "/home/bitcq/catkin_ws/devel/setup.bash", launch_file: "PENDING_GROUND_AIR_MAPPING_FLOW.launch", extrinsics_file: "/home/bitcq/ccs_edge_ws/config/ground_air_agv/PENDING_EXTRINSICS.yaml", startup_timeout_seconds: 15.0}
+  fast_lio: {setup_file: "/home/bitcq/catkin_ws/devel/setup.bash", package: "car_bringup", launch_file: "start_mapping.launch", launch_args: ["map_id:={map_name}"], startup_timeout_seconds: 30.0, stop_timeout_seconds: 30.0, pid_path: "{session_dir}/mapping.pid", log_path: "{session_dir}/mapping.log"}
+  map_accumulator: {setup_file: "/home/bitcq/catkin_ws/devel/setup.bash", service: "/ground_air/mapping/save", save_timeout_seconds: 60.0}
+  pgm: {setup_file: "/home/bitcq/catkin_ws/devel/setup.bash", package: "car_bringup", launch_file: "PENDING_PGM_FINALIZE.launch", launch_args: [], generation_timeout_seconds: 300.0, log_path: "{session_dir}/finalize_map.log"}
+  managed:
+    fast_lio_package: "car_bringup"
+    fast_lio_launch: "start_mapping.launch"
+    fast_lio_node: "/laserMapping"
+    mapper_package: "ground_air_mapping"
+    mapper_launch: "mapping.launch"
+    mapper_node: "/ground_air_map_recorder"
+    tf_package: "ground_air_localization"
+    tf_launch: "PENDING_MAPPING_TF.launch"
+    tf_node: "/ground_air_world_tf_owner"
+    geometry_tf_node: "/odom_camera_init_broadcaster"
+    pose_package: "ground_air_localization"
+    pose_launch: "PENDING_MAPPING_POSE.launch"
+    pose_node: "/ground_air_mapping_pose_adapter"
+    finalize_package: "car_bringup"
+    finalize_executable: "PENDING_FINALIZE_MAP.py"
+    filtered_pcd_filename: "filtered_camera_init.pcd"
+    map_root: "/home/bitcq/ccs_edge_ws/maps"
+sync: {tolerance_seconds: 0.05, pose_buffer_size: 100, preview_transform_timeout_seconds: 0.20}
+preprocess: {sample_window_seconds: 1.0, preview_transport: "pcd_fragment_http", min_range_m: 0.30, max_range_m: 100.0, voxel_size_m: 0.05}
+timeouts: {prepare_probe_timeout_seconds: 1.5, integration_check_timeout_seconds: 8.0, ready_timeout_seconds: 60.0, input_timeout_seconds: 3.0, command_cache_seconds: 60.0, artifact_poll_seconds: 0.5, artifact_stable_polls: 2}
+limits: {max_frame_points: 200000, max_window_points: 1000000, max_decompressed_bytes: 2400000, max_artifact_bytes: 4294967296, min_free_bytes: 5368709120, command_output_bytes: 16384, max_preview_fragment_bytes: 8388608, max_pending_preview_fragments: 4, max_unacked_preview_fragments: 16}
+artifacts:
+  frame: "map"
+  workspace_root: "/home/bitcq/ccs_edge_ws/maps/runtime"
+  accumulator_pcd_path: "/home/bitcq/ccs_edge_ws/maps/current/filtered_camera_init.pcd"
+  source_pcd_path: "/home/bitcq/ccs_edge_ws/maps/current/public_map.pcd"
+  source_pgm_path: "/home/bitcq/ccs_edge_ws/maps/current/map.pgm"
+  source_yaml_path: "/home/bitcq/ccs_edge_ws/maps/current/map.yaml"
+  archive_root: "/home/bitcq/ccs_edge_ws/maps/archive"
+  pcd_path: "{session_dir}/map.pcd"
+  pgm_path: "{session_dir}/map.pgm"
+  yaml_path: "{session_dir}/map.yaml"
