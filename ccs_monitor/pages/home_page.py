@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -11,30 +11,100 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..app_icons import app_icon, asset_icon
 from ..data_source import DeviceDataSource
 from ..models import ConnectionStatus, DeviceSnapshot, SystemOverview
-from ..system_status import SubsystemState, SubsystemStatus, SystemRuntimeStatusStore
+from ..styles import ThemeMode, ThemePalette, theme_palette
+from ..system_status import (
+    SubsystemId,
+    SubsystemState,
+    SubsystemStatus,
+    SystemRuntimeStatusStore,
+)
 from ..version import __version__
 
 
+RUNTIME_ICON_NAMES = {
+    SubsystemId.NTP: "time",
+    SubsystemId.MQTT_BROKER: "mqttbroker",
+    SubsystemId.MQTT_SUBSCRIBER: "mqtt",
+    SubsystemId.UDP_TELEMETRY: "UDP",
+    SubsystemId.SRT_FFMPEG: "camera",
+}
+
+
+class CardIcon(QLabel):
+    def __init__(
+        self,
+        label: str,
+        *,
+        icon_name: str | None = None,
+        icon_file: str | None = None,
+        size: int,
+    ) -> None:
+        super().__init__()
+        self.icon_name = icon_name
+        self.icon_file = icon_file
+        self.icon_size = QSize(size, size)
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
+        self.setFixedSize(self.icon_size)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setToolTip(label)
+        self.setAccessibleName(f"{label}图标")
+        self.setProperty("appIconName", icon_name or icon_file or "")
+        self._refresh_icon()
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self._refresh_icon()
+
+    def _refresh_icon(self) -> None:
+        if self.icon_file is not None:
+            icon = asset_icon(self.icon_file)
+            self.setProperty("appIconMode", "static")
+        else:
+            icon = app_icon(self.icon_name or "", self.theme_palette)
+            self.setProperty("appIconMode", self.theme_palette.mode.value)
+        pixmap = icon.pixmap(self.icon_size)
+        self.setPixmap(pixmap)
+        self.setVisible(not pixmap.isNull())
+
+
 class MetricCard(QFrame):
-    def __init__(self, label: str, value: str) -> None:
+    def __init__(
+        self,
+        label: str,
+        value: str,
+        *,
+        icon_name: str | None = None,
+        icon_file: str | None = None,
+    ) -> None:
         super().__init__()
         self.setObjectName("metric")
-        self.setMinimumSize(140, 86)
+        self.setMinimumSize(150, 92)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout = QVBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(3)
+        self.icon_label = CardIcon(
+            label, icon_name=icon_name, icon_file=icon_file, size=28
+        )
         self.value_label = QLabel(value)
         self.value_label.setObjectName("metricValue")
-        caption = QLabel(label)
-        caption.setObjectName("metricLabel")
-        layout.addWidget(self.value_label)
-        layout.addWidget(caption)
+        self.caption_label = QLabel(label)
+        self.caption_label.setObjectName("metricLabel")
+        layout.addWidget(self.icon_label, 0, 0, 2, 1, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.value_label, 0, 1)
+        layout.addWidget(self.caption_label, 1, 1)
+        layout.setColumnStretch(1, 1)
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.icon_label.set_theme(palette)
 
 
 class RuntimeStatusCard(QFrame):
-    def __init__(self, status: SubsystemStatus) -> None:
+    def __init__(self, status: SubsystemStatus, icon_name: str | None = None) -> None:
         super().__init__()
         self.setObjectName("runtimeStatusCard")
         self.setMinimumSize(190, 92)
@@ -43,22 +113,37 @@ class RuntimeStatusCard(QFrame):
         layout.setContentsMargins(14, 11, 14, 11)
         layout.setSpacing(5)
         header = QGridLayout()
+        self.icon_label = (
+            CardIcon(status.display_name, icon_name=icon_name, size=24)
+            if icon_name is not None
+            else None
+        )
         self.indicator = QLabel("●")
         self.indicator.setObjectName("runtimeStatusIndicator")
         self.title = QLabel(status.display_name)
         self.title.setObjectName("metricLabel")
         self.state_label = QLabel()
         self.state_label.setObjectName("runtimeStatusState")
-        header.addWidget(self.indicator, 0, 0)
-        header.addWidget(self.title, 0, 1)
-        header.addWidget(self.state_label, 0, 2, Qt.AlignmentFlag.AlignRight)
-        header.setColumnStretch(1, 1)
+        column = 0
+        if self.icon_label is not None:
+            header.addWidget(self.icon_label, 0, column)
+            column += 1
+        header.addWidget(self.indicator, 0, column)
+        header.addWidget(self.title, 0, column + 1)
+        header.addWidget(
+            self.state_label, 0, column + 2, Qt.AlignmentFlag.AlignRight
+        )
+        header.setColumnStretch(column + 1, 1)
         layout.addLayout(header)
         self.message = QLabel()
         self.message.setObjectName("muted")
         self.message.setWordWrap(True)
         layout.addWidget(self.message)
         self.update_status(status)
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        if self.icon_label is not None:
+            self.icon_label.set_theme(palette)
 
     def update_status(self, status: SubsystemStatus) -> None:
         labels = {
@@ -93,6 +178,7 @@ class HomePage(QWidget):
         self.map_repository = map_repository
         self.task_repository = task_repository
         self.status_store = status_store
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.task_value_labels: dict[str, QLabel] = {}
         self._build()
         self.update_devices(source.snapshots())
@@ -138,12 +224,20 @@ class HomePage(QWidget):
         self.metrics_grid = QGridLayout()
         self.metrics_grid.setHorizontalSpacing(12)
         self.metrics_grid.setVerticalSpacing(12)
-        self.online_card = MetricCard("在线设备数", "0")
-        self.offline_card = MetricCard("离线设备数", "0")
+        self.online_card = MetricCard(
+            "在线设备数", "0", icon_file="devices_online.svg"
+        )
+        self.offline_card = MetricCard(
+            "离线设备数", "0", icon_file="devices_offline.svg"
+        )
         map_count = len(self.map_repository.maps()) if self.map_repository is not None else len(self.overview.maps)
-        self.maps_card = MetricCard("本地地图数量", str(map_count))
+        self.maps_card = MetricCard(
+            "本地地图数量", str(map_count), icon_name="mapstorage"
+        )
         task_count = self.task_repository.execution_count() if self.task_repository else self.overview.task_execution_count
-        self.tasks_card = MetricCard("任务执行次数", str(task_count))
+        self.tasks_card = MetricCard(
+            "任务执行次数", str(task_count), icon_name="tasks"
+        )
         self.metric_cards = [self.online_card, self.offline_card, self.maps_card, self.tasks_card]
         self.content_layout.addLayout(self.metrics_grid)
 
@@ -156,7 +250,9 @@ class HomePage(QWidget):
         self.runtime_cards: dict[object, RuntimeStatusCard] = {}
         if self.status_store is not None:
             for status in self.status_store.statuses():
-                self.runtime_cards[status.subsystem_id] = RuntimeStatusCard(status)
+                self.runtime_cards[status.subsystem_id] = RuntimeStatusCard(
+                    status, RUNTIME_ICON_NAMES.get(status.subsystem_id)
+                )
         self.content_layout.addLayout(self.runtime_grid)
 
         task_title = QLabel("任务执行总结")
@@ -229,6 +325,14 @@ class HomePage(QWidget):
         card = self.runtime_cards.get(status.subsystem_id)
         if card is not None:
             card.update_status(status)
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        for card in self.metric_cards:
+            card.set_theme(palette)
+        for card in self.runtime_cards.values():
+            card.set_theme(palette)
+        self.update()
 
     def _apply_responsive_layout(self, width: int) -> None:
         metric_columns = 4 if width >= 1120 else 2 if width >= 620 else 1

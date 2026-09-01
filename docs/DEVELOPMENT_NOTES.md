@@ -1,5 +1,12 @@
 # 开发笔记
 
+## v0.22.8 首页状态卡语义图标
+
+- 首页全览卡固定保留数值和标题。在线/离线设备复用 `icons/devices_online.svg` 与 `icons/devices_offline.svg`；地图和任务使用 `mapstorage_<mode>.svg` 与 `tasks_<mode>.svg`。
+- 子系统图标仅映射 NTP/`time`、MQTT Broker/`mqttbroker`、MQTT 数据订阅/`mqtt`、UDP 高频遥测/`UDP` 和 FFmpeg/SRT/`camera`。其余子系统卡继续只显示状态圆点、标题、状态和消息。
+- 主题化资源位于 `icons/app_icons/`，无主题资源由 `ccs_monitor.app_icons.asset_icon` 相对模块位置解析。图标加载失败时隐藏图形并保留全部文字与状态信息。
+- `HomePage.set_theme` 只刷新卡片图标，不得重建卡片或改变统计值、子系统状态、消息及响应式布局。
+
 ## v0.22.7 联合建图、重定位与本地 odom 遥测修复
 
 - 联合成果原子提交成功后，`MapBuildingService` 先分离并关闭全部子协调器，清除成果与融合状态，再发布 `completed` 和 `navigation_locked=False`。终态回调观察到的协调器必须已经 inactive，地图详情页据此恢复按钮、停止计时并允许切换页面。

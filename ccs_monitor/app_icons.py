@@ -12,7 +12,8 @@ from .styles import ThemeMode, ThemePalette
 
 LOGGER = logging.getLogger(__name__)
 APP_ICON_SIZE = QSize(18, 18)
-APP_ICON_ROOT = Path(__file__).resolve().parents[1] / "icons" / "app_icons"
+ICON_ROOT = Path(__file__).resolve().parents[1] / "icons"
+APP_ICON_ROOT = ICON_ROOT / "app_icons"
 
 
 def _mode_value(theme: ThemeMode | ThemePalette | str) -> ThemeMode:
@@ -24,13 +25,12 @@ def icon_path(name: str, theme: ThemeMode | ThemePalette | str) -> Path:
     return APP_ICON_ROOT / f"{name}_{mode.value}.svg"
 
 
-def app_icon(
-    name: str,
-    theme: ThemeMode | ThemePalette | str,
-    *,
-    rotation: int = 0,
-) -> QIcon:
-    path = icon_path(name, theme)
+def asset_icon_path(filename: str) -> Path:
+    """Resolve a theme-neutral icon from the repository icon directory."""
+    return ICON_ROOT / filename
+
+
+def _load_icon(path: Path, *, rotation: int = 0) -> QIcon:
     icon = QIcon(str(path))
     if not path.is_file() or icon.isNull():
         LOGGER.warning("Application icon is missing or invalid: %s", path)
@@ -47,6 +47,20 @@ def app_icon(
         Qt.TransformationMode.SmoothTransformation,
     )
     return QIcon(transformed)
+
+
+def asset_icon(filename: str, *, rotation: int = 0) -> QIcon:
+    """Load a theme-neutral icon without depending on the process CWD."""
+    return _load_icon(asset_icon_path(filename), rotation=rotation)
+
+
+def app_icon(
+    name: str,
+    theme: ThemeMode | ThemePalette | str,
+    *,
+    rotation: int = 0,
+) -> QIcon:
+    return _load_icon(icon_path(name, theme), rotation=rotation)
 
 
 def apply_button_icon(
