@@ -43,6 +43,9 @@ if PYSIDE_AVAILABLE:
     from ccs_monitor.styles import (
         ThemeMode, build_stylesheet, load_theme_mode, save_theme_mode, theme_palette,
     )
+    from ccs_monitor.system_status import (
+        SubsystemId, SubsystemState, SystemRuntimeStatusStore,
+    )
 
 
 @unittest.skipUnless(PYSIDE_AVAILABLE, "PySide6 is not installed")
@@ -57,7 +60,13 @@ class UiTests(unittest.TestCase):
         repository = DeviceConfigRepository(Path(self.temp_dir.name) / "devices.json")
         self.source = SimulatedDeviceSource(repository)
         self.map_repository = MapRepository(Path(self.temp_dir.name) / "map_server")
-        self.window = MainWindow(self.source, simulated_overview(), map_repository=self.map_repository)
+        self.system_status_store = SystemRuntimeStatusStore()
+        self.window = MainWindow(
+            self.source,
+            simulated_overview(),
+            map_repository=self.map_repository,
+            system_status_store=self.system_status_store,
+        )
         self.window.show()
         self.app.processEvents()
 
@@ -157,6 +166,56 @@ class UiTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(self.window.home_page.online_card.value_label.text(), "1")
         self.assertEqual(self.window.home_page.offline_card.value_label.text(), "1")
+
+    def test_home_status_cards_show_icons_and_preserve_state_during_theme_switch(self):
+        page = self.window.home_page
+        self.window.apply_theme(ThemeMode.NIGHT, persist=False)
+        metric_labels = {
+            page.online_card: ("在线设备数", "devices_online.svg", "static"),
+            page.offline_card: ("离线设备数", "devices_offline.svg", "static"),
+            page.maps_card: ("本地地图数量", "mapstorage", "night"),
+            page.tasks_card: ("任务执行次数", "tasks", "night"),
+        }
+        for card, (caption, icon_name, icon_mode) in metric_labels.items():
+            self.assertEqual(card.caption_label.text(), caption)
+            self.assertFalse(card.icon_label.pixmap().isNull())
+            self.assertEqual(card.icon_label.property("appIconName"), icon_name)
+            self.assertEqual(card.icon_label.property("appIconMode"), icon_mode)
+
+        expected_runtime_icons = {
+            SubsystemId.NTP: "time",
+            SubsystemId.MQTT_BROKER: "mqttbroker",
+            SubsystemId.MQTT_SUBSCRIBER: "mqtt",
+            SubsystemId.UDP_TELEMETRY: "UDP",
+            SubsystemId.SRT_FFMPEG: "camera",
+        }
+        for subsystem_id, icon_name in expected_runtime_icons.items():
+            card = page.runtime_cards[subsystem_id]
+            self.assertEqual(card.title.text(), card.toolTip().splitlines()[0])
+            self.assertIsNotNone(card.icon_label)
+            self.assertFalse(card.icon_label.pixmap().isNull())
+            self.assertEqual(card.icon_label.property("appIconName"), icon_name)
+            self.assertEqual(card.icon_label.property("appIconMode"), "night")
+
+        for subsystem_id in set(SubsystemId) - set(expected_runtime_icons):
+            self.assertIsNone(page.runtime_cards[subsystem_id].icon_label)
+
+        status = self.system_status_store.update(
+            SubsystemId.NTP, SubsystemState.HEALTHY, "NTP 已同步"
+        )
+        metric_values = [card.value_label.text() for card in page.metric_cards]
+        self.window.apply_theme(ThemeMode.DAY, persist=False)
+        self.app.processEvents()
+        self.assertEqual(
+            [card.value_label.text() for card in page.metric_cards], metric_values
+        )
+        self.assertEqual(page.runtime_cards[SubsystemId.NTP].message.text(), status.message)
+        self.assertEqual(page.runtime_cards[SubsystemId.NTP].property("state"), "healthy")
+        self.assertEqual(page.maps_card.icon_label.property("appIconMode"), "day")
+        for subsystem_id in expected_runtime_icons:
+            self.assertEqual(
+                page.runtime_cards[subsystem_id].icon_label.property("appIconMode"), "day"
+            )
 
     def test_device_page_reflows_cards(self):
         page = self.window.devices_page
