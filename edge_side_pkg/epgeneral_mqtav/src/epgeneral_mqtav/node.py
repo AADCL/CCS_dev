@@ -13,13 +13,22 @@ from .version import get_version
 
 
 def default_config_path():
-    source_path = Path(__file__).resolve().parents[2] / "config" / "config.yaml"
+    source_path = (
+        Path(__file__).resolve().parents[3]
+        / "EPGeneral_device_config"
+        / "config"
+        / "epgeneral_mqtav.yaml"
+    )
     if source_path.is_file():
         return source_path
     try:
         import rospkg
 
-        return Path(rospkg.RosPack().get_path("epgeneral_mqtav")) / "config" / "config.yaml"
+        return (
+            Path(rospkg.RosPack().get_path("epgeneral_device_config"))
+            / "config"
+            / "epgeneral_mqtav.yaml"
+        )
     except (ImportError, OSError, RuntimeError):
         return source_path
 
@@ -36,7 +45,11 @@ def default_device_config_path():
         return source_path
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Publish MAVROS health telemetry to MQTT")
-    parser.add_argument("--config-file", default=str(default_config_path()), help="path to config.yaml")
+    parser.add_argument(
+        "--config-file",
+        default=str(default_config_path()),
+        help="path to shared epgeneral_mqtav.yaml",
+    )
     parser.add_argument(
         "--device-config-file",
         default=str(default_device_config_path()),

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.1] - 2026-09-02
+
+- Centralized runtime configuration in `epgeneral_device_config`.
+- Removed package-local camera profile YAML files without changing the SRT pipeline.
+
 ## [0.1.0] - 2026-08-18
 
 - Added configurable raw and compressed ROS image subscriptions.

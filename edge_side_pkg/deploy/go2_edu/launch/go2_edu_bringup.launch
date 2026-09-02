@@ -2,10 +2,6 @@
   <arg name="profile_dir" default="$(dirname)/../config" />
   <arg name="ground_station_ip" default="192.168.50.101" />
   <arg name="enable_task_control" default="false" />
-  <include file="$(find epqrd_go2_bridge)/launch/epqrd_go2_bridge.launch">
-    <arg name="config_file" value="$(arg profile_dir)/go2.yaml" />
-    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
-  </include>
   <include file="$(find epgeneral_mqtav)/launch/epgeneral_mqtav.launch">
     <arg name="config_file" value="$(arg profile_dir)/epgeneral_mqtav.yaml" />
     <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
@@ -14,8 +10,14 @@
     <arg name="telemetry_config_file" value="$(arg profile_dir)/udp_telemetry.yaml" />
     <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
     <arg name="destination_host" value="$(arg ground_station_ip)" />
-    <arg name="link_status_topic" value="/qrd/QRD_001/link/udp_tx" />
-    <arg name="diagnostics_topic" value="/qrd/QRD_001/diagnostics" />
+  </include>
+  <include file="$(find epgeneral_video_srt)/launch/epgeneral_realsense_d435i_srt.launch">
+    <arg name="video_config_file" value="$(arg profile_dir)/video.yaml" />
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
+  </include>
+  <include file="$(find epgeneral_map_stream)/launch/epgeneral_map_stream.launch">
+    <arg name="mapping_config_file" value="$(arg profile_dir)/map_stream.yaml" />
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml" />
   </include>
   <include if="$(arg enable_task_control)" file="$(find epgeneral_task_control)/launch/epgeneral_task_control.launch">
     <arg name="task_config_file" value="$(arg profile_dir)/task_control.yaml" />

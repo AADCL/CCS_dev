@@ -13,14 +13,12 @@ mqtt:
 ros:
   node_name: "epgeneral_mqtav"
   state:
-    topic: "/qrd/QRD_001/link/sdk"
-    message_type: "std_msgs/Bool"
-    mapping: {connected: "data", armed: null, system_status: null, mode: null}
+    topic: "/livox/lidar"
+    message_type: "livox_ros_driver2/CustomMsg"
+    connected_on_message: true
+    timeout_seconds: 3.0
+    mapping: {connected: null, armed: null, system_status: null, mode: null}
   battery:
-    topic: "/qrd/QRD_001/battery"
-    message_type: "sensor_msgs/BatteryState"
+    enabled: false
   mission:
-    enabled: true
-    topic: "/qrd/QRD_001/task_status"
-    message_type: "std_msgs/String"
-    field_path: "data"
+    enabled: false

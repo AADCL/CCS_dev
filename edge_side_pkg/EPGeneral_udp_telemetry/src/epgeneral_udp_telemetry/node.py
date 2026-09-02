@@ -302,9 +302,10 @@ def run():
 
     rospy.init_node("epgeneral_udp_telemetry")
     rospack = rospkg.RosPack()
-    package_path = rospack.get_path("epgeneral_udp_telemetry")
     device_package_path = rospack.get_path("epgeneral_device_config")
-    telemetry_path = rospy.get_param("~telemetry_config_file", package_path + "/config/telemetry.yaml")
+    telemetry_path = rospy.get_param(
+        "~telemetry_config_file",
+        device_package_path + "/config/udp_telemetry.yaml")
     device_path = rospy.get_param("~device_config_file", device_package_path + "/config/device.yaml")
     config = load_config(telemetry_path, device_path)
     config["destination_host"] = rospy.get_param("~destination_host", config["destination_host"])

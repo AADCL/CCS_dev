@@ -534,16 +534,15 @@ Scout 适配器的 `tf2_ros.Buffer` 必须与生命周期一致的 `tf2_ros.Tran
 
 ### 端侧目录与共享配置
 
-- `edge_side_pkg` 是端侧部署容器，当前包含 `epgeneral_device_config`、`epgeneral_mqtav`、`epgeneral_usb_cam_rtsp`、`epgeneral_udp_telemetry` 和 `epgeneral_map_stream` 五个 ROS 包。
-- `epgeneral_device_config/config/device.yaml` 是设备 ID/IP 的唯一端侧来源，根测试与 `config/devices.json` 做一致性校验。
-- `epgeneral_mqtav` v0.3.0 将设备身份加载与 MQTT/ROS 运行配置拆开，新增 `--device-config-file`；保留 Python 3.6.9 与 ROS Melodic 兼容实现。
+- `edge_side_pkg` 的端侧发布 allowlist 固定为 device_config、map_stream、mqtav、relocalization、task_control、udp_telemetry 和 video_srt 七个 ROS 包。
+- `epgeneral_device_config/config/` 是设备身份及六类运行 YAML 的唯一端侧入口；功能包内部不再保存运行配置。
+- `deploy` 保存设备 profile 原件，`documents` 保存部署指南和记录；两者均留在指控端，不进入端侧 catkin `src`。
 
-### USB 摄像头 RTSP 推流
+### ROS 图像 SRT 推流
 
-- `epgeneral_usb_cam_rtsp` v0.2.1 使用 C++、`image_transport`、`cv_bridge`、OpenCV 和 GStreamer RTSP Server，直接订阅配置的原始或压缩 ROS 图像话题，不再启动 `usb_cam`。
-- ROS 回调只负责把最新 BGR8 帧复制到受 mutex 保护的单帧缓存；GStreamer `appsrc` 在 RTSP 客户端请求时取最新帧，队列限制为 2 帧并丢弃旧帧，避免慢客户端阻塞相机。
-- 编码管线为 `videoconvert -> x264enc(tune=zerolatency) -> rtph264pay`，默认 `640x480/30 FPS/2000 kbps`，服务 `0.0.0.0:8554/usb_cam`。
-- WallTimer 检查首次收帧和断帧超时，RTSP 客户端连接/断开、编码错误和关闭均写 ROS 日志。
+- `epgeneral_video_srt` v0.1.1 使用 C++、`image_transport`、`cv_bridge` 和 GStreamer，订阅配置的原始或压缩 ROS 图像话题。
+- 编码管线为 baseline H.264/MPEG-TS/SRT Listener，默认监听 UDP 9000；摄像头驱动由设备自身启动。
+- 运行参数来自 `epgeneral_device_config/config/video.yaml`，设备专用参数仅保存在对应 deploy profile。
 
 ### 验证边界
 

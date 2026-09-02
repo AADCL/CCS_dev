@@ -1,5 +1,5 @@
 <launch>
-  <arg name="config_file" default="$(find epgeneral_mqtav)/config/config.yaml" />
+  <arg name="config_file" default="$(find epgeneral_device_config)/config/epgeneral_mqtav.yaml" />
   <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
   <arg name="log_dir" default="$(env HOME)/.ros/log/epgeneral_mqtav" />
 

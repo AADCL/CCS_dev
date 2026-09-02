@@ -1,0 +1,18 @@
+[Unit]
+Description=CCS Ground-Air AGV edge services
+Wants=network-online.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/bitcq/ccs_edge_ws
+ExecStart=/home/bitcq/ccs_edge_ws/start_ccs_edge_dev.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillMode=control-group
+StandardOutput=append:/home/bitcq/.ros/ccs_edge_dev_ground_air_agv/log/supervisor.log
+StandardError=append:/home/bitcq/.ros/ccs_edge_dev_ground_air_agv/log/supervisor.log
+
+[Install]
+WantedBy=default.target

@@ -14,7 +14,7 @@
 - `EPGeneral_relocalization`
 - `EPGeneral_task_control`
 
-不要部署 Go2 专属 `EPQRD_go2_bridge`。安装 `python3-msgpack`、`python3-paho-mqtt` 后执行：
+只部署端侧七包 allowlist，不复制 `deploy` 与 `documents`。安装 `python3-msgpack`、`python3-paho-mqtt` 后执行：
 
 ```bash
 cd /home/nrc19/ccs_edge_ws

@@ -11,7 +11,7 @@ PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class VersionTests(unittest.TestCase):
     def test_version_and_python36_syntax(self):
-        self.assertEqual(__version__, "0.4.3")
+        self.assertEqual(__version__, "0.4.4")
         result = subprocess.run([sys.executable, os.path.join(PACKAGE, "scripts", "check_version.py")],
                                 cwd=PACKAGE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 universal_newlines=True)

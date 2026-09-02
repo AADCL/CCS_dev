@@ -17,7 +17,7 @@ class SourceEntrypointTests(unittest.TestCase):
         finally:
             sys.path.pop(0)
         manifest_version = ET.parse(os.path.join(PACKAGE, "package.xml")).getroot().findtext("version")
-        self.assertEqual(__version__, "0.3.0")
+        self.assertEqual(__version__, "0.3.1")
         self.assertEqual(manifest_version, __version__)
 
     def test_python_sources_parse_as_python36(self):

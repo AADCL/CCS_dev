@@ -1,0 +1,16 @@
+<launch>
+  <!--
+    CCS-owned mapping entrypoint. The original car_bringup/manual_mapping.launch
+    remains untouched. MAVROS and Livox stay resident. Mapping-only static TF
+    publishers are started separately after FAST-LIO is ready.
+  -->
+  <arg name="map_id" />
+  <arg name="maps_root" default="/home/bitcq/catkin_ws/maps" />
+
+  <include file="$(find car_bringup)/launch/start_mapping.launch">
+    <arg name="map_id" value="$(arg map_id)" />
+    <arg name="start_stack" value="true" />
+    <arg name="start_mavros" value="false" />
+    <arg name="maps_root" value="$(arg maps_root)" />
+  </include>
+</launch>

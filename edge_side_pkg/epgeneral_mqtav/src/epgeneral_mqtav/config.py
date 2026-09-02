@@ -37,12 +37,21 @@ class MqttConfig(object):
 
 
 class RosTopicConfig(object):
-    def __init__(self, topic, message_type, mapping=None, connected_on_message=False, timeout_seconds=None):
+    def __init__(
+        self,
+        topic,
+        message_type,
+        mapping=None,
+        connected_on_message=False,
+        timeout_seconds=None,
+        enabled=True,
+    ):
         self.topic = topic
         self.message_type = message_type
         self.mapping = mapping or {}
         self.connected_on_message = connected_on_message
         self.timeout_seconds = timeout_seconds
+        self.enabled = enabled
 
 
 class MissionConfig(object):
@@ -206,6 +215,23 @@ def load_config(path, device_config_path):
         )
     else:
         mission = MissionConfig(False)
+    battery_data = _mapping(ros_data.get("battery"), "ros.battery")
+    battery_enabled = battery_data.get("enabled", True)
+    if not isinstance(battery_enabled, bool):
+        raise ConfigError("ros.battery.enabled must be true or false")
+    if battery_enabled:
+        battery = _topic_config(
+            battery_data,
+            "ros.battery",
+            {"percentage": "percentage", "voltage": "voltage", "current": "current"},
+        )
+    else:
+        battery = RosTopicConfig(
+            "",
+            "",
+            {"percentage": None, "voltage": None, "current": None},
+            enabled=False,
+        )
     ros = RosConfig(
         _string(ros_data.get("node_name"), "ros.node_name"),
         _topic_config(
@@ -214,11 +240,7 @@ def load_config(path, device_config_path):
             {"connected": "connected", "armed": "armed", "system_status": "system_status", "mode": "mode"},
             freshness=True,
         ),
-        _topic_config(
-            ros_data.get("battery"),
-            "ros.battery",
-            {"percentage": "percentage", "voltage": "voltage", "current": "current"},
-        ),
+        battery,
         mission,
     )
     return AppConfig(device, mqtt, ros)

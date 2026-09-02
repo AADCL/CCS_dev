@@ -1,8 +1,8 @@
 # epgeneral_mqtav
 
-<!-- epgeneral_mqtav_VERSION: 0.4.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.4.1 -->
 
-当前版本：`v0.4.0`
+当前版本：`v0.4.1`
 
 `epgeneral_mqtav` 是运行在端侧计算机上的 ROS1 功能包。它订阅 ROS 健康状态并通过 MQTT 向地面站上报在线状态、设备链路、电量、模式和任务状态。为兼容既有地面站协议，MQTT topic 根和客户端 ID 前缀继续使用 `mqtav`。
 
@@ -51,7 +51,7 @@ presence 消息含有相同的 `schema_version`、`timestamp` 和 `device` 字�
 
 ## 配置
 
-编辑 `config/config.yaml` 和共享的 `epgeneral_device_config/config/device.yaml` 后再启动节点。以下字段均为必填，除 `ros.mission` 可保持 `enabled: false` 外：
+编辑共享的 `epgeneral_device_config/config/epgeneral_mqtav.yaml` 和 `device.yaml` 后再启动节点。以下字段均为必填；`ros.mission` 和 `ros.battery` 可设置 `enabled: false`：
 
 ```yaml
 mqtt:
@@ -109,7 +109,7 @@ rosdep install --from-paths src --ignore-src -r -y
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 roslaunch epgeneral_mqtav epgeneral_mqtav.launch \
-  config_file:="$(rospack find epgeneral_mqtav)/config/config.yaml" \
+  config_file:="$(rospack find epgeneral_device_config)/config/epgeneral_mqtav.yaml" \
   device_config_file:="$(rospack find epgeneral_device_config)/config/device.yaml"
 ```
 

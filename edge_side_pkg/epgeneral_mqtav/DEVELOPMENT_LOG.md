@@ -1,8 +1,12 @@
 # epgeneral_mqtav 开发日志
 
-<!-- epgeneral_mqtav_VERSION: 0.4.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.4.1 -->
 
-当前版本：`v0.4.0`
+当前版本：`v0.4.1`
+
+## v0.4.1 - 2026-09-02
+
+- 统一从 `epgeneral_device_config` 加载运行配置，并允许无电池源的设备禁用电池订阅。
 
 ## v0.3.1 - 2026-08-21
 

@@ -1,6 +1,10 @@
 # Changelog
 
-<!-- epgeneral_task_control_VERSION: 0.4.3 -->
+<!-- epgeneral_task_control_VERSION: 0.4.4 -->
+
+## [0.4.4] - 2026-09-02
+
+- 将运行配置迁移至 `epgeneral_device_config`，任务协议与执行状态机保持不变。
 
 ## [0.4.3] - 2026-08-27
 

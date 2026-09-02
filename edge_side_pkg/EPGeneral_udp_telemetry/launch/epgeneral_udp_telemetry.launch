@@ -1,5 +1,5 @@
 <launch>
-  <arg name="telemetry_config_file" default="$(find epgeneral_udp_telemetry)/config/telemetry.yaml" />
+  <arg name="telemetry_config_file" default="$(find epgeneral_device_config)/config/udp_telemetry.yaml" />
   <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
   <arg name="destination_host" default="192.168.151.100" />
   <arg name="destination_port" default="14560" />

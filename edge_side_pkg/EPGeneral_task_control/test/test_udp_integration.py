@@ -13,7 +13,8 @@ from test_node import FakeCommand, FakeRospy, pack
 
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TASK_CONFIG = os.path.join(PACKAGE, "config", "task_control.yaml")
+TASK_CONFIG = os.path.join(
+    os.path.dirname(PACKAGE), "EPGeneral_device_config", "config", "task_control.yaml")
 DEVICE_CONFIG = os.path.join(PACKAGE, "test", "fixtures", "device.yaml")
 
 

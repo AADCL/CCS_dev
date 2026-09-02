@@ -21,7 +21,7 @@ catkin_package(CATKIN_DEPENDS rospy roslib diagnostic_msgs geometry_msgs nav_msg
 catkin_install_python(PROGRAMS scripts/epgeneral_udp_telemetry_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
-install(DIRECTORY config launch
+install(DIRECTORY launch
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
 if(CATKIN_ENABLE_TESTING)

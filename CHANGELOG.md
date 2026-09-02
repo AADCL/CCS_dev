@@ -2,6 +2,13 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## 端侧包规范化 - 2026-09-02
+
+- 端侧固定为 device_config、map_stream、mqtav、relocalization、task_control、udp_telemetry 和 video_srt 七包；删除旧 Go2 bridge 与 ros_udp_telemetry。
+- 六个主功能包的运行 YAML 集中到 epgeneral_device_config；deploy 与 documents 明确仅保留在指控端。
+- Go2 profile 改用 Livox/LIO 原生话题，MQTAV 支持禁用无数据源的电池订阅；wire 协议不变。
+- 七个端侧包统一增加补丁版本，指控平台仍为 v0.22.8。
+
 ## v0.22.8 - 2026-09-01
 
 - 首页四张全览卡新增在线设备、离线设备、地图仓储和任务执行语义图标，数值与标题文字保持可见。

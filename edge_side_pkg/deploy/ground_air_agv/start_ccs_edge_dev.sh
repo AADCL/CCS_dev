@@ -15,10 +15,10 @@ START_LOG="${LOG_DIR}/startup.log"
 SHUTDOWN_STARTED=false
 ROSCORE_MANAGED=false
 
-LAUNCH_NAMES=(mavros livox mqtav udp_telemetry a8_camera video_srt)
-NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /a8_mini_camera /epgeneral_video_srt)
-OPTIONAL=(false false false false true true)
-MANAGED=(false false false false false false)
+LAUNCH_NAMES=(mavros livox mqtav udp_telemetry map_stream a8_camera video_srt mapping_tf)
+NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_map_stream /a8_mini_camera /epgeneral_video_srt /odom_camera_init_broadcaster)
+OPTIONAL=(false false false false false true true false)
+MANAGED=(false false false false false false false false)
 
 mkdir -p "${PID_DIR}" "${LOG_DIR}"
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"${START_LOG}"; }
@@ -95,6 +95,8 @@ livox_path="$(rospack find livox_ros_driver2 2>/dev/null || true)"
 [[ -n "${livox_path}" ]] || fail "当前 ROS overlay 中找不到 livox_ros_driver2"
 a8_path="$(rospack find a8_mini_camera 2>/dev/null || true)"
 [[ -n "${a8_path}" ]] || fail "当前 ROS overlay 中找不到 a8_mini_camera"
+car_bringup_path="$(rospack find car_bringup 2>/dev/null || true)"
+[[ -r "${car_bringup_path}/launch/mapping_coordinate_transforms.launch" ]] || fail "缺少开机常驻坐标转换 launch"
 report INFO "启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=${livox_path}；A8 包=${a8_path}"
 
 for attempt in $(seq 1 30); do
@@ -139,6 +141,9 @@ start_optional_launch() {
   report OK "${name} 已启动（可降级节点 ${node}）"
 }
 
+start_launch 7 /odom_camera_init_broadcaster car_bringup mapping_coordinate_transforms.launch
+wait_for_node /base_link_body_broadcaster || fail "开机常驻坐标转换未完整就绪：/base_link_body_broadcaster"
+
 start_launch 0 /mavros "${LAUNCH_DIR}/mavros_base.launch" fcu_url:="${FCU_DEVICE}:${FCU_BAUD}"
 for topic in /mavros/state /mavros/imu/data /mavros/battery; do
   wait_for_topic "${topic}" || fail "未发现 ${topic}"
@@ -162,8 +167,12 @@ start_launch 3 /epgeneral_udp_telemetry epgeneral_udp_telemetry epgeneral_udp_te
   link_status_topic:="/agv/AGV_001/link/udp_tx" \
   diagnostics_topic:="/agv/AGV_001/diagnostics"
 
+start_launch 4 /epgeneral_map_stream epgeneral_map_stream epgeneral_map_stream.launch \
+  mapping_config_file:="${PROFILE_CONFIG_DIR}/map_stream.yaml" \
+  device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
+
 camera_started=false
-if start_optional_launch 4 /a8_mini_camera a8_mini_camera a8_mini_camera.launch \
+if start_optional_launch 5 /a8_mini_camera a8_mini_camera a8_mini_camera.launch \
   camera_ip:=192.168.144.25 image_topic:=/a8_cam/image_raw; then
   camera_started=true
 fi
@@ -173,11 +182,11 @@ else
   report WARN "A8 Mini 30 秒内无图像，视频链降级等待恢复；基础服务继续运行"
 fi
 
-start_optional_launch 5 /epgeneral_video_srt epgeneral_video_srt epgeneral_video_srt.launch \
+start_optional_launch 6 /epgeneral_video_srt epgeneral_video_srt epgeneral_video_srt.launch \
   device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml" \
   video_config_file:="${PROFILE_CONFIG_DIR}/video.yaml" || true
 
-report OK "MAVROS、Livox、MQTT 与 UDP 遥测已启动；A8/SRT 按可用性运行；其他端侧功能保持禁用；按 Ctrl+C 停止"
+report OK "静态 TF、MAVROS、Livox、MQTT、UDP 遥测与建图响应已启动；A8/SRT 按可用性运行；其他端侧功能保持禁用；按 Ctrl+C 停止"
 while true; do
   sleep 2
   for index in "${!NODE_NAMES[@]}"; do

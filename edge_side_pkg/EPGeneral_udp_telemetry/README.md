@@ -1,6 +1,6 @@
 # epgeneral_udp_telemetry
 
-版本：v0.3.0。该 ROS Melodic/Noetic 包将 ROS 话题和受限地图文件状态转换为 CCS MessagePack UDP 遥测。
+版本：v0.3.1。运行配置统一由 `epgeneral_device_config/config/udp_telemetry.yaml` 提供。该 ROS Melodic/Noetic 包将 ROS 话题和受限地图文件状态转换为 CCS MessagePack UDP 遥测。
 
 ## 依赖与安装
 
@@ -33,7 +33,7 @@ python3 -c "import epgeneral_udp_telemetry; print(epgeneral_udp_telemetry.__vers
 
 ## 配置
 
-设备 ID/IP 来自 `epgeneral_device_config/config/device.yaml`。`config/telemetry.yaml` 设置地面站 IP、UDP 14560 端口以及每个数据项的名称、类型、等级和 ROS 来源。
+设备 ID/IP 来自 `epgeneral_device_config/config/device.yaml`。`epgeneral_device_config/config/udp_telemetry.yaml` 设置地面站 IP、UDP 14560 端口以及每个数据项的名称、类型、等级和 ROS 来源。
 
 - Level 1：20 Hz，`pose` 或 `imu`。
 - Level 2：5 Hz，`pointcloud_status`，只发送接收状态、数据年龄和估算频率。

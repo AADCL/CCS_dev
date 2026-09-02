@@ -47,7 +47,10 @@ class RosBridge(object):
 
     def start(self):
         self._subscribe(self._config.ros.state, self._on_state, "state")
-        self._subscribe(self._config.ros.battery, self._on_battery, "battery")
+        if self._config.ros.battery.enabled:
+            self._subscribe(self._config.ros.battery, self._on_battery, "battery")
+        else:
+            self._logger.info("ros_subscription_disabled stream=battery")
         state = self._config.ros.state
         if state.connected_on_message and state.timeout_seconds is not None:
             self._freshness_timer = self._rospy.Timer(

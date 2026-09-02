@@ -1,8 +1,8 @@
 # epgeneral_map_stream
 
-<!-- epgeneral_map_stream_VERSION: 0.12.0 -->
+<!-- epgeneral_map_stream_VERSION: 0.13.1 -->
 
-版本：`v0.12.0`。
+版本：`v0.13.1`。运行配置统一由 `epgeneral_device_config/config/map_stream.yaml` 提供。
 
 Scout Mini profile 使用 `scout_finalize` backend。启动顺序固定为
 `fastlio_mapping_scout.launch rviz:=false`、`pointcloud_mapper.launch map_name:=MAP_NAME`、
@@ -52,7 +52,7 @@ v2 不自动回退 v1。实时点云仅用于平台预览，最终地图以成�
 
 ## 配置 FAST_LIO 与 PGM 生成器
 
-必须按设备修改 `config/mapping.yaml` 中的话题、frame、静态外参、工作目录和
+必须按设备修改 `epgeneral_device_config/config/map_stream.yaml` 中的话题、frame、静态外参、工作目录和
 `integrations.mapping_prerequisites`、`integrations.fast_lio`、
 `integrations.map_accumulator`、`integrations.pgm`。
 Go2 EDU 默认读取 `~/go2_mid360_nav/calibration/go2_edu_02/extrinsics.yaml`，并通过

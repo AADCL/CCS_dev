@@ -5,7 +5,7 @@
 ## v0.19.2 地面站初始位姿选择器修复
 
 - 本次只修复地面站十字标线叠层和初始位姿平面反投影，`ccs-relocalization-v1` 消息、端口、字段和状态转换均未变化。
-- Scout 使用 `epgeneral_relocalization` v0.2.2；重启后旧 `localized` 状态自动失效，必须重新建立实时定位。
+- Scout 使用 `epgeneral_relocalization` v0.2.3；重启后旧 `localized` 状态自动失效，必须重新建立实时定位。
 
 ## v0.19.1 重复重定位一致性
 
@@ -22,7 +22,7 @@
 - UDP envelope 仍为 schema 1 / `ccs-udp-telemetry-v1`；地面站只额外接受配置中明确列出的 descriptor hash。
 - Scout 30 V 定义为满电，曲线未标定时百分比为 `null`；Go2 原生百分比不被估算覆盖。
 
-指控平台 v0.22.7 配套 `epgeneral_udp_telemetry` v0.3.0、`epgeneral_relocalization` v0.2.2 和 `epgeneral_map_stream` v0.12.0。MQTT schema 1.0、SRT 与 UDP 遥测 wire schema 保持兼容。
+指控平台 v0.22.8 配套七个规范化端侧包：`epgeneral_device_config` v0.1.1、`epgeneral_mqtav` v0.4.1、`epgeneral_udp_telemetry` v0.3.1、`epgeneral_video_srt` v0.1.1、`epgeneral_map_stream` v0.13.1、`epgeneral_task_control` v0.4.4 和 `epgeneral_relocalization` v0.2.3。MQTT schema 1.0、SRT 与 UDP wire schema 保持兼容。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -30,26 +30,26 @@
 
 | 通道 | 方向 | 地址/端口 | 协议版本 | 当前端侧实现 |
 | --- | --- | --- | --- | --- |
-| MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | epgeneral_mqtav v0.3.1 |
-| UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.3.0 |
-| SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.0 |
+| MQTT 摘要状态 | 端侧 -> 地面站 | TCP 1883，`mqtav/...` | JSON schema `1.0` | epgeneral_mqtav v0.4.1 |
+| UDP 高频遥测 | 端侧 -> 地面站 | UDP 14560 | `ccs-udp-telemetry-v1` | epgeneral_udp_telemetry v0.3.1 |
+| SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.1 |
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | 保留后端 |
-| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.12.0 |
-| UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v2` | epgeneral_task_control v0.4.3 |
-| UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v2` | epgeneral_task_control v0.4.3 |
+| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.13.1 |
+| UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v2` | epgeneral_task_control v0.4.4 |
+| UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v2` | epgeneral_task_control v0.4.4 |
 
-端侧身份由 `edge_side_pkg/EPGeneral_device_config/config/device.yaml` 提供，`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。MQTT、遥测、建图和任务协议中的 `device_id` 均使用该 ID。
+端侧身份和六类运行配置统一由 `edge_side_pkg/EPGeneral_device_config/config/` 提供，`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。设备 profile 原件保存在指控端 `edge_side_pkg/deploy/`；部署时覆盖同名配置文件，`deploy` 与 `documents` 目录本身不进入端侧。
 
 地面站允许编辑设备 ID，并级联本地当前地图和未归档任务引用，但不会修改端侧配置或历史执行记录。修改后必须同步更新端侧 `device.yaml` 并重启相关节点，否则旧 ID 的 MQTT/UDP 数据会被视为未登记设备。设备页面显示的“运行模式”仍来自 MQTT `health.flight_mode`；`armed` 和 `system_status` 字段继续接收并保持 wire contract，仅不再显示在设备完整信息区。
 
 ## MQTT presence、heartbeat、status
 
-### Go2 EDU ROS 状态桥接
+### Go2 EDU 最小状态源
 
-`epqrd_go2_bridge` v0.2.0 从 Unitree SDK2 `rt/lowstate` 和 `rt/sportmodestate` 读取只读状态。除原有 `/qrd/QRD_001/battery`、`imu`、`odometry`、`robot_mode`、`link/sdk`、`heartbeat` 和 `diagnostics` 外，新增 `low_state/*` 与 `sport_mode/*` 十二个强类型语义话题，完整覆盖两个 SDK 状态的全部字段。字段、类型、数组顺序及订阅示例见包内 `docs/ROS_TOPIC_INTERFACES.md`。`epgeneral_mqtav` 将 SDK 链路新鲜度映射为既有 `fcu_connected` 字段，不增加 MQTT schema 字段；`epgeneral_udp_telemetry` 从 prefixed Odometry 和 Imu 继续生成 `ccs-udp-telemetry-v1` 数据。
+`EPQRD_go2_bridge` 已退出端侧基线。Go2 profile 使用 `/livox/lidar` 的新鲜度映射既有 `fcu_connected` 字段，使用 `/lio/odometry`、`/livox/imu` 和 `/livox/lidar` 生成 `ccs-udp-telemetry-v1` 数据。没有可确认 ROS 数据源的电池、armed、system status 和机器人模式保持未知，不伪造数据。
 
-`/qrd/QRD_001/link/udp_tx` 仅表示本机 UDP socket 最近一次发送成功。端到端 UDP 在线状态仍由地面站的 heartbeat 接收超时判断。任务协调包在 `/qrd/QRD_001/task_status` 发布 latched `std_msgs/String`，供 MQTT mission 状态订阅。
+`/epgeneral_udp_telemetry/link/udp_tx` 仅表示本机 UDP socket 最近一次发送成功。端到端 UDP 在线状态仍由地面站的 heartbeat 接收超时判断。
 
 Broker 由地面站监听 `0.0.0.0:1883`，QoS 1，无认证/TLS。设备 ID 为 `UAV_001` 时主题如下：
 
@@ -137,7 +137,7 @@ heartbeat 为 1 Hz，`level=None` 且 payload 为空。合法心跳使 UDP 链�
 | `occupancy_grid_mapping` | availability | 3 | 同 availability |
 | `mapping_mode` | text_status | 3 | availability 字段加 `value`，最长 128 字符 |
 
-`status` 只允许 `available`、`unavailable`、`unknown`。所有浮点数必须有限。点云内容禁止放入 14560，只发送接收元数据。配置对应关系：地面站 `config/udp_telemetry.json` 定义公共名称/类型/等级；端侧 `epgeneral_udp_telemetry/config/telemetry.yaml` 额外定义 ROS topic、message type、字段路径和超时。公共 descriptor 不一致将导致哈希拒收。
+`status` 只允许 `available`、`unavailable`、`unknown`。所有浮点数必须有限。点云内容禁止放入 14560，只发送接收元数据。配置对应关系：地面站 `config/udp_telemetry.json` 定义公共名称/类型/等级；端侧 `epgeneral_device_config/config/udp_telemetry.yaml` 额外定义 ROS topic、message type、字段路径和超时。公共 descriptor 不一致将导致哈希拒收。
 
 端侧在 Pose/IMU 进入平滑窗口前拒绝非有限数值、非数值字段和无效四元数。单个 descriptor 失败时只发送该项 `valid=false`，同一 Level 1 报文的其他有效项继续发送；地面站仍对最终报文执行严格有限数值校验。
 
@@ -169,7 +169,7 @@ IPv6 地址使用方括号。地面站先执行 `ffmpeg -hide_banner -protocols`
 
 ## UDP 14561/14562 单机与联合遥控建图 v2（指控平台 v0.22.6）
 
-v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.12.0` 按设备选择 backend：Scout 协调 FAST-LIO、pointcloud mapper、坐标转换链和地图转换工具，Go2 保持 map accumulator 流程。联合模式在 prepare/start payload 中同时携带 `job_id`、`role` 和 `primary_device_id`，端侧在 artifact manifest 原样回传；这些字段在单机模式可省略。最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
+v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.13.1` 按设备选择 backend：Scout 协调 FAST-LIO、pointcloud mapper、坐标转换链和地图转换工具，Go2 保持 map accumulator 流程，Ground-Air AGV 通过受管进程组调用原生 mapping/save service。联合模式在 prepare/start payload 中同时携带 `job_id`、`role` 和 `primary_device_id`，端侧在 artifact manifest 原样回传；这些字段在单机模式可省略。最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
 
 v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sent_at_ns/payload`。v0.18.3 使用 `cloud_fragment_ready` 和 `cloud_fragment_ack`：UDP 只承载控制、状态与轻量描述符，PCD 内容通过 TCP 14600 下载。端侧未收到 ACK 时最多重发描述符 3 次，未确认文件和后台队列均有硬上限。
 
@@ -406,11 +406,10 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 | 地面站 | 端侧 | 必须一致/可达内容 |
 | --- | --- | --- |
 | `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP |
-| `config/mqtt.json` | `epgeneral_mqtav/config/config.yaml` | Broker IP/端口、topic root、QoS、频率 |
-| `config/udp_telemetry.json` | `epgeneral_udp_telemetry/config/telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
-| `config/devices.json`、`config/srt_video.json` | `EPGeneral_video_srt/config/video.yaml` | 设备 IP 或 `.local` mDNS 地址、UDP 9000、延迟、H.264/MPEG-TS/SRT |
-| `config/map_building.json` | `epgeneral_map_stream/config/mapping.yaml` | protocol ID、14561/14562、包长、压缩、格式、速率、体素和资源上限 |
-| `config/devices.json` | `epgeneral_device_config/config/device.yaml` | device ID、IP 或 `.local` mDNS 地址；本地 `device_types.json` 不参与端侧协议 |
+| `config/mqtt.json` | `epgeneral_device_config/config/epgeneral_mqtav.yaml` | Broker IP/端口、topic root、QoS、频率 |
+| `config/udp_telemetry.json` | `epgeneral_device_config/config/udp_telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
+| `config/devices.json`、`config/srt_video.json` | `epgeneral_device_config/config/video.yaml` | 设备 IP 或 `.local` mDNS 地址、UDP 9000、延迟、H.264/MPEG-TS/SRT |
+| `config/map_building.json` | `epgeneral_device_config/config/map_stream.yaml` | protocol ID、14561/14562、包长、压缩、格式、速率、体素和资源上限 |
 
 ## 端侧建图实现检查清单
 
@@ -427,7 +426,7 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 
 ## UDP 地图任务控制接口（ccs-task-control-v2）
 
-v0.22.2 继续使用 `ccs-task-control-v2`、MessagePack schema 2 和 UDP 14563/14564。平台仅在当前 revision 已送达且端侧为 `ready` 时创建执行会话；统一启动提前量为 3 秒。Scout v0.4.3 持有 TF listener，并在准备阶段检查任务点对应的 PGM 栅格。不可通行点返回 `WAYPOINT_NOT_TRAVERSABLE`，运行期全局规划失败返回 `NAVIGATION_PLAN_FAILED`。
+v0.22.8 继续使用 `ccs-task-control-v2`、MessagePack schema 2 和 UDP 14563/14564。平台仅在当前 revision 已送达且端侧为 `ready` 时创建执行会话；统一启动提前量为 3 秒。Scout v0.4.4 持有 TF listener，并在准备阶段检查任务点对应的 PGM 栅格。不可通行点返回 `WAYPOINT_NOT_TRAVERSABLE`，运行期全局规划失败返回 `NAVIGATION_PLAN_FAILED`。
 
 任务完整提交后启动 `roslaunch scout_navigation navigation_teb.launch map_name:=<map_id>` 并保持运行。执行命令复用已就绪的 action client，将 `map` frame、Z=0 的目标经 actionlib 发送到 `/move_base/goal`；首点航向由当前位置指向首点，后续航向由前一点指向当前点。完成、失败和常规终止取消目标并连续发布 `/cmd_vel` 零速度但保留导航；删除、急停和节点关闭才停止导航进程。本版本不动态设置 TEB 巡航速度。
 
@@ -596,5 +595,5 @@ UDP 14560 全局位姿仍是地面站地图实时标记来源；14564 进度是�
 
 | 地面站 | 端侧 | 对应内容 |
 | --- | --- | --- |
-| `config/task_system.json` | `epgeneral_task_control/config/task_control.yaml` | `ccs-task-control-v2`、14563/14564、包长、分片、任务限制与 UTC 调度 |
-| `config/relocalization.json` | `epgeneral_relocalization/config/relocalization.yaml` | `ccs-relocalization-v1`、14565/14566、TCP 14601、profile、地图根目录与 TF 稳定阈值 |
+| `config/task_system.json` | `epgeneral_device_config/config/task_control.yaml` | `ccs-task-control-v2`、14563/14564、包长、分片、任务限制与 UTC 调度 |
+| `config/relocalization.json` | `epgeneral_device_config/config/relocalization.yaml` | `ccs-relocalization-v1`、14565/14566、TCP 14601、profile、地图根目录与 TF 稳定阈值 |

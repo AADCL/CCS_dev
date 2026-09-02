@@ -158,9 +158,12 @@ def load_config(mapping_path, device_path):
     frames = _mapping(ros, "frames", "ros.frames")
     integrations = _mapping(mapping, "integrations")
     backend = integrations.get("backend", "go2_accumulator")
-    if backend not in ("go2_accumulator", "scout_finalize", "managed_finalize"):
+    if backend not in (
+            "go2_accumulator", "scout_finalize", "managed_finalize",
+            "ground_air_service"):
         raise ConfigError(
-            "integrations.backend must be go2_accumulator, scout_finalize or managed_finalize")
+            "integrations.backend must be go2_accumulator, scout_finalize, "
+            "managed_finalize or ground_air_service")
     prerequisites = _mapping(
         integrations, "mapping_prerequisites",
         "integrations.mapping_prerequisites")
@@ -168,11 +171,17 @@ def load_config(mapping_path, device_path):
     map_accumulator = _mapping(
         integrations, "map_accumulator", "integrations.map_accumulator")
     pgm = _mapping(integrations, "pgm", "integrations.pgm")
-    integration_profile = integrations.get(
-        "scout" if backend == "scout_finalize" else "managed", {})
-    if backend in ("scout_finalize", "managed_finalize") and not isinstance(
+    if backend == "scout_finalize":
+        profile_key = "scout"
+    elif backend == "ground_air_service":
+        profile_key = "ground_air"
+    else:
+        profile_key = "managed"
+    integration_profile = integrations.get(profile_key, {})
+    if backend in (
+            "scout_finalize", "managed_finalize", "ground_air_service") and not isinstance(
             integration_profile, dict):
-        raise ConfigError("managed finalize integration must be a mapping")
+        raise ConfigError("selected integration profile must be a mapping")
     sync = _mapping(mapping, "sync")
     preprocess = _mapping(mapping, "preprocess")
     timeouts = _mapping(mapping, "timeouts")
@@ -244,7 +253,7 @@ def load_config(mapping_path, device_path):
     return {
         "schema_version": 6,
         "protocol_id": protocol_id,
-        "capability_version": "0.12.0",
+        "capability_version": "0.13.1",
         "integration_backend": backend,
         "device_id": device_id,
         "device_ip": device_ip,
@@ -334,6 +343,10 @@ def load_config(mapping_path, device_path):
         "generate_pgm_script": os.path.join(script_root, "generate_pgm.sh"),
         "scout_mapping_script": os.path.join(script_root, "scout_mapping_stack.sh"),
         "scout_finalize_script": os.path.join(script_root, "scout_finalize_map.sh"),
+        "ground_air_mapping_script": os.path.join(
+            script_root, "ground_air_mapping_stack.sh"),
+        "ground_air_save_script": os.path.join(
+            script_root, "ground_air_save_mapping.sh"),
         "sync_tolerance_seconds": tolerance,
         "pose_buffer_size": pose_buffer_size,
         "preview_transform_timeout_seconds": preview_transform_timeout,
@@ -427,6 +440,21 @@ def load_config(mapping_path, device_path):
             "geometry_tf_node", "/scout_geometry_tf_publisher")).strip(),
         "managed_pose_node": str(integration_profile.get(
             "pose_node", "/scout_pose_adapter")).strip(),
+        "ground_air_expected_nodes": integration_profile.get("expected_nodes", []),
+        "ground_air_save_package": str(
+            integration_profile.get("save_package", "")).strip(),
+        "ground_air_save_launch": str(
+            integration_profile.get("save_launch", "")).strip(),
+        "ground_air_map_root": os.path.abspath(os.path.expanduser(
+            str(integration_profile.get("map_root", "")))),
+        "ground_air_saved_pcd_filename": str(
+            integration_profile.get("saved_pcd_filename", "cloud_map.pcd")).strip(),
+        "ground_air_saved_pgm_filename": str(
+            integration_profile.get("saved_pgm_filename", "map.pgm")).strip(),
+        "ground_air_saved_yaml_filename": str(
+            integration_profile.get("saved_yaml_filename", "map.yaml")).strip(),
+        "ground_air_metadata_filename": str(
+            integration_profile.get("metadata_filename", "metadata.json")).strip(),
     }
 
 
@@ -463,8 +491,93 @@ def scout_filtered_pcd_path(config, map_name):
     return filtered_path
 
 
+def ground_air_map_directory(config, map_name):
+    if not isinstance(map_name, str) or not re.fullmatch(r"[0-9]{8}_[0-9]{6}", map_name):
+        raise ConfigError("ground-air map_name must use YYYYMMDD_HHMMSS")
+    map_root = config.get("ground_air_map_root", "")
+    if not map_root:
+        raise ConfigError("integrations.ground_air.map_root must be configured")
+    directory = os.path.abspath(os.path.join(map_root, map_name))
+    if os.path.dirname(directory) != os.path.abspath(map_root):
+        raise ConfigError("ground-air map directory escapes map root")
+    return directory
+
+
 def build_integration_commands(config, values):
     context = command_context(config, values)
+    if config["integration_backend"] == "ground_air_service":
+        expected_nodes = config.get("ground_air_expected_nodes")
+        if (not isinstance(expected_nodes, list) or not expected_nodes
+                or any(not isinstance(name, str)
+                       or re.match(r"^/[A-Za-z0-9_/]+$", name) is None
+                       for name in expected_nodes)):
+            raise ConfigError(
+                "integrations.ground_air.expected_nodes must contain absolute ROS names")
+        required = (
+            "ground_air_save_package", "ground_air_save_launch",
+            "ground_air_map_root", "ground_air_saved_pcd_filename",
+            "ground_air_saved_pgm_filename", "ground_air_saved_yaml_filename",
+            "ground_air_metadata_filename",
+        )
+        missing = [name for name in required if not config.get(name)]
+        if missing:
+            raise ConfigError(
+                "ground-air integration fields are missing: %s" % ", ".join(missing))
+        for name in (
+                "ground_air_saved_pcd_filename", "ground_air_saved_pgm_filename",
+                "ground_air_saved_yaml_filename", "ground_air_metadata_filename"):
+            value = config[name]
+            if value in (".", "..") or value != os.path.basename(value):
+                raise ConfigError("integrations.ground_air artifact names must be file names")
+        map_directory = ground_air_map_directory(config, context["map_name"])
+        launch_args = [item.format(**context) for item in config["fast_lio_launch_args"]]
+        nodes_csv = ",".join(expected_nodes)
+        mapping_check = [
+            config["ground_air_mapping_script"], "--check",
+            config["fast_lio_setup_file"], config["fast_lio_package"],
+            config["fast_lio_launch_file"],
+        ] + launch_args
+        save_check = [
+            config["ground_air_save_script"], "--check",
+            config["map_accumulator_setup_file"],
+            config["ground_air_save_package"], config["ground_air_save_launch"],
+            config["ground_air_map_root"],
+        ]
+        return {
+            "checks": [mapping_check, save_check],
+            "start_fast_lio": [
+                config["ground_air_mapping_script"], "--start",
+                config["fast_lio_setup_file"], context["fast_lio_pid_path"],
+                context["fast_lio_log_path"],
+                str(config["fast_lio_startup_timeout_seconds"]),
+                config["fast_lio_package"], config["fast_lio_launch_file"],
+                nodes_csv,
+            ] + launch_args,
+            "save_map": [
+                config["ground_air_save_script"],
+                config["map_accumulator_setup_file"],
+                config["ground_air_save_package"], config["ground_air_save_launch"],
+                config["ground_air_map_root"], context["map_name"],
+                config["ground_air_saved_pcd_filename"],
+                config["ground_air_saved_pgm_filename"],
+                config["ground_air_saved_yaml_filename"],
+                config["ground_air_metadata_filename"],
+                context["pcd_path"], context["pgm_path"], context["yaml_path"],
+                context["pgm_log_path"],
+                str(config["map_accumulator_save_timeout_seconds"]),
+            ],
+            "stop_fast_lio": [
+                config["ground_air_mapping_script"], "--stop",
+                context["fast_lio_pid_path"],
+                str(config["fast_lio_stop_timeout_seconds"]),
+            ],
+            "abort_fast_lio": [
+                config["ground_air_mapping_script"], "--abort",
+                context["fast_lio_pid_path"],
+                str(config["fast_lio_stop_timeout_seconds"]),
+            ],
+            "ground_air_map_directory": map_directory,
+        }
     if config["integration_backend"] in ("scout_finalize", "managed_finalize"):
         required = (
             "scout_fast_lio_package", "scout_fast_lio_launch", "scout_mapper_package",
