@@ -118,4 +118,3 @@ artifacts:
   pcd_path: "{session_dir}/map.pcd"
   pgm_path: "{session_dir}/map.pgm"
   yaml_path: "{session_dir}/map.yaml"
-

@@ -54,7 +54,8 @@ class ScoutBackendTests(unittest.TestCase):
         self.assertNotIn("session-1", commands["generate_pgm"])
         self.assertEqual(
             scout_filtered_pcd_path(self.config, self.values["map_name"]),
-            "/home/nvidia/livox_fastlio/maps/20260824_213015/filtered_camera_init.pcd")
+            os.path.abspath(
+                "/home/nvidia/livox_fastlio/maps/20260824_213015/filtered_camera_init.pcd"))
 
     def test_profile_frames_and_artifacts_match_scout(self):
         self.assertEqual(self.config["integration_backend"], "scout_finalize")
