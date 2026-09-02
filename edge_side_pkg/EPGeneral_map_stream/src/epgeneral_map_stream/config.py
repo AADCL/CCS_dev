@@ -547,12 +547,11 @@ def build_integration_commands(config, values):
             "checks": [mapping_check, save_check],
             "start_fast_lio": [
                 config["ground_air_mapping_script"], "--start",
-                config["fast_lio_setup_file"], context["fast_lio_pid_path"],
+                config["fast_lio_setup_file"], context["session_id"],
                 context["fast_lio_log_path"],
                 str(config["fast_lio_startup_timeout_seconds"]),
-                config["fast_lio_package"], config["fast_lio_launch_file"],
-                nodes_csv,
-            ] + launch_args,
+                context["map_name"], nodes_csv,
+            ],
             "save_map": [
                 config["ground_air_save_script"],
                 config["map_accumulator_setup_file"],
@@ -568,12 +567,12 @@ def build_integration_commands(config, values):
             ],
             "stop_fast_lio": [
                 config["ground_air_mapping_script"], "--stop",
-                context["fast_lio_pid_path"],
+                config["fast_lio_setup_file"], context["session_id"], context["map_name"],
                 str(config["fast_lio_stop_timeout_seconds"]),
             ],
             "abort_fast_lio": [
                 config["ground_air_mapping_script"], "--abort",
-                context["fast_lio_pid_path"],
+                config["fast_lio_setup_file"], context["session_id"], context["map_name"],
                 str(config["fast_lio_stop_timeout_seconds"]),
             ],
             "ground_air_map_directory": map_directory,

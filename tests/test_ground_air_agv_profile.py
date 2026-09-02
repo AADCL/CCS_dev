@@ -57,13 +57,25 @@ class GroundAirAgvProfileTests(unittest.TestCase):
                          "0 0 0 0 0 0 $(arg body_frame) $(arg base_frame)")
         self.assertTrue(all(item["pkg"] == "tf2_ros" for item in nodes.values()))
 
-    def test_startup_owns_coordinate_transforms_before_map_stream(self):
+    def test_startup_runs_stage_manager_last(self):
         startup = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
-        tf_start = "start_launch 7 /odom_camera_init_broadcaster"
-        map_stream_start = "start_launch 4 /epgeneral_map_stream"
-        self.assertIn(tf_start, startup)
-        self.assertIn("wait_for_node /base_link_body_broadcaster", startup)
-        self.assertLess(startup.index(tf_start), startup.index(map_stream_start))
+        manager_start = "rosrun car_bringup ground_air_stage_manager_node.py"
+        self.assertEqual(startup.count(manager_start), 1)
+        self.assertNotIn("start_launch 7 /odom_camera_init_broadcaster", startup)
+        self.assertLess(startup.index("start_optional_launch 6 /epgeneral_video_srt"),
+                        startup.index(manager_start))
+        self.assertIn("rosservice type /ground_air/system/set_stage", startup)
+        manager = (PROFILE / "car_bringup_scripts" /
+                   "ground_air_stage_manager_node.py").read_text(encoding="utf-8")
+        core = (PROFILE / "car_bringup_scripts" /
+                "system_stage_core.py").read_text(encoding="utf-8")
+        self.assertIn("self._resident_transforms = self._backend.start", manager)
+        self.assertIn("resident_tf_version", manager)
+        self.assertLess(
+            manager.index("self._resident_transforms = self._backend.start"),
+            manager.index("self._service = rospy.Service"))
+        self.assertIn("self._backend.stop(self._resident_transforms)", manager)
+        self.assertNotIn("mapping_coordinate_transforms.launch", core)
         mapping = yaml.safe_load((PROFILE / "config" / "map_stream.yaml").read_text(
             encoding="utf-8"))
         ground_air = mapping["integrations"]["ground_air"]

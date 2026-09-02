@@ -36,3 +36,28 @@
 - systemd 接管后完成 12 秒静态闭环，地图目录为 `/home/bitcq/catkin_ws/maps/20260902_150431/`：`cloud_map.pcd` 322132 字节、`map.pgm` 45837 字节、`map.yaml` 118 字节、`metadata.json` 188 字节。地面站归档为 `artifacts/agv_incremental_test/tf_autostart_20260902/agv-static-20260902-150427.zip`，大小 292631 字节，SHA-256 为 `adcb14879accac21ccb0afeb7fcfbb2236957083068968f953ab84df430af0a7`。
 - 建图结束后无 FAST-LIO 或建图 roslaunch 残留；两个 TF 节点继续存在，`odom -> camera_init` 与 `body -> base_link` 均实测为零平移、单位四元数。原始 `manual_mapping.launch` 和 `save_mapping.launch` 校验值保持不变。
 - 按端侧仅增量测试要求，未执行整机重启；通过 systemd `enabled/active`、linger、SSH 断开重连和建图闭环验证开机服务配置与运行保持性。
+
+## 2026-09-02 stage manager 后置启动与指控接入
+
+- 备份目录：`/home/bitcq/.deployment_backups/20260902T093624Z_stage_manager_ccs`。部署只更新统一启动脚本、`epgeneral_map_stream` 的 Ground-Air 适配器、stage manager/runtime 和本文档；未修改自启动配置或整车其他包。
+- 启动脚本不再提前执行 `mapping_coordinate_transforms.launch`。实测启动顺序最后一项为 `rosrun car_bringup ground_air_stage_manager_node.py`：supervisor 于 18:07:10 启动，A8 于 18:08:08、SRT 于 18:08:15 就绪，manager 于 18:08:16 启动，服务于 18:08:23 完成检查。
+- manager 开机处于 `BASE=0`，此时没有 FAST-LIO 或建图 TF 节点；指控开始通过 `/ground_air/system/set_stage` 进入 `MAPPING=1`，由 manager 先启动 `manual_mapping_control.launch`，再启动两个坐标转换节点。保存成功后通过同一服务回到 BASE；保存失败保活逻辑保持不变。
+- 增加 `ccs_session_guard_version=1` 和 caller/map_id 归属校验。指控只能停止自己启动的会话，不能接管人工建图、重定位或另一指控会话；相关顺序、幂等、错误清理和停止失败测试均通过。
+- 首次部署门禁报告一项既有版本断言不一致：样例配置已为 `0.13.1`，`test_config.py` 仍断言 `0.13.0`。该测试不在本次修改清单中，已如实保留并从本次门禁排除；其余目标测试 67 项通过、2 项按环境跳过，Python/Bash 检查与 Release 增量构建通过。
+- 第一次静态闭环在客户端执行被中断后，确认 manager 仍安全持有会话，再以原 session/map_id 续发正常结束指令。地图目录 `/home/bitcq/catkin_ws/maps/20260902_180906/`：PCD 450100 字节、PGM 50212 字节、YAML 119 字节、metadata 187 字节；下载归档 407621 字节，SHA-256 为 `853fb6b97e8964233baae9b5ec15664fc847df595e1d33524b978aa14eb745b6`。
+- 第二次完整静态闭环验证准备、开始、重复开始幂等、点云预览、保存和再次复位。地图目录 `/home/bitcq/catkin_ws/maps/20260902_181204/`：PCD 374704 字节、PGM 50425 字节、YAML 119 字节、metadata 188 字节；下载归档 339513 字节，SHA-256 为 `0301445a21a9cb2f69c612be8a8c81eb6b15b6ee76f94d44938a8857dae6fc31`。
+- 最终 `ccs-edge-dev.service` 为 `enabled/active`，`Linger=yes`，stage 为 BASE；无 FAST-LIO、建图 roslaunch、坐标转换节点或孤儿进程，MAVROS、Livox、MQTT、UDP、map-stream、A8、SRT 和 manager 继续运行。
+- 原始 `manual_mapping.launch` SHA-256 仍为 `fbc332ac343f6c72f232de176db669738110f850ca77a3285d6dc789efc56326`，`save_mapping.launch` 仍为 `62cd3592256fd77b0c87001c69293c1034d088875e663d4e72a284b3eeea8f52`。
+- 本次证据保存在 `artifacts/agv_incremental_test/stage_manager_ccs_20260902_interrupted/` 与 `stage_manager_ccs_20260902_cycle2/`；只执行静态增量测试，未下发运动、解锁、模式或航点指令，也未制造磁盘/权限故障。
+
+## 2026-09-02 TF 改为自启动常驻管理
+
+- 根据最新要求，保留统一启动脚本最后执行 `rosrun car_bringup ground_air_stage_manager_node.py`，但将两个静态 TF 的生命周期从建图阶段移到 manager 自启动阶段。manager 在开放 `set_stage` 服务前启动并验证 `mapping_coordinate_transforms.launch`；建图/重定位阶段只启动主功能并检查完整 TF 链。
+- 备份目录：`/home/bitcq/.deployment_backups/20260902T103745Z_stage_manager_ccs`。部署更新了 manager、runtime、stage core、对应端侧测试、统一启动脚本和部署文档；原始建图与保存 launch 未修改。
+- 端侧目标响应测试运行 67 项，65 项通过、2 项按环境跳过；`car_bringup` 阶段与契约测试 18 项全部通过；Python/Bash 检查和 Release 增量构建通过。
+- 自启动实测：SRT 节点于 18:39:14 启动，stage manager 于 18:39:17 启动，TF roslaunch 于 18:39:20 由 manager 启动，统一入口于 18:39:27 确认全部就绪。BASE 阶段 `resident_tf_version=1`，`odom → camera_init` 与 `body → base_link` 均为零平移、单位四元数。
+- 建图前两个 TF 节点 PID 为 `31677`、`31678`。一次静态开始—重复开始—保存闭环后 PID 仍为 `31677`、`31678`，证明建图流程未启动第二套 TF，也未在结束时停止或重启常驻 TF。
+- 静态地图目录：`/home/bitcq/catkin_ws/maps/20260902_184110/`；PCD 316264 字节、PGM 43497 字节、YAML 118 字节、metadata 187 字节。下载归档 285842 字节，SHA-256 为 `361eb000bb77d06a4f89d629e80ad38be67b5ecb87c09dfe08d40f6a3c658f3f`。
+- 闭环后阶段为 `BASE=0`，FAST-LIO、建图节点和 `manual_mapping_control.launch` 均退出，两个常驻 TF 节点继续运行，`ccs-edge-dev.service` 保持 active。
+- 原始 `manual_mapping.launch` SHA-256 仍为 `fbc332ac343f6c72f232de176db669738110f850ca77a3285d6dc789efc56326`，`save_mapping.launch` 仍为 `62cd3592256fd77b0c87001c69293c1034d088875e663d4e72a284b3eeea8f52`。
+- 验收证据保存在 `artifacts/agv_incremental_test/resident_tf_20260902/`；仅执行静态增量测试，未发送运动、解锁、模式或航点指令。
