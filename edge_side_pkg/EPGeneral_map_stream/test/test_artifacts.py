@@ -31,7 +31,8 @@ except ImportError:
 
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MAPPING = os.path.join(PACKAGE, "config", "mapping.yaml")
+MAPPING = os.path.join(
+    os.path.dirname(PACKAGE), "EPGeneral_device_config", "config", "map_stream.yaml")
 DEVICE = device_config_path(PACKAGE)
 
 

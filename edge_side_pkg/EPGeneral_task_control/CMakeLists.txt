@@ -18,7 +18,7 @@ catkin_package(CATKIN_DEPENDS message_runtime rospy geometry_msgs std_msgs nav_m
 catkin_install_python(PROGRAMS scripts/epgeneral_task_control_node.py
   scripts/navigation_adapter_node.py scripts/scout_navigation_adapter_node.py scripts/check_version.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
-install(DIRECTORY config launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+install(DIRECTORY launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 if(CATKIN_ENABLE_TESTING)
   catkin_add_nosetests(test)
 endif()

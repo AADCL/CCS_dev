@@ -795,9 +795,9 @@ def run():
 
     rospy.init_node("epgeneral_task_control")
     rospack = rospkg.RosPack()
-    package_path = rospack.get_path("epgeneral_task_control")
     device_path = rospack.get_path("epgeneral_device_config")
-    task_config = rospy.get_param("~task_config_file", package_path + "/config/task_control.yaml")
+    task_config = rospy.get_param(
+        "~task_config_file", device_path + "/config/task_control.yaml")
     device_config = rospy.get_param("~device_config_file", device_path + "/config/device.yaml")
     try:
         config = load_config(task_config, device_config)

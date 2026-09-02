@@ -2,11 +2,11 @@
 
 当前指控平台版本：**v0.22.8**
 
-端侧包版本：epqrd_go2_bridge **v0.2.0**、epgeneral_mqtav **v0.4.0**、epgeneral_udp_telemetry **v0.3.0**、epgeneral_video_srt **v0.1.0**、epgeneral_map_stream **v0.12.0**、epgeneral_task_control **v0.4.3**、epgeneral_relocalization **v0.2.2**
+端侧包版本：epgeneral_device_config **v0.1.1**、epgeneral_mqtav **v0.4.1**、epgeneral_udp_telemetry **v0.3.1**、epgeneral_video_srt **v0.1.1**、epgeneral_map_stream **v0.13.1**、epgeneral_task_control **v0.4.4**、epgeneral_relocalization **v0.2.3**
 
 ## 功能介绍
 
-- Go2 EDU：`EPQRD_go2_bridge` v0.2.0 完整转发 Unitree SDK2 LowState/SportModeState，并保留 prefixed ROS 电池、IMU、里程计、SDK 心跳和诊断接口；部署 profile 位于 `edge_side_pkg/deploy/go2_edu/`。
+- Go2 EDU：部署 profile 位于 `edge_side_pkg/deploy/go2_edu/`，使用 Livox/LIO 原生 ROS 话题提供在线、位姿、IMU 和建图状态；没有可确认 ROS 数据源的电池及机器人专有状态保持未知。
 
 本仓库包含基于 PySide6 的多异构智能体指挥与控制地面站，以及部署到 ROS 端侧设备的配套功能包。系统面向可信局域网中的无人机、无人车、移动机器人和无人船。
 
@@ -36,14 +36,15 @@ CCS_dev/
 ├── data/map_server/               # 地图元数据、PCD 与 .trash 回收目录
 ├── examples/                      # 地图融合插件等扩展示例
 ├── edge_side_pkg/
-│   ├── epgeneral_device_config/        # 共享设备 ID/IP，v0.1.0
-│   ├── epgeneral_mqtav/           # ROS1 MQTT 遥测包，v0.3.1
-│   ├── EPGeneral_video_srt/            # ROS 图像话题 SRT 推流包，v0.1.0
-│   ├── epgeneral_udp_telemetry/          # ROS/MAVROS UDP 遥测包，v0.3.0
-│   ├── epgeneral_map_stream/             # ROS v2 遥控建图与成果服务包，v0.12.0
-│   ├── epgeneral_task_control/            # ROS 任务接收与执行协调包，v0.1.0
-│   ├── EPGeneral_relocalization/           # ROS 地图下发与重定位协调包，v0.2.2
-│   ├── epgeneral_mqtav.zip                  # 端侧部署归档
+│   ├── EPGeneral_device_config/     # 七类集中运行配置，v0.1.1
+│   ├── EPGeneral_map_stream/        # ROS v2 遥控建图与成果服务包，v0.13.1
+│   ├── epgeneral_mqtav/             # ROS1 MQTT 状态包，v0.4.1
+│   ├── EPGeneral_relocalization/    # ROS 地图下发与重定位协调包，v0.2.3
+│   ├── EPGeneral_task_control/      # ROS 任务接收与执行协调包，v0.4.4
+│   ├── EPGeneral_udp_telemetry/     # ROS UDP 遥测包，v0.3.1
+│   ├── EPGeneral_video_srt/         # ROS 图像话题 SRT 推流包，v0.1.1
+│   ├── deploy/                      # 指控端设备 profile 原件，不整体部署
+│   ├── documents/                   # 部署指南、记录和回滚资料
 │   └── README.md
 ├── docs/DEVELOPMENT_NOTES.md
 ├── docs/EDGE_DEVICE_INTERFACES.md # 端侧交互协议总册
@@ -90,7 +91,7 @@ CCS_dev/
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
-当前配套端侧 `epgeneral_map_stream` v0.12.0。联合模式由地面站为各设备创建独立 v2 会话，要求至少两台设备并指定主设备；端侧回传联合作业身份，地面站按外参融合 PCD 和 PGM。Scout 建图仍按 FAST-LIO、pointcloud mapper、TF manager、pose adapter 顺序启动；Go2 继续使用 accumulator backend。
+当前配套端侧 `epgeneral_map_stream` v0.13.1。联合模式由地面站为各设备创建独立 v2 会话，要求至少两台设备并指定主设备；端侧回传联合作业身份，地面站按外参融合 PCD 和 PGM。Scout 建图仍按 FAST-LIO、pointcloud mapper、TF manager、pose adapter 顺序启动；Go2 继续使用 accumulator backend；Ground-Air AGV 使用原生 mapping/save service backend。
 
 地图详情页左侧显示可收起的在线设备栏，集中展示任务/建图状态、电量、坐标系和单路可控视频。Scout/WheelTech 的本地 odom 位姿取 UDP `vision_pose`，Go2 等设备取 `global_pose`；地图态势优先使用已持久化的 `map <- odom` 重定位绑定，未绑定时仅按同坐标系或与设备 ID 精确匹配的建图外参显示。所有地图点云按高度使用低红高紫的 rainbow 色谱。
 
@@ -173,7 +174,15 @@ sudo apt install python3-paho-mqtt python3-yaml python3-msgpack python3-numpy \
   gstreamer1.0-plugins-ugly gstreamer1.0-libav
 
 mkdir -p ~/catkin_ws/src
-cp -r /path/to/CCS_dev/edge_side_pkg/* ~/catkin_ws/src/
+EDGE_SRC=/path/to/CCS_dev/edge_side_pkg
+cp -r "${EDGE_SRC}/EPGeneral_device_config" \
+  "${EDGE_SRC}/EPGeneral_map_stream" \
+  "${EDGE_SRC}/epgeneral_mqtav" \
+  "${EDGE_SRC}/EPGeneral_relocalization" \
+  "${EDGE_SRC}/EPGeneral_task_control" \
+  "${EDGE_SRC}/EPGeneral_udp_telemetry" \
+  "${EDGE_SRC}/EPGeneral_video_srt" \
+  ~/catkin_ws/src/
 cd ~/catkin_ws
 source /opt/ros/noetic/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
@@ -181,13 +190,13 @@ catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 ```
 
-将 `epgeneral_device_config/config/device.yaml` 的 ID/IP 与地面站 `config/devices.json` 对齐，并检查：
+端侧只复制上述七个 ROS 包；`deploy` 和 `documents` 保留在指控端。部署前将所选 `deploy/<profile>/config/*.yaml` 覆盖到待发布副本的 `EPGeneral_device_config/config/`，并将 `device.yaml` 的 ID/IP 与地面站 `config/devices.json` 对齐。集中检查：
 
-- `epgeneral_mqtav/config/config.yaml` 的地面站 MQTT 地址。
-- `epgeneral_udp_telemetry/config/telemetry.yaml` 的 ROS 话题和 descriptor。
-- `EPGeneral_video_srt/config/video.yaml` 的输入话题、输出尺寸、SRT 端口、延迟、帧率和码率。
-- `epgeneral_map_stream/config/mapping.yaml` 的点云、位姿、外参和网络参数。
-- `epgeneral_task_control/config/task_control.yaml` 的端口、XML 目录和 command/feedback 话题。
+- `EPGeneral_device_config/config/epgeneral_mqtav.yaml` 的地面站 MQTT 地址。
+- `EPGeneral_device_config/config/udp_telemetry.yaml` 的 ROS 话题和 descriptor。
+- `EPGeneral_device_config/config/video.yaml` 的输入话题、输出尺寸、SRT 端口、延迟、帧率和码率。
+- `EPGeneral_device_config/config/map_stream.yaml` 的点云、位姿、外参和网络参数。
+- `EPGeneral_device_config/config/relocalization.yaml` 与 `task_control.yaml` 的设备后端、端口和 ROS 接口。
 
 端侧放行 UDP 9000、14561、14563，并执行 `gst-inspect-1.0 srtsink` 确认 SRT 插件可用。每个新终端先执行：
 
@@ -212,7 +221,7 @@ sudo install -m 0640 edge_side_pkg/deploy/go2_edu/config/*.yaml \
 ```
 
 脚本在控制终端逐项输出时间同步、ROS Master 和功能包启动结果。全部节点就绪后脚本保持
-前台运行；按 `Ctrl+C` 会停止四个功能节点、对应 roslaunch 进程，以及由脚本自身创建的
+前台运行；按 `Ctrl+C` 会停止脚本管理的功能节点、对应 roslaunch 进程，以及由脚本自身创建的
 ROS Master。各组件完整日志保存在 `~/.ros/ccs_edge_dev/log/`。
 
 按需启动：
@@ -338,7 +347,7 @@ MQTT 与 UDP 是独立链路。检查 `destination_host`、ROS 话题频率和 U
 
 ### SRT 无画面
 
-先执行 `ffmpeg -protocols`，确认 Input 列表包含 `srt`。再检查设备地址（IP 或 `.local` mDNS）、UDP 9000、防火墙、设备页端口/延迟，以及 ROS 图像话题的实际类型和频率。端侧必须启动 `epgeneral_video_srt v0.1.0`，并可用下列命令验证本机 Listener：
+先执行 `ffmpeg -protocols`，确认 Input 列表包含 `srt`。再检查设备地址（IP 或 `.local` mDNS）、UDP 9000、防火墙、设备页端口/延迟，以及 ROS 图像话题的实际类型和频率。端侧必须启动 `epgeneral_video_srt v0.1.1`，并可用下列命令验证本机 Listener：
 
 ```bash
 ffplay "srt://127.0.0.1:9000?mode=caller&transtype=live&latency=120000"
@@ -358,7 +367,7 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 ### PGM 下载提示端侧版本不支持
 
-当前端侧 `epgeneral_map_stream` v0.12.0 已实现实时 PCD 分片、最终 PCD/PGM/YAML 成果 ZIP、短期令牌 HTTP 服务和联合作业身份回传。Scout 使用本地时间 `YYYYMMDD_HHMMSS` 作为固定 `map_name`，同一名称贯穿 pointcloud mapper、`filtered_camera_init.pcd`、`finalize_map.py --replace-raw` 和成果 manifest；Go2 继续使用 accumulator backend。
+当前端侧 `epgeneral_map_stream` v0.13.1 已实现实时 PCD 分片、最终 PCD/PGM/YAML 成果 ZIP、短期令牌 HTTP 服务和联合作业身份回传。Scout 使用本地时间 `YYYYMMDD_HHMMSS` 作为固定 `map_name`，同一名称贯穿 pointcloud mapper、`filtered_camera_init.pcd`、`finalize_map.py --replace-raw` 和成果 manifest；Go2 继续使用 accumulator backend，Ground-Air AGV 使用原生 mapping/save service backend。
 
 ### 融合算法无法导入或执行失败
 

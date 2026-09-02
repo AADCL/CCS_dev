@@ -1,6 +1,16 @@
 # 更新记录
 
-<!-- epgeneral_map_stream_VERSION: 0.12.0 -->
+<!-- epgeneral_map_stream_VERSION: 0.13.1 -->
+
+## v0.13.1 - 2026-09-02
+
+- 将运行配置迁移至 `epgeneral_device_config/config/map_stream.yaml`，协议与建图行为不变。
+
+## v0.13.0 - 2026-09-01
+
+- 新增 `ground_air_service` backend，通过独立进程组启动精简建图 launch，并以原 `save_mapping.launch` 完成 PCD/PGM/YAML 保存与校验。
+- 保存前置失败时保留 Ground-Air 建图进程与会话，恢复预览订阅并允许重复下发结束建图指令。
+- Ground-Air 成果 manifest 记录实际端侧地图目录；既有 Go2、Scout 和 managed finalize backend 行为保持不变。
 
 ## v0.12.0 - 2026-08-28
 

@@ -8,7 +8,9 @@ from epgeneral_mqtav.state import HealthState
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEVICE_CONFIG = ROOT.parent / "EPGeneral_device_config" / "config" / "device.yaml"
+SHARED_CONFIG = ROOT.parent / "EPGeneral_device_config" / "config"
+MQTAV_CONFIG = SHARED_CONFIG / "epgeneral_mqtav.yaml"
+DEVICE_CONFIG = SHARED_CONFIG / "device.yaml"
 
 
 class FakeLogger(object):
@@ -34,7 +36,7 @@ class FakeRospy(object):
 
 class RosBridgeTests(unittest.TestCase):
     def setUp(self):
-        self.config = load_config(ROOT / "config" / "config.yaml", DEVICE_CONFIG)
+        self.config = load_config(MQTAV_CONFIG, DEVICE_CONFIG)
         self.health = HealthState(self.config.device)
         self.rospy = FakeRospy()
         self.logger = FakeLogger()
@@ -55,6 +57,18 @@ class RosBridgeTests(unittest.TestCase):
         bridge.start()
         bridge._on_mission(SimpleNamespace(data=SimpleNamespace(phase="executing")))
         self.assertEqual(self.health.payload("status")["health"]["mission_status"], "executing")
+
+    def test_disabled_battery_does_not_create_subscription(self):
+        self.config.ros.battery.enabled = False
+        self.bridge.start()
+        self.assertEqual(
+            [item[0] for item in self.rospy.subscriptions],
+            ["/mavros/state"],
+        )
+        self.assertIn(
+            "ros_subscription_disabled stream=battery",
+            self.logger.messages,
+        )
 
     def test_read_field_rejects_empty_path_components(self):
         with self.assertRaises(ValueError):

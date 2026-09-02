@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class VersionTests(unittest.TestCase):
     def test_manifest_is_runtime_version_source(self):
-        self.assertEqual(get_version(ROOT / "package.xml"), "0.4.0")
+        self.assertEqual(get_version(ROOT / "package.xml"), "0.4.1")
 
     def test_document_version_check_passes(self):
         completed = subprocess.run(

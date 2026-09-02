@@ -22,7 +22,8 @@ except ImportError:
 
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MAPPING = os.path.join(PACKAGE, "config", "mapping.yaml")
+MAPPING = os.path.join(
+    os.path.dirname(PACKAGE), "EPGeneral_device_config", "config", "map_stream.yaml")
 DEVICE = device_config_path(PACKAGE)
 
 
@@ -408,6 +409,28 @@ class NodeTests(unittest.TestCase):
                         self.events.index("run:generate_pgm.sh"))
         self.assertEqual(self.node.state, "standby")
 
+    def test_repeated_stop_during_generation_reports_current_state(self):
+        self.prepare()
+        self.start()
+        with self.node.lock:
+            self.node.session.state = "generating"
+            self.node.state = "generating"
+        events_before = list(self.events)
+
+        self.node.handle_datagram(self.command("stop_mapping", {
+            "request_id": "stop-while-generating", "reason": "duplicate stop",
+        }), self.config["ground_station_ip"])
+
+        messages = self.messages()
+        ack = messages[-2]
+        status = messages[-1]
+        self.assertEqual(ack["message_type"], "command_ack")
+        self.assertTrue(ack["payload"]["accepted"])
+        self.assertEqual(status["message_type"], "artifact_status")
+        self.assertEqual(status["payload"]["state"], "generating")
+        self.assertEqual(self.events, events_before)
+        self.assertIsNone(self.node.generation_thread)
+
     def test_save_failure_aborts_without_stopping_or_generating(self):
         self.prepare()
         self.start()
@@ -431,6 +454,51 @@ class NodeTests(unittest.TestCase):
                      if item["message_type"] == "artifact_status"
                      and item["payload"]["state"] == "error")
         self.assertIn("save service failed", error["payload"]["reason"])
+
+    def test_ground_air_save_failure_keeps_mapping_active_for_retry(self):
+        self.config["integration_backend"] = "ground_air_service"
+        commands = {
+            "checks": [["ground_air_mapping_stack.sh", "--check"]],
+            "start_fast_lio": ["ground_air_mapping_stack.sh", "--start"],
+            "save_map": ["ground_air_save_mapping.sh"],
+            "stop_fast_lio": ["ground_air_mapping_stack.sh", "--stop"],
+            "abort_fast_lio": ["ground_air_mapping_stack.sh", "--abort"],
+        }
+        original_run = self.runner.run
+
+        def fail_save(arguments, timeout=None):
+            if os.path.basename(arguments[0]) == "ground_air_save_mapping.sh":
+                self.events.append("run:ground_air_save_mapping.sh")
+                raise RuntimeError("saved map has too few points")
+            return original_run(arguments, timeout)
+
+        self.runner.run = fail_save
+        with patch("epgeneral_map_stream.node.build_integration_commands",
+                   return_value=commands), patch(
+                       "epgeneral_map_stream.node.ground_air_map_directory",
+                       return_value=os.path.join(self.temp.name, "new-map")):
+            self.prepare()
+            self.start()
+            subscribers_before = len([
+                event for event in self.events if event.startswith("subscribe:")])
+            self.node.handle_datagram(self.command("stop_mapping", {
+                "request_id": "stop-ground-air-failure", "reason": "done",
+            }), self.config["ground_station_ip"])
+            self.node.generation_thread.join(timeout=2.0)
+
+        self.assertEqual(self.node.state, "mapping")
+        self.assertIsNotNone(self.node.session)
+        self.assertEqual(self.node.session.state, "mapping")
+        self.assertIn("run:ground_air_save_mapping.sh", self.events)
+        self.assertNotIn("run:ground_air_mapping_stack.sh", self.events[
+            self.events.index("run:ground_air_save_mapping.sh") + 1:])
+        subscribers_after = len([
+            event for event in self.events if event.startswith("subscribe:")])
+        self.assertEqual(subscribers_after, subscribers_before + 2)
+        status = [item for item in self.messages()
+                  if item["message_type"] == "session_status"][-1]
+        self.assertEqual(status["payload"]["state"], "mapping")
+        self.assertIn("remains active", status["payload"]["reason"])
 
     def test_missing_empty_or_stale_accumulator_pcd_aborts(self):
         for mode in ("missing", "empty", "stale"):

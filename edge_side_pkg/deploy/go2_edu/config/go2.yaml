@@ -1,9 +1,0 @@
-device_id: "QRD_001"
-topic_prefix: "/qrd"
-network_interface: "eth1"
-dds_domain_id: 0
-topics: {low_state: "rt/lowstate", sport_mode_state: "rt/sportmodestate"}
-frames: {odom: "odom", base: "base_link"}
-rates: {imu_hz: 100.0, odometry_hz: 50.0, battery_hz: 1.0, low_state_hz: 100.0, sport_mode_hz: 50.0}
-timeouts: {low_state_seconds: 0.5, sport_mode_seconds: 0.5}
-covariance: {orientation: 0.02, angular_velocity: 0.02, linear_acceleration: 0.10}

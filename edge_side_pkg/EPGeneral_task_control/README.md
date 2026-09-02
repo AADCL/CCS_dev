@@ -1,8 +1,8 @@
 # epgeneral_task_control
 
-<!-- epgeneral_task_control_VERSION: 0.4.3 -->
+<!-- epgeneral_task_control_VERSION: 0.4.4 -->
 
-版本：`v0.4.3`。Scout Mini 通过 `/fastlio_odom`、实时 `map<-odom` TF 和 `/move_base/goal` 执行有序地图航点；任务目录默认位于 `~/ccs_edge_ws/mission/`。导航适配器持有 `tf2_ros.TransformListener`，持续接收 `/tf` 和 `/tf_static`。
+版本：`v0.4.4`。运行配置统一由 `epgeneral_device_config/config/task_control.yaml` 提供。Scout Mini 通过 `/fastlio_odom`、实时 `map<-odom` TF 和 `/move_base/goal` 执行有序地图航点；任务目录默认位于 `~/ccs_edge_ws/mission/`。导航适配器持有 `tf2_ros.TransformListener`，持续接收 `/tf` 和 `/tf_static`。
 
 任务准备阶段会使用导航 `map.yaml` 和 PGM 检查全部航点。地图外、障碍区或未知区航点返回 `WAYPOINT_NOT_TRAVERSABLE`，不会进入 `ready`。运行期 `move_base` 规划失败返回 `NAVIGATION_PLAN_FAILED` 并保留 action 状态文本。
 
@@ -36,7 +36,7 @@ source devel/setup.bash
 roslaunch epgeneral_task_control epgeneral_task_control.launch
 ```
 
-启动前修改 `config/task_control.yaml` 的地面站 IP，并保证 `epgeneral_device_config/config/device.yaml` 与地面站设备 ID/IP 一致。设备和地面站都应使用 NTP；放行端侧 UDP 14563 和地面站 UDP 14564。
+启动前修改 `epgeneral_device_config/config/task_control.yaml` 的地面站 IP，并保证 `epgeneral_device_config/config/device.yaml` 与地面站设备 ID/IP 一致。设备和地面站都应使用 NTP；放行端侧 UDP 14563 和地面站 UDP 14564。
 
 ```bash
 rostopic info /epgeneral_task_control/execution_command

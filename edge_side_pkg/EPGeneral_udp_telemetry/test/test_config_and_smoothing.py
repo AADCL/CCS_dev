@@ -18,7 +18,7 @@ class ConfigTests(unittest.TestCase):
     def test_default_config_and_hash(self):
         root = os.path.dirname(PACKAGE)
         config = load_config(
-            os.path.join(PACKAGE, "config", "telemetry.yaml"),
+            os.path.join(root, "EPGeneral_device_config", "config", "udp_telemetry.yaml"),
             os.path.join(root, "EPGeneral_device_config", "config", "device.yaml"),
         )
         self.assertTrue(config["device_id"])
@@ -31,7 +31,9 @@ class ConfigTests(unittest.TestCase):
             path = stream.name
         try:
             with self.assertRaises(ConfigError):
-                load_config(os.path.join(PACKAGE, "config", "telemetry.yaml"), path)
+                load_config(os.path.join(
+                    os.path.dirname(PACKAGE), "EPGeneral_device_config",
+                    "config", "udp_telemetry.yaml"), path)
         finally:
             os.unlink(path)
 

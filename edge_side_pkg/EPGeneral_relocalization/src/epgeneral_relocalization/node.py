@@ -404,8 +404,10 @@ class RelocalizationNode(object):
 
 def default_paths():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    return (os.path.join(root, "config", "relocalization.yaml"),
-            os.path.abspath(os.path.join(root, "..", "EPGeneral_device_config", "config", "device.yaml")))
+    shared_config = os.path.abspath(os.path.join(
+        root, "..", "EPGeneral_device_config", "config"))
+    return (os.path.join(shared_config, "relocalization.yaml"),
+            os.path.join(shared_config, "device.yaml"))
 
 
 def run(argv=None, rospy_module=None):

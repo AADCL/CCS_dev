@@ -1,8 +1,13 @@
 # 修改日志
 
-<!-- epgeneral_mqtav_VERSION: 0.4.0 -->
+<!-- epgeneral_mqtav_VERSION: 0.4.1 -->
 
-当前版本：`v0.4.0`
+当前版本：`v0.4.1`
+
+## [0.4.1] - 2026-09-02
+
+- 运行配置集中到 `epgeneral_device_config`。
+- 支持显式禁用无 ROS 数据源的电池订阅；MQTT schema 保持不变。
 
 ## [0.4.0] - 2026-08-24
 

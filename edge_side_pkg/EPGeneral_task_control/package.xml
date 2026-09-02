@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>epgeneral_task_control</name>
-  <version>0.4.3</version>
+  <version>0.4.4</version>
   <description>Edge task transfer, XML persistence, and ROS execution coordination.</description>
   <maintainer email="maintainer@example.com">CCS Maintainer</maintainer>
   <license>MIT</license>

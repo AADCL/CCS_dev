@@ -1,6 +1,6 @@
 # epgeneral_relocalization
 
-当前版本 v0.2.2。活动地图状态文件使用 schema 2：Scout 成功后原子保存 `map <- odom`，重复重定位前立即清除旧变换；进程重启时旧的 `localized` 状态自动降级为 `standby`，必须重新建立实时里程计和 TF。Go2 协商会清除历史变换并继续返回 `UNSUPPORTED_BACKEND`。UDP 遥测仍可按其中的 map ID 检查 PGM 文件。
+当前版本 v0.2.3。运行配置统一由 `epgeneral_device_config/config/relocalization.yaml` 提供。活动地图状态文件使用 schema 2：Scout 成功后原子保存 `map <- odom`，重复重定位前立即清除旧变换；进程重启时旧的 `localized` 状态自动降级为 `standby`，必须重新建立实时里程计和 TF。Go2 协商会清除历史变换并继续返回 `UNSUPPORTED_BACKEND`。UDP 遥测仍可按其中的 map ID 检查 PGM 文件。
 
 ROS1 常驻重定位协调包。它监听 `ccs-relocalization-v1` UDP 控制消息，从已配置的地面站 HTTP 地址续传地图 ZIP，严格校验 manifest、大小和 SHA-256 后原子安装，再按 profile 顺序启动 Scout FAST-LIO、坐标适配、全局 PCD 重定位和 map_server。
 

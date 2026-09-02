@@ -1,5 +1,9 @@
 # 更新记录
 
+## v0.3.1 - 2026-09-02
+
+- 将运行配置迁移至 `epgeneral_device_config`，UDP schema 与 descriptor 规则不变。
+
 ## v0.3.0 - 2026-08-25
 
 - 新增 `pgm_file` 状态源，读取活动地图 ID 并安全检查普通 `map.pgm`，回包携带 `map_id`。

@@ -11,7 +11,8 @@ from .artifacts import (
     write_binary_pcd,
 )
 from .config import (
-    ConfigError, build_integration_commands, load_config, scout_filtered_pcd_path,
+    ConfigError, build_integration_commands, ground_air_map_directory,
+    load_config, scout_filtered_pcd_path,
 )
 from .processing import (
     PoseBuffer, PoseSample, ProcessingError, aggregate_window,
@@ -507,6 +508,8 @@ class RosMapStreamNode(object):
                 session.filtered_pcd_path = scout_filtered_pcd_path(
                     self.config, session.map_name)
                 source_pcd = session.filtered_pcd_path
+            elif self.config["integration_backend"] == "ground_air_service":
+                source_pcd = session.paths.pcd_path
             session.accumulator_pcd_baseline = file_fingerprint(source_pcd)
             session.mapping_started_at_ns = time.time_ns()
         self._log_info(
@@ -522,6 +525,11 @@ class RosMapStreamNode(object):
                     and os.path.exists(os.path.join(
                         self.config["scout_map_root"], session.map_name))):
                 raise RuntimeError("Scout map directory already exists: %s" % session.map_name)
+            if (self.config["integration_backend"] == "ground_air_service"
+                    and os.path.exists(ground_air_map_directory(
+                        self.config, session.map_name))):
+                raise RuntimeError(
+                    "ground-air map directory already exists: %s" % session.map_name)
             self._run_command(
                 "start_fast_lio", commands["start_fast_lio"],
                 timeout=(self.config["fast_lio_startup_timeout_seconds"] * 4.0) + 6.0)
@@ -571,15 +579,25 @@ class RosMapStreamNode(object):
     def _handle_stop(self, command):
         with self.lock:
             session = self.session
-            valid = (session is not None and session.state == "mapping"
-                     and command["map_id"] == session.identity["map_id"]
-                     and command["session_id"] == session.identity["session_id"])
+            matches = (session is not None
+                       and command["map_id"] == session.identity["map_id"]
+                       and command["session_id"] == session.identity["session_id"])
+            already_generating = matches and session.state == "generating"
+            valid = matches and session.state == "mapping"
             if valid:
                 session.state = "generating"
                 session.token = uuid.uuid4().hex
                 session.scans = []
                 session.window_points = 0
                 self.state = "generating"
+        if already_generating:
+            ack = self._ack_payload(command, True)
+            self._cache_response(command, "command_ack", ack, session.destination)
+            self._send(session.identity, session.destination, "command_ack", ack)
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating", "message": "map save already in progress",
+                "reason": ""})
+            return
         if not valid:
             self._reject(command, "mapping session does not match",
                          "MAP_ID_MISMATCH", self._command_destination(
@@ -639,6 +657,9 @@ class RosMapStreamNode(object):
 
     def _generate_artifact(self, session):
         commands = build_integration_commands(self.config, session.paths.values)
+        if self.config["integration_backend"] == "ground_air_service":
+            self._generate_ground_air_artifact(session, commands)
+            return
         if self.config["integration_backend"] in ("scout_finalize", "managed_finalize"):
             self._generate_scout_artifact(session, commands)
             return
@@ -687,6 +708,75 @@ class RosMapStreamNode(object):
                         "mapping cleanup after save failure also failed: %s", cleanup_exc)
             self._send_session_message(session, "artifact_status", {
                 "state": "error", "reason": str(exc)})
+            self._cleanup_fragments(session)
+            with self.lock:
+                if self.session is session:
+                    self.session = None
+                    self.state = "standby"
+
+    def _generate_ground_air_artifact(self, session, commands):
+        save_completed = False
+        mapping_stack_stopped = False
+        try:
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating",
+                "message": "saving ground-air map through save_mapping.launch",
+                "reason": ""})
+            self._run_command(
+                "save_ground_air_map", commands["save_map"],
+                timeout=self.config["map_accumulator_save_timeout_seconds"] + 6.0)
+            save_completed = True
+            fingerprint = require_fresh_file(
+                session.paths.pcd_path,
+                session.accumulator_pcd_baseline,
+                session.mapping_started_at_ns)
+            self._log_info(
+                "ground-air map freshness passed session=%s map_name=%s fingerprint=%s",
+                session.identity["session_id"][:8], session.map_name, fingerprint)
+            self._send_session_message(session, "artifact_status", {
+                "state": "generating", "message": "stopping ground-air mapping process group",
+                "reason": ""})
+            self._run_command(
+                "stop_ground_air_mapping", commands["stop_fast_lio"],
+                timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+            mapping_stack_stopped = True
+            wait_for_stable_artifacts(session.paths, self.config)
+            descriptor = build_archive(session.paths, self.config, session.identity)
+            self._publish_artifact_ready(session, descriptor)
+        except Exception as exc:
+            self._send_session_message(session, "artifact_status", {
+                "state": "error", "reason": str(exc)})
+            if not save_completed:
+                try:
+                    self._subscribe_session(session)
+                    now = self.clock()
+                    with self.lock:
+                        if self.session is session:
+                            session.state = "mapping"
+                            session.last_cloud_at = now
+                            session.last_pose_at = now
+                            session.last_heartbeat_at = now
+                            self.state = "mapping"
+                    self._send_session_message(session, "session_status", {
+                        "state": "mapping",
+                        "reason": "save failed; mapping remains active for retry",
+                        "error_code": "ARTIFACT_ERROR"})
+                    self._log_warn(
+                        "ground-air save failed; mapping retained session=%s error=%s",
+                        session.identity["session_id"][:8], exc)
+                    return
+                except Exception as resume_exc:
+                    self._log_error(
+                        "ground-air mapping could not resume after save failure: %s",
+                        resume_exc)
+            if not mapping_stack_stopped:
+                try:
+                    self._run_command(
+                        "abort_after_ground_air_failure", commands["abort_fast_lio"],
+                        timeout=self.config["fast_lio_stop_timeout_seconds"] + 6.0)
+                except Exception as cleanup_exc:
+                    self._log_error(
+                        "ground-air mapping cleanup also failed: %s", cleanup_exc)
             self._cleanup_fragments(session)
             with self.lock:
                 if self.session is session:
@@ -1203,10 +1293,9 @@ def run():
 
     rospy.init_node("epgeneral_map_stream")
     rospack = rospkg.RosPack()
-    package_path = rospack.get_path("epgeneral_map_stream")
     device_package_path = rospack.get_path("epgeneral_device_config")
     mapping_path = rospy.get_param(
-        "~mapping_config_file", package_path + "/config/mapping.yaml")
+        "~mapping_config_file", device_package_path + "/config/map_stream.yaml")
     device_path = rospy.get_param(
         "~device_config_file", device_package_path + "/config/device.yaml")
     try:

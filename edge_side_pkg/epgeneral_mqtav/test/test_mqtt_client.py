@@ -8,7 +8,9 @@ from epgeneral_mqtav.state import HealthState
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEVICE_CONFIG = ROOT.parent / "EPGeneral_device_config" / "config" / "device.yaml"
+SHARED_CONFIG = ROOT.parent / "EPGeneral_device_config" / "config"
+MQTAV_CONFIG = SHARED_CONFIG / "epgeneral_mqtav.yaml"
+DEVICE_CONFIG = SHARED_CONFIG / "device.yaml"
 
 
 class Result(object):
@@ -65,7 +67,7 @@ class FakeLogger(object):
 
 class MqttTests(unittest.TestCase):
     def setUp(self):
-        self.config = load_config(ROOT / "config" / "config.yaml", DEVICE_CONFIG)
+        self.config = load_config(MQTAV_CONFIG, DEVICE_CONFIG)
         self.health = HealthState(self.config.device)
         self.logger = FakeLogger()
         self.created = []

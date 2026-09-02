@@ -12,7 +12,7 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "scout_mini",
-      "active_map_id": "3a65592b-841d-4d59-bfda-a53c9703613a",
+      "active_map_id": "76e41303-0974-4f40-9425-557a64841fec",
       "map_bindings": [
         {
           "map_id": "d0ad7c7f-b391-48c5-8f24-c5059e9a1a01",
@@ -47,22 +47,6 @@
           }
         },
         {
-          "map_id": "76e41303-0974-4f40-9425-557a64841fec",
-          "map_frame": "map",
-          "odom_frame": "odom",
-          "pose_source": "vision_pose",
-          "localized_at": "2026-08-28T05:35:11.733047+00:00",
-          "map_from_odom": {
-            "x": 0.17818707583641002,
-            "y": -1.4799733979110867,
-            "z": 0.024843243617300215,
-            "qx": -0.010903757048880375,
-            "qy": 0.004938680110682751,
-            "qz": 0.6330660901921353,
-            "qw": 0.7740052191994301
-          }
-        },
-        {
           "map_id": "2c046f04-828f-4958-8074-b1cb03a9f812",
           "map_frame": "map",
           "odom_frame": "odom",
@@ -92,6 +76,22 @@
             "qy": 0.0034976351678016964,
             "qz": 0.009374861149581642,
             "qw": 0.9999498836798338
+          }
+        },
+        {
+          "map_id": "76e41303-0974-4f40-9425-557a64841fec",
+          "map_frame": "map",
+          "odom_frame": "odom",
+          "pose_source": "vision_pose",
+          "localized_at": "2026-09-02T07:49:40.990441+00:00",
+          "map_from_odom": {
+            "x": 1.8000314321478181,
+            "y": -1.649000615695484,
+            "z": 0.056432760809818364,
+            "qx": -0.015351387310021041,
+            "qy": 0.009917819521641823,
+            "qz": 0.6666245730464252,
+            "qw": 0.7451695816837548
           }
         }
       ]
@@ -133,14 +133,18 @@
       "device_id": "AGV_001",
       "device_name": "金城空地无人机",
       "device_type": "AGV",
-      "ip_address": "192.168.50.200",
+      "ip_address": "192.168.50.130",
       "availability": "unavailable",
       "last_tested_at": "2026-08-26T10:15:23.693467+00:00",
-      "status_cards": null,
+      "status_cards": [
+        "livox_driver",
+        "fastlio2",
+        "mapping_mode"
+      ],
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "disabled",
-      "active_map_id": null,
+      "active_map_id": "76e41303-0974-4f40-9425-557a64841fec",
       "map_bindings": []
     },
     {

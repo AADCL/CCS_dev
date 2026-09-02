@@ -1,6 +1,6 @@
 <launch>
   <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
-  <arg name="video_config_file" default="$(find epgeneral_video_srt)/config/realsense_d435i.yaml" />
+  <arg name="video_config_file" default="$(find epgeneral_device_config)/config/video.yaml" />
   <rosparam command="load" file="$(arg device_config_file)" ns="edge_device" />
 
   <node pkg="epgeneral_video_srt" type="epgeneral_video_srt_node" name="epgeneral_video_srt" output="screen">

@@ -1,0 +1,15 @@
+<launch>
+  <arg name="odom_frame" default="odom" />
+  <arg name="camera_init_frame" default="camera_init" />
+  <arg name="body_frame" default="body" />
+  <arg name="base_frame" default="base_link" />
+
+  <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="odom_camera_init_broadcaster"
+        args="0 0 0 0 0 0 $(arg odom_frame) $(arg camera_init_frame)" />
+  <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="base_link_body_broadcaster"
+        args="0 0 0 0 0 0 $(arg body_frame) $(arg base_frame)" />
+</launch>

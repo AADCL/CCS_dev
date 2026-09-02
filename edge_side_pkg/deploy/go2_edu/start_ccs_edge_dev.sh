@@ -22,19 +22,18 @@ PID_DIR="${STATE_DIR}/run"
 START_LOG="${LOG_DIR}/startup.log"
 SHUTDOWN_STARTED=false
 
-LAUNCH_NAMES=(livox_driver go2_bridge mqtav udp_telemetry video_srt map_stream relocalization)
-NODE_NAMES=(/livox_lidar_publisher2 /epqrd_go2_bridge /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_video_srt /epgeneral_map_stream /epgeneral_relocalization)
-EXPECTED_COMMANDS=(livox_ros_driver2 epqrd_go2_bridge epgeneral_mqtav epgeneral_udp_telemetry epgeneral_video_srt epgeneral_map_stream epgeneral_relocalization)
+LAUNCH_NAMES=(livox_driver mqtav udp_telemetry video_srt map_stream relocalization)
+NODE_NAMES=(/livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_video_srt /epgeneral_map_stream /epgeneral_relocalization)
+EXPECTED_COMMANDS=(livox_ros_driver2 epgeneral_mqtav epgeneral_udp_telemetry epgeneral_video_srt epgeneral_map_stream epgeneral_relocalization)
 NODE_EXECUTABLES=(
   "/home/nvidia/go2_mid360_nav/catkin_ws/devel/lib/livox_ros_driver2/livox_ros_driver2_node"
-  "${WORKSPACE}/devel/lib/epqrd_go2_bridge/epqrd_go2_bridge_node"
   "${WORKSPACE}/devel/lib/epgeneral_mqtav/epgeneral_mqtav_node.py"
   "${WORKSPACE}/devel/lib/epgeneral_udp_telemetry/epgeneral_udp_telemetry_node.py"
   "${WORKSPACE}/devel/lib/epgeneral_video_srt/epgeneral_video_srt_node"
   "${WORKSPACE}/devel/lib/epgeneral_map_stream/epgeneral_map_stream_node.py"
   "${WORKSPACE}/devel/lib/epgeneral_relocalization/epgeneral_relocalization_node.py"
 )
-NODE_PROCESS_PIDS=("" "" "" "" "" "" "")
+NODE_PROCESS_PIDS=("" "" "" "" "" "")
 
 mkdir -p "${LOG_DIR}" "${PID_DIR}"
 
@@ -58,7 +57,7 @@ fail() {
 [[ -r /opt/ros/noetic/setup.bash ]] || fail "未找到 ROS Noetic 环境"
 [[ -r "${GO2_NAV_SETUP}" ]] || fail "未找到 Go2 MID360 工作空间：${GO2_NAV_SETUP}"
 [[ -r "${WORKSPACE}/devel/setup.bash" ]] || fail "工作空间尚未编译：${WORKSPACE}"
-for config_name in device.yaml go2.yaml epgeneral_mqtav.yaml udp_telemetry.yaml relocalization.yaml; do
+for config_name in device.yaml epgeneral_mqtav.yaml udp_telemetry.yaml video.yaml map_stream.yaml relocalization.yaml task_control.yaml; do
   [[ -r "${PROFILE_CONFIG_DIR}/${config_name}" ]] \
     || fail "缺少 Go2 profile 配置：${PROFILE_CONFIG_DIR}/${config_name}"
 done
@@ -69,7 +68,6 @@ source "${WORKSPACE}/devel/setup.bash" --extend
 
 export ROS_MASTER_URI="${ROS_MASTER_URI:-http://127.0.0.1:11311}"
 export ROS_IP="${ROS_IP_VALUE}"
-export CMAKE_PREFIX_PATH="/opt/unitree_robotics:${CMAKE_PREFIX_PATH:-}"
 
 process_is_running() {
   local pid_file="$1"
@@ -287,10 +285,6 @@ sync_time
 start_roscore
 start_launch livox_driver /livox_lidar_publisher2 \
   livox_ros_driver2 msg_MID360.launch
-start_launch go2_bridge /epqrd_go2_bridge \
-  epqrd_go2_bridge epqrd_go2_bridge.launch \
-  config_file:="${PROFILE_CONFIG_DIR}/go2.yaml" \
-  device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
 start_launch mqtav /epgeneral_mqtav \
   epgeneral_mqtav epgeneral_mqtav.launch \
   config_file:="${PROFILE_CONFIG_DIR}/epgeneral_mqtav.yaml" \
@@ -299,15 +293,14 @@ start_launch udp_telemetry /epgeneral_udp_telemetry \
   epgeneral_udp_telemetry epgeneral_udp_telemetry.launch \
   telemetry_config_file:="${PROFILE_CONFIG_DIR}/udp_telemetry.yaml" \
   device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml" \
-  destination_host:="${GROUND_STATION_IP}" \
-  link_status_topic:="/qrd/QRD_001/link/udp_tx" \
-  diagnostics_topic:="/qrd/QRD_001/diagnostics"
+  destination_host:="${GROUND_STATION_IP}"
 start_launch video_srt /epgeneral_video_srt \
   epgeneral_video_srt epgeneral_realsense_d435i_srt.launch \
-  device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
+  device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml" \
+  video_config_file:="${PROFILE_CONFIG_DIR}/video.yaml"
 start_launch map_stream /epgeneral_map_stream \
   epgeneral_map_stream epgeneral_map_stream.launch \
-  mapping_config_file:="$(rospack find epgeneral_map_stream)/config/mapping.yaml" \
+  mapping_config_file:="${PROFILE_CONFIG_DIR}/map_stream.yaml" \
   device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
 start_launch relocalization /epgeneral_relocalization \
   epgeneral_relocalization epgeneral_relocalization.launch \

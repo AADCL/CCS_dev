@@ -1,6 +1,6 @@
 <launch>
   <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
-  <arg name="video_config_file" default="$(find epgeneral_video_srt)/config/video.yaml" />
+  <arg name="video_config_file" default="$(find epgeneral_device_config)/config/video.yaml" />
 
   <rosparam command="load" file="$(arg device_config_file)" ns="edge_device" />
 

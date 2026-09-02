@@ -1,0 +1,79 @@
+deployment: {state: active, enabled: true}
+schema_version: 6
+protocol_id: "ccs-map-stream-v2"
+
+network: {bind_host: "0.0.0.0", control_port: 14561, ground_station_ip: "192.168.50.101", data_port: 14562, max_datagram_bytes: 1400}
+http: {bind_host: "0.0.0.0", port: 14600, token_ttl_seconds: 900.0}
+
+ros:
+  inputs:
+    lidar: {topic: "/livox/lidar", message_type: "livox_ros_driver2/CustomMsg", frame: "base_link"}
+    imu: {topic: "/livox/imu", message_type: "sensor_msgs/Imu", frame: "base_link"}
+  stream:
+    cloud: {topic: "/cloud_registered", message_type: "sensor_msgs/PointCloud2", frame: "camera_init", coordinates: "map"}
+    pose: {topic: "/Odometry", message_type: "nav_msgs/Odometry", position_path: "pose.pose.position", orientation_path: "pose.pose.orientation"}
+  frames: {map: "camera_init", preview: "camera_init", body: "body", sensor: "body"}
+  body_from_sensor: {x: 0.0, y: 0.0, z: 0.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0}
+
+integrations:
+  backend: "ground_air_service"
+  mapping_prerequisites:
+    setup_file: "/home/bitcq/catkin_ws/devel/setup.bash"
+    launch_file: "manual_mapping_control.launch"
+    extrinsics_file: "/home/bitcq/catkin_ws/src/fast_lio_open3d/config/mid360.yaml"
+    startup_timeout_seconds: 45.0
+  fast_lio:
+    setup_file: "/home/bitcq/catkin_ws/devel/setup.bash"
+    package: "car_bringup"
+    launch_file: "manual_mapping_control.launch"
+    launch_args: ["map_id:={map_name}", "maps_root:=/home/bitcq/catkin_ws/maps"]
+    startup_timeout_seconds: 60.0
+    stop_timeout_seconds: 30.0
+    pid_path: "{session_dir}/ground_air_mapping.pid"
+    log_path: "{session_dir}/ground_air_mapping.log"
+  map_accumulator:
+    setup_file: "/home/bitcq/catkin_ws/devel/setup.bash"
+    service: "/ground_air/mapping/save"
+    save_timeout_seconds: 90.0
+  pgm:
+    setup_file: "/home/bitcq/catkin_ws/devel/setup.bash"
+    package: "car_bringup"
+    launch_file: "save_mapping.launch"
+    launch_args: []
+    generation_timeout_seconds: 90.0
+    log_path: "{session_dir}/save_mapping.log"
+  ground_air:
+    expected_nodes:
+      - "/fast_lio_node"
+      - "/fastlio_odometry_to_px4"
+      - "/ground_filter_node"
+      - "/noground_trans_node"
+      - "/dynamic_mapping"
+      - "/ground_air_map_recorder"
+      - "/ground_air_world_tf_owner"
+      - "/ground_air_start_mapping"
+      - "/odom_camera_init_broadcaster"
+      - "/base_link_body_broadcaster"
+    save_package: "car_bringup"
+    save_launch: "save_mapping.launch"
+    map_root: "/home/bitcq/catkin_ws/maps"
+    saved_pcd_filename: "cloud_map.pcd"
+    saved_pgm_filename: "map.pgm"
+    saved_yaml_filename: "map.yaml"
+    metadata_filename: "metadata.json"
+
+sync: {tolerance_seconds: 0.05, pose_buffer_size: 100, preview_transform_timeout_seconds: 0.20}
+preprocess: {sample_window_seconds: 1.0, preview_transport: "pcd_fragment_http", min_range_m: 0.30, max_range_m: 100.0, voxel_size_m: 0.05}
+timeouts: {prepare_probe_timeout_seconds: 1.5, integration_check_timeout_seconds: 8.0, ready_timeout_seconds: 60.0, input_timeout_seconds: 3.0, command_cache_seconds: 60.0, artifact_poll_seconds: 0.5, artifact_stable_polls: 2}
+limits: {max_frame_points: 200000, max_window_points: 1000000, max_decompressed_bytes: 2400000, max_artifact_bytes: 4294967296, min_free_bytes: 1073741824, command_output_bytes: 16384, max_preview_fragment_bytes: 8388608, max_pending_preview_fragments: 4, max_unacked_preview_fragments: 16}
+artifacts:
+  frame: "map"
+  workspace_root: "/home/bitcq/.ros/ccs_edge_dev_ground_air_agv/map_stream"
+  accumulator_pcd_path: "/home/bitcq/catkin_ws/maps/current/cloud_map.pcd"
+  source_pcd_path: "/home/bitcq/catkin_ws/maps/current/cloud_map.pcd"
+  source_pgm_path: "/home/bitcq/catkin_ws/maps/current/map.pgm"
+  source_yaml_path: "/home/bitcq/catkin_ws/maps/current/map.yaml"
+  archive_root: "/home/bitcq/catkin_ws/maps/archive"
+  pcd_path: "{session_dir}/map.pcd"
+  pgm_path: "{session_dir}/map.pgm"
+  yaml_path: "{session_dir}/map.yaml"

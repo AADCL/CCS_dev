@@ -1,6 +1,8 @@
 # epgeneral_video_srt
 
-当前版本：`v0.1.0`
+当前版本：`v0.1.1`
+
+运行配置统一由 `epgeneral_device_config/config/video.yaml` 提供；设备专用视频参数保存在对应部署 profile。
 
 该 ROS Noetic 包订阅现有 `sensor_msgs/Image` 或 `sensor_msgs/CompressedImage`
 话题，将图像编码为低延迟 baseline H.264，封装为 MPEG-TS，并通过 SRT Listener
@@ -41,7 +43,7 @@ sudo ufw allow 9000/udp
 
 ## 配置与启动
 
-`config/video.yaml` 的主要参数：
+`epgeneral_device_config/config/video.yaml` 的主要参数：
 
 ```yaml
 image_topic: "/camera/image_raw"
@@ -63,10 +65,11 @@ source devel/setup.bash
 roslaunch epgeneral_video_srt epgeneral_video_srt.launch
 ```
 
-压缩图像可使用 `config/compressed_video.yaml`。RealSense profile 使用：
+压缩图像将 `image_message_type` 设置为 `sensor_msgs/CompressedImage` 并填写对应压缩话题。RealSense D435i 参数保存在 `deploy/go2_edu/config/video.yaml`；适配 launch 需显式传入集中配置：
 
 ```bash
-roslaunch epgeneral_video_srt epgeneral_realsense_d435i_srt.launch
+roslaunch epgeneral_video_srt epgeneral_realsense_d435i_srt.launch \
+  video_config_file:="$(rospack find epgeneral_device_config)/config/video.yaml"
 ```
 
 本包只订阅话题，摄像头驱动需单独启动。可用下列命令检查输入和本机输出：

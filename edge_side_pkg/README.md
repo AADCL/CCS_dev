@@ -1,68 +1,55 @@
-<!--
- * @Author: alex 289724358@qq.com
- * @Date: 2026-08-18 10:52:31
- * @LastEditors: alex 289724358@qq.com
- * @LastEditTime: 2026-08-24 16:50:43
- * @FilePath: \SwarmDatad:\Projects\AI_assisted\CCS_dev\edge_side_pkg\README.md
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
--->
-# edge_side_pkg
+# 端侧功能包
 
-`edge_side_pkg` 是配合地面站指挥控制系统部署到端侧设备的 ROS 功能包目录。它不是单独的 ROS 包，而是便于一起复制到 catkin 工作空间的部署容器。
+`edge_side_pkg` 是指控端维护的端侧 ROS 源码与设备部署资料目录。端侧部署物只包含七个 ROS 包；`deploy` 和 `documents` 始终保留在指控端。
 
-命名规则：通用包目录使用 `EPGeneral_<function>`，ROS/catkin 包名使用全小写 `epgeneral_<function>`。设备专属扩展使用 `EPDQUAV_`、`EPUGV_`、`EPQRD_`、`EPDATUGV_` 或 `EPAGUAV_` 目录前缀，对应 ROS 前缀为 `epdquav_`、`epugv_`、`epqrd_`、`epdatugv_`、`epaguav_`。
+## 固定部署包
 
-地面站当前为 v0.19.2；视频链路要求端侧使用 `epgeneral_video_srt` v0.1.0。`epgeneral_map_stream` v0.9.1 随建图链启动 map accumulator，并在停止进程前保存和校验 PCD。v0.19.2 仅修复地面站初始位姿选择器，端侧包无需更新。
+| 目录 | ROS 包 | 版本 | 职责 |
+| --- | --- | --- | --- |
+| `EPGeneral_device_config` | `epgeneral_device_config` | 0.1.1 | 设备身份及六类公共运行配置 |
+| `EPGeneral_map_stream` | `epgeneral_map_stream` | 0.13.1 | 遥控建图、预览和成果服务 |
+| `epgeneral_mqtav` | `epgeneral_mqtav` | 0.4.1 | MQTT presence、heartbeat 和状态 |
+| `EPGeneral_relocalization` | `epgeneral_relocalization` | 0.2.3 | 地图下载与重定位协调 |
+| `EPGeneral_task_control` | `epgeneral_task_control` | 0.4.4 | 任务接收、调度与执行协调 |
+| `EPGeneral_udp_telemetry` | `epgeneral_udp_telemetry` | 0.3.1 | 分级 UDP 实时遥测 |
+| `EPGeneral_video_srt` | `epgeneral_video_srt` | 0.1.1 | ROS 图像到 SRT Listener |
 
-地面站修改设备 ID 后，必须同步修改端侧共享 `device.yaml` 并重启 MQTT、UDP、建图、任务和视频节点。v0.15.1 只修复地面站融合算法的可迁移路径；v0.15.0 的展示与本地引用调整以及现有端侧协议字段、功能包版本均保持不变。
+功能包内部不保存运行 YAML。统一配置位于 `EPGeneral_device_config/config/`：
 
-本次启动流程修正将 `epgeneral_map_stream` 升级至 v0.9.1；地面站保持 v0.18.3，其他端侧包版本和协议 ID 保持不变。
+- `device.yaml`
+- `epgeneral_mqtav.yaml`
+- `udp_telemetry.yaml`
+- `video.yaml`
+- `map_stream.yaml`
+- `relocalization.yaml`
+- `task_control.yaml`
 
-## 包含内容
+## 指控端资料
 
-- `EPQRD_go2_bridge` / `epqrd_go2_bridge` v0.2.0：完整转发 Go2 EDU Unitree SDK2 LowState/SportModeState，并保留带设备前缀的标准 ROS 电池、IMU、里程计、心跳和诊断话题。
-- `deploy/go2_edu`：Go2 EDU 基础监控套件配置、统一 bringup 和部署指南。
-  bringup 与一键脚本会显式向各节点传入同一 profile；安装脚本时需同步安装
-  `config/*.yaml`，并用 `ground_station_ip`/`CCS_GROUND_STATION_IP` 设置地面站地址。
-
-- `epgeneral_device_config` v0.1.0：保存端侧设备 ID/IP 的共享配置。地面站 `config/devices.json` 必须有同 ID 且 IP 相同的记录。
-- `epgeneral_mqtav` v0.4.0：订阅可配置 ROS 状态和电池字段，支持自定义状态新鲜度，并向地面站 MQTT Broker 发布带启动 session 的 presence、heartbeat、status。
-- `epgeneral_video_srt` v0.1.0：订阅配置的 ROS 原始或压缩图像话题，并通过 GStreamer 以 SRT Listener 输出 baseline H.264/MPEG-TS，默认 UDP 9000。
-- `epgeneral_udp_telemetry` v0.3.0：按 profile 订阅本地位姿、IMU、点云和 FAST_LIO2，并按活动地图安全检查 PGM 文件，以 20/5/1 Hz 向地面站 UDP 14560 发送分级遥测。
-- `epgeneral_map_stream` v0.9.1：建图启动时拉起 map accumulator；停止时保存并校验当前 session PCD，再停止建图进程和生成 PGM/YAML/ZIP。
-- `epgeneral_task_control` v0.1.0：监听 UDP 14563 任务指令，原子保存 XML，通过 ROS 强类型接口协调执行，并向 UDP 14564 回传状态和进度。
-- `epgeneral_relocalization` v0.2.2：监听 UDP 14565，以 schema 2 持久化活动地图及有效 TF；进程重启时清除旧 localized 状态，安全下载地图 ZIP并协调 Scout 重定位栈。Go2 同步状态清理框架但后端保持禁用。
-
-## v0.8.0 实时建图接口
-
-地面站 v0.18.3 与 `epgeneral_map_stream` v0.9.1 使用独立 `ccs-map-stream-v2`：UDP 14561/14562 传输控制、状态、PCD 描述符与 ACK，实时分片和最终 ZIP 均通过端侧 TCP 14600 下载。
-
-双方实现遵循根目录 `docs/EDGE_DEVICE_INTERFACES.md`，包括 MessagePack 信封、1400 字节数据报上限、CRC32、zlib、`map <- body <- sensor` 坐标约定、ACK 幂等和超时处理。
-
-## v0.11.0 联合建图兼容扩展
-
-历史 v1 后端支持多设备独立会话及可选 `job_id`、`role`、`primary_device_id` 字段；v0.5.0 端侧运行路径使用 v2 单机协商，不读取这些 v1 扩展字段。
-
-## v0.9.1 任务接口状态
-
-地面站新增 `ccs-task-control-v1`，向端侧 UDP 14563 下发轨迹任务，并在 UDP 14564 接收 ACK、任务心跳、状态和航点进度。完整字段、时钟约束与错误码见根目录 `docs/EDGE_DEVICE_INTERFACES.md`。
-
-`epgeneral_task_control` v0.1.0 已实现该协议、XML 轨迹持久化、ID 状态机、UTC 调度及 ROS command/feedback 边界。它不直接操作 MAVROS；真实运动必须由设备专属控制节点实现包内消息接口。其余端侧包版本保持不变。
+- `deploy/<profile>/`：设备 profile、设备适配 launch、一键启动脚本和系统配置原件。部署时只选择性复制其中内容，不能把 `deploy` 目录整体放入 catkin `src`。
+- `documents/`：部署指南、实际部署记录、回滚步骤和配置校验信息，不保存另一套运行配置。
 
 ## 部署
 
+在指控端准备临时发布目录，将所选 profile 的同名 YAML 覆盖到临时副本的 `EPGeneral_device_config/config/`，然后只复制以下七个目录：
+
 ```bash
-mkdir -p ~/catkin_ws/src
-cp -r edge_side_pkg ~/catkin_ws/src/
-cd ~/catkin_ws
-source /opt/ros/noetic/setup.bash
-rosdep install --from-paths src --ignore-src -r -y
-catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
-source devel/setup.bash
+EDGE_SRC=/path/to/CCS_dev/edge_side_pkg
+STAGING=$(mktemp -d)
+mkdir -p "${STAGING}/src"
+for package in \
+  EPGeneral_device_config EPGeneral_map_stream epgeneral_mqtav \
+  EPGeneral_relocalization EPGeneral_task_control \
+  EPGeneral_udp_telemetry EPGeneral_video_srt
+do
+  cp -a "${EDGE_SRC}/${package}" "${STAGING}/src/"
+done
+
+PROFILE=scout_mini
+cp "${EDGE_SRC}/deploy/${PROFILE}/config/"*.yaml \
+  "${STAGING}/src/EPGeneral_device_config/config/"
 ```
 
-修改 `epgeneral_device_config/config/device.yaml` 后，使用各包 launch 或对应设备的一键启动脚本。重定位还需放行 UDP 14565/14566 和地面站 TCP 14601；Scout 使用启用 profile，Go2 只启动禁用协调节点。
+将 `${STAGING}/src/` 复制到端侧 catkin 工作空间后重新构建。设备专项启动脚本、launch 或 NTP 配置按对应 profile 的部署文档安装到工作空间约定位置，不保留 `deploy/<profile>` 目录层级。
 
-每次新增或更新 Python ROS 包后，执行 `catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3` 并在启动 roslaunch 的同一终端执行 `source devel/setup.bash`。
-
-端侧视频运行基线为 Ubuntu 20.04、ROS Noetic、GStreamer 1.16+；系统运行于可信局域网，不提供 MQTT/SRT/UDP 认证、TLS、录制或通用可靠重传。
+地面站修改设备 ID 后，必须同步更新端侧 `device.yaml` 并重启 MQTT、UDP、建图、重定位、任务和视频节点。协议字段、端口与安全边界以根目录 `docs/EDGE_DEVICE_INTERFACES.md` 为准。

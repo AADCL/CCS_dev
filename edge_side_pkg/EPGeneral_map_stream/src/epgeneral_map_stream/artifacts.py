@@ -317,8 +317,11 @@ def build_archive(paths, config, identity):
     map_name = paths.values.get("map_name")
     if map_name:
         manifest["map_name"] = map_name
+        map_root = (config.get("ground_air_map_root", "")
+                    if config.get("integration_backend") == "ground_air_service"
+                    else config.get("scout_map_root", ""))
         manifest["device_map_directory"] = os.path.join(
-            config.get("scout_map_root", ""), map_name)
+            map_root, map_name)
     temporary = paths.archive_path + ".tmp"
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
         archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True).encode("utf-8"))

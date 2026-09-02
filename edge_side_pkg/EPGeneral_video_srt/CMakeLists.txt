@@ -39,6 +39,6 @@ add_dependencies(epgeneral_video_srt_node ${catkin_EXPORTED_TARGETS})
 install(TARGETS epgeneral_video_srt_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
-install(DIRECTORY config launch
+install(DIRECTORY launch
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

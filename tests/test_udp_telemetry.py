@@ -36,7 +36,10 @@ class UdpConfigAndProtocolTests(unittest.TestCase):
         try:
             from epgeneral_udp_telemetry.config import load_config as load_edge_config
             edge = load_edge_config(
-                str(edge_package / "config" / "telemetry.yaml"),
+                str(
+                    ROOT / "edge_side_pkg" / "EPGeneral_device_config"
+                    / "config" / "udp_telemetry.yaml"
+                ),
                 str(ROOT / "edge_side_pkg" / "EPGeneral_device_config" / "config" / "device.yaml"),
             )
         finally:

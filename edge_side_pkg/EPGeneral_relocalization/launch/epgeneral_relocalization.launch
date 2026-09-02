@@ -1,5 +1,5 @@
 <launch>
-  <arg name="config_file" default="$(find epgeneral_relocalization)/config/relocalization.yaml" />
+  <arg name="config_file" default="$(find epgeneral_device_config)/config/relocalization.yaml" />
   <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
   <node pkg="epgeneral_relocalization" type="epgeneral_relocalization_node.py"
         name="epgeneral_relocalization" output="screen"
