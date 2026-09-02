@@ -23,7 +23,7 @@ from ..device_config import DeviceConfigError
 from ..device_dialogs import DeviceTypeTemplateDialog, EditDeviceDialog, NewDeviceDialog
 from ..device_migration import DeviceMigrationError, DeviceReferenceMigrationCoordinator
 from ..models import ConnectionStatus, DeviceSnapshot
-from ..widgets import DeviceCard
+from ..widgets import CardIcon, DeviceCard
 from ..styles import ThemeMode, ThemePalette, theme_palette
 from .device_detail_page import DeviceDetailPage
 
@@ -122,7 +122,13 @@ class DevicesPage(QWidget):
         self.connection_message.setObjectName("muted")
         self.connection_message.setMaximumWidth(300)
         self.connection_message.setWordWrap(True)
-        mqtt_layout.addWidget(self.connection_label)
+        mqtt_header = QHBoxLayout()
+        mqtt_header.setSpacing(8)
+        self.mqtt_icon = CardIcon("MQTT 状态", icon_name="mqtt", size=24)
+        mqtt_header.addWidget(self.mqtt_icon)
+        mqtt_header.addWidget(self.connection_label)
+        mqtt_header.addStretch()
+        mqtt_layout.addLayout(mqtt_header)
         mqtt_layout.addWidget(self.connection_message)
         header.addWidget(self.mqtt_module_card, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
@@ -161,9 +167,14 @@ class DevicesPage(QWidget):
         self.metrics_grid = QGridLayout()
         self.metrics_grid.setHorizontalSpacing(12)
         self.metrics_grid.setVerticalSpacing(12)
-        self.metric_total, self.total_value = self._metric("设备总数")
-        self.metric_online, self.online_value = self._metric("在线设备")
-        self.metric_alert, self.alert_value = self._metric("需关注")
+        self.metric_icons: list[CardIcon] = []
+        self.metric_total, self.total_value = self._metric("设备总数", icon_name="device")
+        self.metric_online, self.online_value = self._metric(
+            "在线设备", icon_file="devices_online.svg"
+        )
+        self.metric_alert, self.alert_value = self._metric(
+            "需关注", icon_file="devices_warning.svg"
+        )
         self.metrics = [self.metric_total, self.metric_online, self.metric_alert]
         layout.addLayout(self.metrics_grid)
 
@@ -199,20 +210,28 @@ class DevicesPage(QWidget):
         layout.addWidget(self.scroll, 1)
         self._apply_responsive_layout(1100)
 
-    @staticmethod
-    def _metric(label_text: str) -> tuple[QFrame, QLabel]:
+    def _metric(
+        self, label_text: str, *, icon_name: str | None = None,
+        icon_file: str | None = None,
+    ) -> tuple[QFrame, QLabel]:
         frame = QFrame()
         frame.setObjectName("metric")
         frame.setMinimumSize(125, 70)
         frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout = QVBoxLayout(frame)
+        layout = QGridLayout(frame)
         layout.setContentsMargins(14, 10, 14, 10)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(3)
+        icon = CardIcon(label_text, icon_name=icon_name, icon_file=icon_file, size=28)
+        self.metric_icons.append(icon)
         value = QLabel("0")
         value.setObjectName("metricValue")
         label = QLabel(label_text)
         label.setObjectName("metricLabel")
-        layout.addWidget(value)
-        layout.addWidget(label)
+        layout.addWidget(icon, 0, 0, 2, 1, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(value, 0, 1)
+        layout.addWidget(label, 1, 1)
+        layout.setColumnStretch(1, 1)
         return frame, value
 
     @staticmethod
@@ -300,6 +319,8 @@ class DevicesPage(QWidget):
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
         self.detail_page.set_theme(palette)
+        for icon in (*self.metric_icons, self.mqtt_icon):
+            icon.set_theme(palette)
         for card in self.card_container.findChildren(DeviceCard):
             card.set_theme(palette)
         self.update()

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractSpinBox, QCheckBox, QDoubleSpinBox, QFrame, QGridLayout, QLabel,
     QProgressBar, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
+from .app_icons import app_icon, asset_icon
 from .models import ConnectionStatus, DeviceSnapshot, LocalizationStatus, TaskStatus
 from .styles import ThemeMode, ThemePalette, theme_palette
 
@@ -25,6 +26,43 @@ STATUS_TEXT = {
     TaskStatus.COMPLETED: "已完成",
     TaskStatus.UNKNOWN: "未知",
 }
+
+
+class CardIcon(QLabel):
+    def __init__(
+        self,
+        label: str,
+        *,
+        icon_name: str | None = None,
+        icon_file: str | None = None,
+        size: int,
+    ) -> None:
+        super().__init__()
+        self.icon_name = icon_name
+        self.icon_file = icon_file
+        self.icon_size = QSize(size, size)
+        self.theme_palette = theme_palette(ThemeMode.NIGHT)
+        self.setFixedSize(self.icon_size)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setToolTip(label)
+        self.setAccessibleName(f"{label}图标")
+        self.setProperty("appIconName", icon_name or icon_file or "")
+        self._refresh_icon()
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        self.theme_palette = palette
+        self._refresh_icon()
+
+    def _refresh_icon(self) -> None:
+        if self.icon_file is not None:
+            icon = asset_icon(self.icon_file)
+            self.setProperty("appIconMode", "static")
+        else:
+            icon = app_icon(self.icon_name or "", self.theme_palette)
+            self.setProperty("appIconMode", self.theme_palette.mode.value)
+        pixmap = icon.pixmap(self.icon_size)
+        self.setPixmap(pixmap)
+        self.setVisible(not pixmap.isNull())
 
 
 class NoButtonSpinBox(QSpinBox):
