@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..app_icons import app_icon, asset_icon
+from ..widgets import CardIcon
 from ..data_source import DeviceDataSource
 from ..models import ConnectionStatus, DeviceSnapshot, SystemOverview
 from ..styles import ThemeMode, ThemePalette, theme_palette
@@ -30,44 +30,12 @@ RUNTIME_ICON_NAMES = {
     SubsystemId.MQTT_SUBSCRIBER: "mqtt",
     SubsystemId.UDP_TELEMETRY: "UDP",
     SubsystemId.SRT_FFMPEG: "camera",
+    SubsystemId.MAP_BUILDING: "realTimeMapping",
+    SubsystemId.TASK_CONTROL: "UDPtask",
+    SubsystemId.RELOCALIZATION: "localization",
+    SubsystemId.MAP_REPOSITORY: "mapStorage",
+    SubsystemId.TASK_REPOSITORY: "taskStorage",
 }
-
-
-class CardIcon(QLabel):
-    def __init__(
-        self,
-        label: str,
-        *,
-        icon_name: str | None = None,
-        icon_file: str | None = None,
-        size: int,
-    ) -> None:
-        super().__init__()
-        self.icon_name = icon_name
-        self.icon_file = icon_file
-        self.icon_size = QSize(size, size)
-        self.theme_palette = theme_palette(ThemeMode.NIGHT)
-        self.setFixedSize(self.icon_size)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setToolTip(label)
-        self.setAccessibleName(f"{label}图标")
-        self.setProperty("appIconName", icon_name or icon_file or "")
-        self._refresh_icon()
-
-    def set_theme(self, palette: ThemePalette) -> None:
-        self.theme_palette = palette
-        self._refresh_icon()
-
-    def _refresh_icon(self) -> None:
-        if self.icon_file is not None:
-            icon = asset_icon(self.icon_file)
-            self.setProperty("appIconMode", "static")
-        else:
-            icon = app_icon(self.icon_name or "", self.theme_palette)
-            self.setProperty("appIconMode", self.theme_palette.mode.value)
-        pixmap = icon.pixmap(self.icon_size)
-        self.setPixmap(pixmap)
-        self.setVisible(not pixmap.isNull())
 
 
 class MetricCard(QFrame):
@@ -232,7 +200,7 @@ class HomePage(QWidget):
         )
         map_count = len(self.map_repository.maps()) if self.map_repository is not None else len(self.overview.maps)
         self.maps_card = MetricCard(
-            "本地地图数量", str(map_count), icon_name="mapstorage"
+            "本地地图数量", str(map_count), icon_name="mapStorage"
         )
         task_count = self.task_repository.execution_count() if self.task_repository else self.overview.task_execution_count
         self.tasks_card = MetricCard(

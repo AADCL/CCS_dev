@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QTimer, Signal
-from PySide6.QtGui import QIcon, QKeyEvent
+from PySide6.QtGui import QIcon, QKeyEvent, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QApplication,
@@ -19,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from .data_source import DeviceDataSource, simulated_overview
-from .app_icons import apply_button_icon
+from .app_icons import apply_button_icon, lab_logo_path
 from .map_repository import MapRepository
 from .models import SystemOverview
 from .pages import CommandDashboardPage, DevicesPage, HomePage, MapPage, TaskPage
@@ -122,6 +123,26 @@ class MainWindow(QMainWindow):
         version = QLabel(f"v{__version__}")
         version.setObjectName("navVersion")
         nav_layout.addWidget(version)
+        nav_layout.addSpacing(8)
+        self.lab_logo_label = QLabel()
+        self.lab_logo_label.setObjectName("labLogo")
+        self.lab_logo_label.setFixedSize(32, 32)
+        self.lab_logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lab_logo_label.setAccessibleName("AADCL 实验室 Logo")
+        self.lab_logo_label.setToolTip("AADCL")
+        logo = QPixmap(str(lab_logo_path()))
+        if logo.isNull():
+            logging.getLogger(__name__).warning("Lab logo is missing or invalid: %s", lab_logo_path())
+        else:
+            self.lab_logo_label.setPixmap(logo.scaled(
+                32, 32, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+        nav_layout.addWidget(self.lab_logo_label)
+        self.lab_name_label = QLabel("AADCL")
+        self.lab_name_label.setObjectName("labName")
+        self.lab_name_label.setAccessibleName("AADCL 实验室")
+        nav_layout.addWidget(self.lab_name_label)
         layout.addWidget(self.navigation)
 
         self.pages = QStackedWidget()
@@ -173,6 +194,9 @@ class MainWindow(QMainWindow):
         self.theme_palette = theme_palette(self.theme_mode)
         QApplication.instance().setPalette(build_qt_palette(self.theme_mode))
         QApplication.instance().setStyleSheet(build_stylesheet(self.theme_mode))
+        self.lab_name_label.setStyleSheet(
+            f"font-size: 14px; font-weight: bold; color: {self.theme_palette.text};"
+        )
         for page in (self.home_page, self.devices_page, self.map_page, self.task_page, self.command_page):
             set_theme = getattr(page, "set_theme", None)
             if set_theme is not None:

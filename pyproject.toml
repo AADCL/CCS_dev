@@ -1,6 +1,6 @@
 [project]
 name = "ccs-monitor"
-version = "0.22.5"
+version = "0.22.9"
 description = "多异构智能体指挥与控制地面站"
 readme = "README.md"
 requires-python = ">=3.10"
