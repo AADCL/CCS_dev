@@ -1,5 +1,13 @@
 # 开发笔记
 
+## v0.23.0 发布工程
+
+统一路径接口位于 ccs_monitor.runtime_paths：application_root 管理可写配置和数据，resource_root 管理冻结资源。禁止新增基于 CWD 或 _internal 的持久化目录。主题默认使用 config/appearance.ini；首次源码启动读取旧 QSettings。融合安装版调用独立 worker，FFmpeg 经外部进程环境适配后启动。
+
+release/defaults 是发布配置唯一来源，不从现场 config/data 生成安装包。维护默认设备类型时须同时维护其图标。构建入口、依赖基线、清单、升级卸载约束和实际验证状态见 [发布指南](RELEASING.md) 与 [验证记录](RELEASE_VALIDATION.md)。
+
+
+
 ## v0.22.9 首页、设备页图标与 AADCL 品牌
 
 - 所有应用 SVG（含无主题的 `devices_online.svg`、`devices_offline.svg`、`devices_warning.svg`）统一由 `ccs_monitor.app_icons` 从模块相对路径 `icons/app_icons/` 解析，不依赖运行目录。共享 `ccs_monitor.widgets.CardIcon` 提供固定尺寸、Tooltip、可访问名称与主题刷新；缺失或不可渲染时记录告警并隐藏图形，卡片文字/数据不受影响。

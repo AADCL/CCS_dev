@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from .external_process import start_external_process
+
 import json
 import os
 import shutil
 from dataclasses import dataclass
+from .runtime_paths import application_root
 from pathlib import Path
 from typing import Callable, Mapping
 from urllib.parse import urlencode
@@ -109,6 +112,11 @@ def resolve_ffmpeg_executable(
     if "/" in configured or "\\" in configured or configured_path.parent != Path("."):
         return str((Path(application_root) / configured_path).resolve())
 
+    if configured == "ffmpeg":
+        for relative in ("tools/ffmpeg/bin/ffmpeg.exe", "tools/ffmpeg/bin/ffmpeg"):
+            match = existing_file(Path(application_root) / relative)
+            if match:
+                return match
     environment = os.environ if environ is None else environ
     process_path = environment.get("PATH", "")
     direct_match = shutil.which(configured, path=process_path)
@@ -145,8 +153,8 @@ def resolve_ffmpeg_executable(
 
 
 def load_srt_video_config(path: str | Path | None = None) -> SrtVideoConfig:
-    application_root = Path(__file__).resolve().parents[1]
-    config_path = Path(path) if path is not None else application_root / "config" / "srt_video.json"
+    app_root = application_root()
+    config_path = Path(path) if path is not None else app_root / "config" / "srt_video.json"
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -159,7 +167,7 @@ def load_srt_video_config(path: str | Path | None = None) -> SrtVideoConfig:
     executable_path = Path(executable)
     if executable_path.is_absolute():
         raise SrtVideoConfigError("FFmpeg 静态路径必须相对软件根目录配置")
-    executable = resolve_ffmpeg_executable(executable, application_root)
+    executable = resolve_ffmpeg_executable(executable, app_root)
     values = {name: int(payload.get(name, default)) for name, default in (
         ("output_width", 640), ("output_height", 480), ("output_fps", 30),
         ("probe_size_bytes", 1_000_000), ("analyze_duration_us", 1_000_000),
@@ -253,7 +261,7 @@ class SrtFfmpegReceiver(QObject):
         self._checking_protocols = True
         self._process = self._new_process()
         self.state_changed.emit("checking")
-        self._process.start(self.config.ffmpeg_executable, ["-hide_banner", "-protocols"])
+        start_external_process(self._process, self.config.ffmpeg_executable, ["-hide_banner", "-protocols"])
 
     def _start_stream_process(self) -> None:
         if not self._requested or self._endpoint is None:
@@ -268,7 +276,7 @@ class SrtFfmpegReceiver(QObject):
         self._process.readyReadStandardError.connect(self._read_stderr)
         args = self.ffmpeg_arguments(self._endpoint)
         self.state_changed.emit("connecting")
-        self._process.start(self.config.ffmpeg_executable, args)
+        start_external_process(self._process, self.config.ffmpeg_executable, args)
         self._first_frame_timer.start()
 
     def ffmpeg_arguments(self, endpoint: SrtEndpoint) -> list[str]:

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from .runtime_paths import application_root
 from pathlib import Path
 
 
-DEFAULT_TASK_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "task_system.json"
+DEFAULT_TASK_CONFIG_PATH = application_root() / "config" / "task_system.json"
 
 
 class TaskSystemConfigError(ValueError):

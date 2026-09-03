@@ -12,6 +12,7 @@ import sys
 import tempfile
 import uuid
 from dataclasses import asdict, replace
+from .runtime_paths import application_root, fusion_worker_command
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -25,8 +26,8 @@ from .static_paths import StaticPathError, StaticPathResolver
 
 PLUGIN_API_VERSION = 1
 BUILTIN_ALGORITHM_ID = "builtin_voxel_merge"
-DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "config" / "map_fusion_algorithms.json"
-DEFAULT_ASSET_ROOT = Path(__file__).resolve().parent.parent / "data" / "map_fusion_algorithms"
+DEFAULT_REGISTRY_PATH = application_root() / "config" / "map_fusion_algorithms.json"
+DEFAULT_ASSET_ROOT = application_root() / "data" / "map_fusion_algorithms"
 
 
 class MapFusionError(RuntimeError):
@@ -360,8 +361,9 @@ class MapFusionRunner:
             request_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
             try:
                 completed = subprocess.run(
-                    [sys.executable, "-m", "ccs_monitor.map_fusion_worker", str(request_path), str(result_path)],
-                    cwd=str(Path(__file__).resolve().parent.parent), capture_output=True, text=True,
+                    fusion_worker_command(request_path, result_path),
+                    cwd=str(application_root()), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     timeout=self.timeout_seconds, check=False,
                 )
             except subprocess.TimeoutExpired as exc:

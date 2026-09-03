@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from .runtime_paths import application_root
 from pathlib import Path
 from typing import Protocol
 
@@ -28,7 +29,7 @@ from .models import (
 )
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "devices.json"
+DEFAULT_CONFIG_PATH = application_root() / "config" / "devices.json"
 
 
 class DeviceDataSource(Protocol):

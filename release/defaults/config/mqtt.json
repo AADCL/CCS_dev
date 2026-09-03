@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "broker": {
+    "bind_host": "0.0.0.0",
+    "port": 1883
+  },
+  "subscriber_client_id": "ccs-ground-station",
+  "qos": 1,
+  "topic_root": "mqtav",
+  "monitor": {
+    "heartbeat_check_hz": 1,
+    "warning_timeout_seconds": 2,
+    "error_timeout_seconds": 5,
+    "log_capacity": 500
+  }
+}

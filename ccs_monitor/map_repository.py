@@ -11,6 +11,7 @@ import uuid
 import zipfile
 from dataclasses import replace
 from datetime import datetime, timezone
+from .runtime_paths import application_root
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -38,7 +39,7 @@ from .point_cloud import MapPointCloudLoader, PointCloudError
 
 
 MAP_SCHEMA_VERSION = 5
-DEFAULT_MAP_ROOT = Path(__file__).resolve().parent.parent / "data" / "map_server"
+DEFAULT_MAP_ROOT = application_root() / "data" / "map_server"
 
 
 class MapRepositoryError(RuntimeError):

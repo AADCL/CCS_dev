@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from .runtime_paths import application_root
 from pathlib import Path
 
 
-DEFAULT_RELOCALIZATION_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "relocalization.json"
+DEFAULT_RELOCALIZATION_CONFIG_PATH = application_root() / "config" / "relocalization.json"
 
 
 class RelocalizationConfigError(ValueError):

@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from .runtime_paths import application_root
 from pathlib import Path
 
 
-DEFAULT_UDP_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "udp_telemetry.json"
+DEFAULT_UDP_CONFIG_PATH = application_root() / "config" / "udp_telemetry.json"
 ALLOWED_TYPES = {"pose", "imu", "pointcloud_status", "availability", "text_status"}
 LEVEL_RATES = {1: 20, 2: 5, 3: 1}
 

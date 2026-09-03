@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 import sys
+from .runtime_paths import resource_root, prepare_storage, configure_logging, application_root
+from .installation import installation_lock
 from pathlib import Path
 
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import QTimer
 
 from .device_config import DeviceConfigRepository
@@ -37,6 +39,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def configure_application_font(app: QApplication) -> None:
+    bundled_font = resource_root() / "ccs_monitor/assets/fonts/NotoSansCJK-Regular.ttc"
+    if bundled_font.is_file():
+        QFontDatabase.addApplicationFont(str(bundled_font))
     preferred_families = ("Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "SimHei")
     available = set(QFontDatabase.families())
     for family in preferred_families:
@@ -57,9 +62,17 @@ def configure_application_font(app: QApplication) -> None:
 def main() -> int:
     app = QApplication(sys.argv)
     configure_application_font(app)
+    try:
+        prepare_storage()
+        configure_logging()
+        storage_lock = installation_lock(application_root())
+        storage_lock.__enter__()
+    except (OSError, RuntimeError) as exc:
+        QMessageBox.critical(None, "CCS 启动失败", str(exc))
+        return 1
     app.setApplicationName("CCS Device Monitor")
     app.setApplicationVersion(__version__)
-    app.setWindowIcon(QIcon(str(Path(__file__).resolve().parent / "assets" / "ccs_logo.svg")))
+    app.setWindowIcon(QIcon(str(resource_root() / "ccs_monitor" / "assets" / "ccs_logo.svg")))
     system_status = SystemRuntimeStatusStore(app)
     mqtt_error = None
     try:
@@ -204,4 +217,7 @@ def main() -> int:
     srt_probe = SrtCapabilityProbe(system_status)
     QTimer.singleShot(0, srt_probe.start)
     window.show()
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        storage_lock.__exit__(None, None, None)

@@ -1,0 +1,14 @@
+{
+  "windows": {
+    "version": "8.1.2",
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip",
+    "sha256": "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec",
+    "source": "https://www.gyan.dev/ffmpeg/builds/"
+  },
+  "linux": {
+    "version": "8.1.2-50-g1a748fe2cd",
+    "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-linux64-lgpl-8.1.tar.xz",
+    "sha256": "7d6d93e9c39e0e461feb13c118e91e4eec2515e4da3a01d4ad6790996731bbee",
+    "source": "https://github.com/BtbN/FFmpeg-Builds/tree/autobuild-2026-08-31-13-27"
+  }
+}

@@ -116,8 +116,20 @@ def theme_palette(mode: ThemeMode | str) -> ThemePalette:
     return _PALETTES[ThemeMode(mode)]
 
 
+def local_settings() -> QSettings:
+    from .runtime_paths import application_root, is_frozen
+    path = application_root() / "config" / "appearance.ini"
+    settings = QSettings(str(path), QSettings.Format.IniFormat)
+    if not path.exists() and not is_frozen():
+        legacy = QSettings("CCS", "CCS Device Monitor")
+        if legacy.contains("appearance/theme"):
+            settings.setValue("appearance/theme", legacy.value("appearance/theme"))
+            settings.sync()
+    return settings
+
+
 def load_theme_mode(settings: QSettings | None = None) -> ThemeMode:
-    settings = settings or QSettings("CCS", "CCS Device Monitor")
+    settings = settings if settings is not None else local_settings()
     raw = settings.value("appearance/theme", ThemeMode.NIGHT.value)
     try:
         return ThemeMode(str(raw))
@@ -126,7 +138,7 @@ def load_theme_mode(settings: QSettings | None = None) -> ThemeMode:
 
 
 def save_theme_mode(mode: ThemeMode | str, settings: QSettings | None = None) -> None:
-    settings = settings or QSettings("CCS", "CCS Device Monitor")
+    settings = settings if settings is not None else local_settings()
     settings.setValue("appearance/theme", ThemeMode(mode).value)
     settings.sync()
 
