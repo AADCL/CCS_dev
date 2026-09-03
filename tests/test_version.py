@@ -8,8 +8,13 @@ from ccs_monitor import __version__
 
 class VersionTests(unittest.TestCase):
     def test_version_is_semantic_triplet(self):
-        self.assertEqual(__version__, "0.22.8")
+        self.assertEqual(__version__, "0.22.9")
         self.assertRegex(__version__, re.compile(r"^\d+\.\d+\.\d+$"))
+
+    def test_project_metadata_matches_runtime(self):
+        root = Path(__file__).resolve().parents[1]
+        metadata = (root / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn(f'version = "{__version__}"', metadata)
 
     def test_map_stream_package_versions_match(self):
         root = Path(__file__).resolve().parents[1] / "edge_side_pkg" / "EPGeneral_map_stream"

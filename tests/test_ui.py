@@ -13,11 +13,13 @@ if PYSIDE_AVAILABLE:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QSettings, Qt
     from PySide6.QtGui import QPalette
-    from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+    from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
 
     from ccs_monitor.data_source import SimulatedDeviceSource, simulated_overview
     from ccs_monitor.app import configure_application_font
+    from ccs_monitor.app_icons import app_icon
     from ccs_monitor.device_config import DeviceConfigRepository
+    from ccs_monitor.device_types import DeviceTypeTemplateRepository
     from ccs_monitor.device_dialogs import EditDeviceDialog, NewDeviceDialog
     from ccs_monitor.device_dialogs import StatusCardEditorDialog
     from ccs_monitor.main_window import MainWindow
@@ -39,7 +41,8 @@ if PYSIDE_AVAILABLE:
     from ccs_monitor.mqtt_config import MqttMonitoringConfig
     from ccs_monitor.mqtt_data_source import MqttDeviceSource
     from ccs_monitor.ping_service import PingResult
-    from ccs_monitor.widgets import DeviceCard
+    from ccs_monitor.widgets import CardIcon, DeviceCard
+    from ccs_monitor.task_repository import TaskRepository
     from ccs_monitor.styles import (
         ThemeMode, build_stylesheet, load_theme_mode, save_theme_mode, theme_palette,
     )
@@ -57,14 +60,30 @@ class UiTests(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
+        type_repository = DeviceTypeTemplateRepository(
+            Path(self.temp_dir.name) / "device_types.json",
+            Path(self.temp_dir.name) / "device_type_assets",
+        )
+        type_patch = patch("ccs_monitor.data_source.DeviceTypeTemplateRepository",
+                           return_value=type_repository)
+        type_patch.start()
+        self.addCleanup(type_patch.stop)
+        settings_patch = patch(
+            "ccs_monitor.main_window.QSettings",
+            return_value=QSettings(str(Path(self.temp_dir.name) / "theme.ini"), QSettings.Format.IniFormat),
+        )
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
         repository = DeviceConfigRepository(Path(self.temp_dir.name) / "devices.json")
         self.source = SimulatedDeviceSource(repository)
         self.map_repository = MapRepository(Path(self.temp_dir.name) / "map_server")
+        self.task_repository = TaskRepository(Path(self.temp_dir.name) / "task_server")
         self.system_status_store = SystemRuntimeStatusStore()
         self.window = MainWindow(
             self.source,
             simulated_overview(),
             map_repository=self.map_repository,
+            task_repository=self.task_repository,
             system_status_store=self.system_status_store,
         )
         self.window.show()
@@ -173,7 +192,7 @@ class UiTests(unittest.TestCase):
         metric_labels = {
             page.online_card: ("在线设备数", "devices_online.svg", "static"),
             page.offline_card: ("离线设备数", "devices_offline.svg", "static"),
-            page.maps_card: ("本地地图数量", "mapstorage", "night"),
+            page.maps_card: ("本地地图数量", "mapStorage", "night"),
             page.tasks_card: ("任务执行次数", "tasks", "night"),
         }
         for card, (caption, icon_name, icon_mode) in metric_labels.items():
@@ -188,6 +207,11 @@ class UiTests(unittest.TestCase):
             SubsystemId.MQTT_SUBSCRIBER: "mqtt",
             SubsystemId.UDP_TELEMETRY: "UDP",
             SubsystemId.SRT_FFMPEG: "camera",
+            SubsystemId.MAP_BUILDING: "realTimeMapping",
+            SubsystemId.TASK_CONTROL: "UDPtask",
+            SubsystemId.RELOCALIZATION: "localization",
+            SubsystemId.MAP_REPOSITORY: "mapStorage",
+            SubsystemId.TASK_REPOSITORY: "taskStorage",
         }
         for subsystem_id, icon_name in expected_runtime_icons.items():
             card = page.runtime_cards[subsystem_id]
@@ -197,25 +221,130 @@ class UiTests(unittest.TestCase):
             self.assertEqual(card.icon_label.property("appIconName"), icon_name)
             self.assertEqual(card.icon_label.property("appIconMode"), "night")
 
-        for subsystem_id in set(SubsystemId) - set(expected_runtime_icons):
-            self.assertIsNone(page.runtime_cards[subsystem_id].icon_label)
-
-        status = self.system_status_store.update(
-            SubsystemId.NTP, SubsystemState.HEALTHY, "NTP 已同步"
-        )
-        metric_values = [card.value_label.text() for card in page.metric_cards]
-        self.window.apply_theme(ThemeMode.DAY, persist=False)
-        self.app.processEvents()
+        self.assertEqual(set(page.runtime_cards), set(expected_runtime_icons))
         self.assertEqual(
-            [card.value_label.text() for card in page.metric_cards], metric_values
+            page.maps_card.icon_label.icon_name,
+            page.runtime_cards[SubsystemId.MAP_REPOSITORY].icon_label.icon_name,
         )
-        self.assertEqual(page.runtime_cards[SubsystemId.NTP].message.text(), status.message)
-        self.assertEqual(page.runtime_cards[SubsystemId.NTP].property("state"), "healthy")
-        self.assertEqual(page.maps_card.icon_label.property("appIconMode"), "day")
-        for subsystem_id in expected_runtime_icons:
-            self.assertEqual(
-                page.runtime_cards[subsystem_id].icon_label.property("appIconMode"), "day"
+        states = list(SubsystemState)
+        for index, subsystem_id in enumerate(expected_runtime_icons):
+            self.system_status_store.update(
+                subsystem_id, states[index % len(states)], f"保留消息 {index}"
             )
+        metric_values = [card.value_label.text() for card in page.metric_cards]
+        runtime_before = {
+            key: (card, card.title.text(), card.state_label.text(), card.message.text(),
+                  card.property("state")) for key, card in page.runtime_cards.items()
+        }
+        for mode in (ThemeMode.DAY, ThemeMode.NIGHT):
+            self.window.apply_theme(mode, persist=False)
+            self.app.processEvents()
+            self.assertEqual(self.window.current_page_index, 0)
+            self.assertEqual([card.value_label.text() for card in page.metric_cards], metric_values)
+            for key, card in page.runtime_cards.items():
+                self.assertEqual(
+                    (card, card.title.text(), card.state_label.text(), card.message.text(),
+                     card.property("state")), runtime_before[key]
+                )
+                self.assertEqual(card.icon_label.property("appIconMode"), mode.value)
+                self.assertFalse(card.icon_label.pixmap().isNull())
+                self.assertEqual(
+                    card.icon_label.pixmap().toImage(),
+                    app_icon(expected_runtime_icons[key], mode).pixmap(24, 24).toImage(),
+                )
+            for card in page.metric_cards:
+                self.assertFalse(card.icon_label.pixmap().isNull())
+                self.assertTrue(card.caption_label.text())
+
+    def test_device_list_icons_preserve_filters_edit_selection_and_mqtt_on_theme_switch(self):
+        self.window.set_current_page(1)
+        page = self.window.devices_page
+        page._set_module_status("测试连接消息", False)
+        page.search.setText("UGV")
+        target = self.source.device("UGV-042")
+        page.type_filter.setCurrentIndex(page.type_filter.findData(target.device_type))
+        page.status_filter.setCurrentIndex(page.status_filter.findData(target.connection_status))
+        page._toggle_edit_mode()
+        self.app.processEvents()
+        cards = [card for card in page.card_container.findChildren(DeviceCard) if not card.isHidden()]
+        self.assertTrue(cards)
+        cards[0].checkbox.setChecked(True)
+        page.selected_id = cards[0].device.device_id
+        expected_icons = ("device", "devices_online.svg", "devices_warning.svg")
+        for icon, name in zip(page.metric_icons, expected_icons):
+            self.assertIsInstance(icon, CardIcon)
+            self.assertEqual(icon.property("appIconName"), name)
+            self.assertEqual(icon.width(), 28)
+        self.assertEqual(page.mqtt_icon.property("appIconName"), "mqtt")
+        self.assertEqual(page.mqtt_icon.width(), 24)
+        expected_counts = (
+            str(len(page.devices)),
+            str(sum(d.connection_status == ConnectionStatus.ONLINE for d in page.devices)),
+            str(sum(d.connection_status != ConnectionStatus.ONLINE for d in page.devices)),
+        )
+        self.assertEqual(
+            (page.total_value.text(), page.online_value.text(), page.alert_value.text()),
+            expected_counts,
+        )
+        before = (page.search.text(), page.type_filter.currentData(), page.status_filter.currentData(),
+                  page.edit_mode, page.selected_id, set(page.delete_selection), page.page_stack.currentWidget(),
+                  page.connection_label.text(), page.connection_message.text(),
+                  page.mqtt_module_card.property("state"), page.result_label.text())
+        self.window.apply_theme(ThemeMode.NIGHT, persist=False)
+        night_image = page.mqtt_icon.pixmap().toImage()
+        for mode in (ThemeMode.DAY, ThemeMode.NIGHT):
+            self.window.apply_theme(mode, persist=False)
+            self.app.processEvents()
+            self.assertEqual(self.window.current_page_index, 1)
+            self.assertEqual(
+                (page.search.text(), page.type_filter.currentData(), page.status_filter.currentData(),
+                 page.edit_mode, page.selected_id, set(page.delete_selection), page.page_stack.currentWidget(),
+                 page.connection_label.text(), page.connection_message.text(),
+                 page.mqtt_module_card.property("state"), page.result_label.text()), before,
+            )
+            self.assertEqual((page.total_value.text(), page.online_value.text(), page.alert_value.text()),
+                             expected_counts)
+            self.assertTrue(cards[0].checkbox.isChecked())
+            self.assertIn(cards[0], page.card_container.findChildren(DeviceCard))
+            for icon in (*page.metric_icons, page.mqtt_icon):
+                self.assertFalse(icon.pixmap().isNull())
+                self.assertTrue(icon.isVisible())
+                self.assertTrue(icon.accessibleName())
+                self.assertEqual(icon.property("appIconMode"), "static" if icon.icon_file else mode.value)
+            if mode == ThemeMode.DAY:
+                self.assertNotEqual(page.mqtt_icon.pixmap().toImage(), night_image)
+
+    def test_lab_branding_follows_version_and_fits_narrow_navigation(self):
+        version = self.window.navigation.findChild(QLabel, "navVersion")
+        logo = self.window.lab_logo_label
+        name = self.window.lab_name_label
+        layout = self.window.navigation.layout()
+        self.assertLess(layout.indexOf(version), layout.indexOf(logo))
+        self.assertLess(layout.indexOf(logo), layout.indexOf(name))
+        self.assertEqual(name.text(), "AADCL")
+        self.assertEqual((logo.width(), logo.height()), (32, 32))
+        self.assertFalse(logo.pixmap().isNull())
+        self.assertIn("AADCL", logo.accessibleName())
+        self.assertIn("AADCL", name.accessibleName())
+        original_logo = logo.pixmap().toImage()
+        for mode in (ThemeMode.DAY, ThemeMode.NIGHT):
+            self.window.apply_theme(mode, persist=False)
+            self.assertIn(theme_palette(mode).text, name.styleSheet())
+            for width in (1280, 1024, 800):
+                self.window.resize(width, 820)
+                for page in (0, 1):
+                    self.window.set_current_page(page)
+                    self.app.processEvents()
+                    self.assertEqual(self.window.width(), width)
+                    self.assertTrue(logo.isVisible())
+                    self.assertTrue(name.isVisible())
+                    self.assertEqual(logo.pixmap().toImage(), original_logo)
+                    widgets = [*self.window.nav_buttons, self.window.theme_toggle_button,
+                               version, logo, name]
+                    for left, right in zip(widgets, widgets[1:]):
+                        self.assertLess(left.geometry().right(), right.geometry().left())
+                    self.assertLess(name.geometry().right(), self.window.navigation.width())
+                    self.assertGreaterEqual(name.width(), name.fontMetrics().horizontalAdvance("AADCL"))
 
     def test_device_page_reflows_cards(self):
         page = self.window.devices_page
@@ -435,7 +564,8 @@ class UiTests(unittest.TestCase):
         corrupt_path = Path(self.temp_dir.name) / "corrupt.json"
         corrupt_path.write_text("{ broken", encoding="utf-8")
         corrupt_source = SimulatedDeviceSource(DeviceConfigRepository(corrupt_path))
-        corrupt_window = MainWindow(corrupt_source, simulated_overview())
+        corrupt_window = MainWindow(corrupt_source, simulated_overview(),
+                                    map_repository=self.map_repository, task_repository=self.task_repository)
         corrupt_window.show()
         corrupt_window.set_current_page(1)
         self.app.processEvents()
@@ -452,7 +582,8 @@ class UiTests(unittest.TestCase):
             "127.0.0.1", 1884, 1, "mqtav", 1.0, 2.0, 5.0, 500, "test-ground",
         )
         source = MqttDeviceSource(config, repository, start_watchdog=False)
-        window = MainWindow(source, simulated_overview())
+        window = MainWindow(source, simulated_overview(),
+                            map_repository=self.map_repository, task_repository=self.task_repository)
         window.show()
         source.set_module_status("MQTT 数据订阅已连接", True)
         status = {

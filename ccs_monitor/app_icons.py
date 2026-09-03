@@ -26,13 +26,17 @@ def icon_path(name: str, theme: ThemeMode | ThemePalette | str) -> Path:
 
 
 def asset_icon_path(filename: str) -> Path:
-    """Resolve a theme-neutral icon from the repository icon directory."""
-    return ICON_ROOT / filename
+    """Resolve a theme-neutral application icon independently of the CWD."""
+    return APP_ICON_ROOT / filename
+
+
+def lab_logo_path() -> Path:
+    return ICON_ROOT / "lab_logo" / "logo.png"
 
 
 def _load_icon(path: Path, *, rotation: int = 0) -> QIcon:
     icon = QIcon(str(path))
-    if not path.is_file() or icon.isNull():
+    if not path.is_file() or icon.isNull() or icon.pixmap(64, 64).isNull():
         LOGGER.warning("Application icon is missing or invalid: %s", path)
         return QIcon()
     normalized_rotation = int(rotation) % 360

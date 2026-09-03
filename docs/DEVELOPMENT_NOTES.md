@@ -1,6 +1,26 @@
 # 开发笔记
 
-## v0.22.8 首页状态卡语义图标
+## v0.22.9 首页、设备页图标与 AADCL 品牌
+
+- 所有应用 SVG（含无主题的 `devices_online.svg`、`devices_offline.svg`、`devices_warning.svg`）统一由 `ccs_monitor.app_icons` 从模块相对路径 `icons/app_icons/` 解析，不依赖运行目录。共享 `ccs_monitor.widgets.CardIcon` 提供固定尺寸、Tooltip、可访问名称与主题刷新；缺失或不可渲染时记录告警并隐藏图形，卡片文字/数据不受影响。
+- 首页全览：在线/离线分别使用上述静态设备图标，本地地图数量使用 `mapStorage`，任务执行次数使用 `tasks`，图标为 28 px。
+- 首页子系统（24 px）：NTP→`time`、MQTT Broker→`mqttbroker`、MQTT 数据订阅→`mqtt`、UDP 高频遥测→`UDP`、FFmpeg/SRT→`camera`、实时建图→`realTimeMapping`、UDP 任务控制→`UDPtask`、设备重定位→`localization`、地图仓储→`mapStorage`、任务仓储→`taskStorage`。
+- 主题文件后缀均为 `_day.svg` / `_night.svg`，大小写必须准确；旧 `mapstorage` 通过临时文件名完成 Git 大小写重命名，两处地图卡共用新设计。`taskStrorage` 仅为输入素材拼写，仓库规范名为 `taskStorage`。camera、mqtt、mqttbroker、tasks、time、UDP 拼接文件仅保留后追加的 SVG 文档，不重绘、不改色。
+- 设备列表：设备总数→`device`、在线设备→`devices_online.svg`、需关注→`devices_warning.svg`（28 px）；右上 MQTT→`mqtt`（24 px）。统计口径不变，需关注仍包含非在线设备。
+- `HomePage.set_theme` / `DevicesPage.set_theme` 仅刷新图标与样式，不重建卡片或业务数据，不重置统计、筛选、选中设备、编辑/删除选择、MQTT 消息或子系统状态。首页继续使用全览 4/2/1、子系统 3/2/1 列布局。
+- 顶栏顺序为原导航、主题按钮、版本、`icons/lab_logo/logo.png`、AADCL。Logo 保持比例居中于 32×32 px，文字 14 px 加粗并跟随主题；保留最小宽度 800 px、左侧 CCS 标识及全屏行为。
+- 验证使用临时设备、地图、任务仓储配置，不启动真实端侧服务；资源需通过准确文件名、单一 XML 根节点、Qt 渲染、PNG 非空及异目录加载测试。截图覆盖首页/设备页、日/夜、1280/1024/800 px。
+- 平台运行时、项目元数据及版本测试同步为 v0.22.9；端侧版本和通信协议独立，不随本次 UI 补丁改变。
+
+
+### v0.22.9 增量验收（2026-09-03）
+
+- 命令：`python -m unittest tests.test_app_icons tests.test_ui tests.test_v015_system_and_migration tests.test_version -v`；最终 38 项全部通过（281.602 秒）。当前虚拟环境无可执行 pytest 模块，使用测试原生 unittest 运行器。
+- 首页/设备页的 day/night × 1280/1024/800 px 共 12 张截图，以及 2 张窄屏首页滚动补充截图均已目视检查；图标、文字与 AADCL 对齐正常，800 px 导航无重叠，滚动区域内的卡片保持可访问。
+- 12 个追加 SVG 文档、10 个提供的 SVG 与 Logo 均完成内容保真校验；`git diff --check` 通过。
+- Qt offscreen 环境会输出 OpenGL 上下文告警，本次卡片/顶栏检查不依赖三维渲染；未宣称完整测试套件、真实设备或真实服务验收。
+
+## v0.22.8 首页状态卡语义图标（历史记录；资源路径与映射已由 v0.22.9 更新）
 
 - 首页全览卡固定保留数值和标题。在线/离线设备复用 `icons/devices_online.svg` 与 `icons/devices_offline.svg`；地图和任务使用 `mapstorage_<mode>.svg` 与 `tasks_<mode>.svg`。
 - 子系统图标仅映射 NTP/`time`、MQTT Broker/`mqttbroker`、MQTT 数据订阅/`mqtt`、UDP 高频遥测/`UDP` 和 FFmpeg/SRT/`camera`。其余子系统卡继续只显示状态圆点、标题、状态和消息。

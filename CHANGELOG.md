@@ -2,6 +2,13 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## v0.22.9 - 2026-09-03
+
+- 补齐首页实时建图、UDP 任务控制、设备重定位、地图仓储和任务仓储图标；设备列表新增设备总数、在线设备、需关注及 MQTT 状态图标，保留文字、数值和状态。
+- 应用 SVG 统一从 `icons/app_icons/` 加载，地图统一为大小写准确的 `mapStorage`，修正 `taskStrorage` 为 `taskStorage`；拼接 SVG 仅保留后追加的新设计，不改变素材配色。
+- 抽取共享卡片图标控件，日夜切换不重建业务数据或重置筛选、编辑选择；顶栏版本号后新增 32 px 实验室 Logo 与 AADCL 品牌文字。
+- 运行时与项目元数据同步至 v0.22.9，端侧包版本、通信协议和端口保持不变；补充资源、状态保留、版本及窄窗口增量测试。
+
 ## 端侧包规范化 - 2026-09-02
 
 - 端侧固定为 device_config、map_stream、mqtav、relocalization、task_control、udp_telemetry 和 video_srt 七包；删除旧 Go2 bridge 与 ros_udp_telemetry。
