@@ -15,8 +15,8 @@ START_LOG="${LOG_DIR}/startup.log"
 SHUTDOWN_STARTED=false
 ROSCORE_MANAGED=false
 
-LAUNCH_NAMES=(mavros livox mqtav udp_telemetry map_stream a8_camera video_srt mapping_tf)
-NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_map_stream /a8_mini_camera /epgeneral_video_srt /odom_camera_init_broadcaster)
+LAUNCH_NAMES=(mavros livox mqtav udp_telemetry map_stream a8_camera video_srt stage_manager)
+NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_map_stream /a8_mini_camera /epgeneral_video_srt /ground_air_stage_manager)
 OPTIONAL=(false false false false false true true false)
 MANAGED=(false false false false false false false false)
 
@@ -32,13 +32,14 @@ wait_for_topic() { local topic="$1" i; for i in $(seq 1 30); do rostopic type "$
 wait_for_message() { timeout "${2:-30}" rostopic echo -n 1 "$1" >/dev/null 2>&1; }
 
 stop_launch_process() {
-  local index="$1" pid_file pid attempt
+  local index="$1" pid_file pid attempt stop_attempts=20
   pid_file="${PID_DIR}/${LAUNCH_NAMES[index]}.pid"
   if [[ -r "${pid_file}" ]]; then
     read -r pid <"${pid_file}" || true
     if [[ -n "${pid:-}" ]]; then
       kill "${pid}" 2>/dev/null || true
-      for attempt in $(seq 1 20); do kill -0 "${pid}" 2>/dev/null || break; sleep 0.25; done
+      [[ "${LAUNCH_NAMES[index]}" != stage_manager ]] || stop_attempts=120
+      for attempt in $(seq 1 "${stop_attempts}"); do kill -0 "${pid}" 2>/dev/null || break; sleep 0.25; done
       kill -KILL "${pid}" 2>/dev/null || true
     fi
     rm -f "${pid_file}"
@@ -96,7 +97,7 @@ livox_path="$(rospack find livox_ros_driver2 2>/dev/null || true)"
 a8_path="$(rospack find a8_mini_camera 2>/dev/null || true)"
 [[ -n "${a8_path}" ]] || fail "当前 ROS overlay 中找不到 a8_mini_camera"
 car_bringup_path="$(rospack find car_bringup 2>/dev/null || true)"
-[[ -r "${car_bringup_path}/launch/mapping_coordinate_transforms.launch" ]] || fail "缺少开机常驻坐标转换 launch"
+[[ -x "${car_bringup_path}/scripts/ground_air_stage_manager_node.py" ]] || fail "缺少可执行 stage manager"
 report INFO "启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=${livox_path}；A8 包=${a8_path}"
 
 for attempt in $(seq 1 30); do
@@ -141,9 +142,6 @@ start_optional_launch() {
   report OK "${name} 已启动（可降级节点 ${node}）"
 }
 
-start_launch 7 /odom_camera_init_broadcaster car_bringup mapping_coordinate_transforms.launch
-wait_for_node /base_link_body_broadcaster || fail "开机常驻坐标转换未完整就绪：/base_link_body_broadcaster"
-
 start_launch 0 /mavros "${LAUNCH_DIR}/mavros_base.launch" fcu_url:="${FCU_DEVICE}:${FCU_BAUD}"
 for topic in /mavros/state /mavros/imu/data /mavros/battery; do
   wait_for_topic "${topic}" || fail "未发现 ${topic}"
@@ -186,7 +184,24 @@ start_optional_launch 6 /epgeneral_video_srt epgeneral_video_srt epgeneral_video
   device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml" \
   video_config_file:="${PROFILE_CONFIG_DIR}/video.yaml" || true
 
-report OK "静态 TF、MAVROS、Livox、MQTT、UDP 遥测与建图响应已启动；A8/SRT 按可用性运行；其他端侧功能保持禁用；按 Ctrl+C 停止"
+# Start last, after both optional camera/video startup attempts.
+if ! ros_node_exists /ground_air_stage_manager; then
+  rosrun car_bringup ground_air_stage_manager_node.py >"${LOG_DIR}/stage_manager.log" 2>&1 </dev/null &
+  printf '%s\n' "$!" >"${PID_DIR}/stage_manager.pid"
+  MANAGED[7]=true
+  wait_for_node /ground_air_stage_manager || fail "stage manager 启动失败"
+fi
+stage_service_ready=false
+for attempt in $(seq 1 30); do
+  if rosservice type /ground_air/system/set_stage 2>/dev/null | grep -Fxq ground_air_msgs/SetSystemStage; then stage_service_ready=true; break; fi
+  sleep 1
+done
+[[ "${stage_service_ready}" == true ]] || fail "set_stage 服务未就绪"
+[[ "$(rosparam get /ground_air_stage_manager/resident_tf_version 2>/dev/null || true)" == 1 ]] \
+  || fail "stage manager 未启用自启动 TF 管理"
+wait_for_node /odom_camera_init_broadcaster || fail "自启动 TF 缺少 /odom_camera_init_broadcaster"
+wait_for_node /base_link_body_broadcaster || fail "自启动 TF 缺少 /base_link_body_broadcaster"
+report OK "所有功能启动完成，最后启动的 stage manager 与常驻 TF 已就绪；按 Ctrl+C 停止"
 while true; do
   sleep 2
   for index in "${!NODE_NAMES[@]}"; do

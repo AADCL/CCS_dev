@@ -26,6 +26,7 @@ install(PROGRAMS scripts/start_fast_lio.sh scripts/stop_fast_lio.sh
   scripts/abort_fast_lio.sh scripts/save_map.sh scripts/generate_pgm.sh
   scripts/scout_mapping_stack.sh scripts/scout_finalize_map.sh
   scripts/ground_air_mapping_stack.sh scripts/ground_air_save_mapping.sh
+  scripts/ground_air_stage_client.py
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/scripts)
 
 install(DIRECTORY launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})

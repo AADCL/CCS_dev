@@ -41,12 +41,15 @@ class GroundAirBackendTests(unittest.TestCase):
         commands = build_integration_commands(self.config, self.values)
         self.assertTrue(commands["start_fast_lio"][0].endswith(
             "ground_air_mapping_stack.sh"))
-        self.assertIn("car_bringup", commands["start_fast_lio"])
-        self.assertIn("manual_mapping_control.launch", commands["start_fast_lio"])
+        self.assertIn("manual_mapping_control.launch", commands["checks"][0])
+        self.assertNotIn("manual_mapping_control.launch", commands["start_fast_lio"])
+        self.assertIn("a" * 32, commands["start_fast_lio"])
         self.assertNotIn(
             "mapping_coordinate_transforms.launch", commands["start_fast_lio"])
         self.assertEqual(len(commands["checks"]), 2)
-        self.assertIn("map_id:=20260901_190000", commands["start_fast_lio"])
+        self.assertIn("20260901_190000", commands["start_fast_lio"])
+        self.assertIn("a" * 32, commands["stop_fast_lio"])
+        self.assertIn("20260901_190000", commands["abort_fast_lio"])
         self.assertTrue(commands["save_map"][0].endswith(
             "ground_air_save_mapping.sh"))
         self.assertEqual(commands["save_map"][2:4], [
@@ -66,7 +69,8 @@ class GroundAirBackendTests(unittest.TestCase):
         with open(os.path.join(PACKAGE, "scripts", "ground_air_mapping_stack.sh"),
                   "r", encoding="utf-8") as stream:
             mapping_text = stream.read()
-        self.assertIn("terminate_child", mapping_text)
+        self.assertIn("ground_air_stage_client.py", mapping_text)
+        self.assertNotIn("kill -", mapping_text)
         self.assertNotIn("mapping_coordinate_transforms.launch", mapping_text)
         with open(os.path.join(PACKAGE, "scripts", "ground_air_save_mapping.sh"),
                   "r", encoding="utf-8") as stream:
