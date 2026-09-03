@@ -11,6 +11,11 @@ Scout Mini profile 使用 `scout_finalize` backend。启动顺序固定为
 pose 和 TF，不调用 rosservice；随后使用开始建图时固化的同一个 `MAP_NAME` 执行
 `rosrun scout_map_tools finalize_map.py MAP_NAME --replace-raw`。
 
+Ground-Air AGV 使用 `ground_air_service` backend。开机脚本最后直接执行
+`roslaunch car_bringup mapping_coordinate_transforms.launch`，常驻两条静态 TF；stage manager
+只管理按指令启动的 `manual_mapping_control.launch`。该精简入口直接组合 FAST-LIO、建图节点和
+建图态 `map -> odom`，不再引用会重复静态 TF 的旧嵌套入口，结束建图时不会停止或重启常驻 TF。
+
 `epgeneral_map_stream` 是 ROS Noetic/Python 3 端侧遥控建图包，使用独立的
 `ccs-map-stream-v2`。节点监听平台 UDP 14561，向协商得到的平台 UDP 14562
 发送准备结果、ACK、状态和 PCD 分片描述符；实时预览 PCD 与最终成果均通过

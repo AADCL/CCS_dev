@@ -2,6 +2,13 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## Ground-Air AGV 端侧 TF 自启动调整 - 2026-09-03
+
+- 统一启动脚本最后直接执行 `roslaunch car_bringup mapping_coordinate_transforms.launch`，并独立持有、监控两条常驻静态 TF；FAST-LIO 仍只在收到阶段指令后启动。
+- stage manager 移除静态 TF 进程所有权，仅保留阶段切换、会话归属和阶段进程组清理；TF 故障不再阻断所属会话停止或取消建图。
+- 精简 `manual_mapping_control.launch` 直接组合 FAST-LIO、建图节点和建图态 `map -> odom`，不再经过会重复启动静态 TF 的旧嵌套入口；新增等价的 `relocalization_control.launch` 保护 stage 2。
+- 用户 systemd 服务改用有序清理语义，增量部署补齐 launch、unit、版本校验、备份、180 秒实际就绪门禁及静态闭环验收。指控协议、端口和端侧包版本不变。
+
 ## v0.23.0 - 2026-09-03
 
 - 增加 Windows Inno Setup、Ubuntu 自解压安装包、本地便携 ZIP 和独立端侧配套 ZIP 构建入口；支持指定安装位置与无人值守参数。

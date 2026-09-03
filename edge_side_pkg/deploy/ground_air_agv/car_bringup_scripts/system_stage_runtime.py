@@ -53,6 +53,12 @@ class StageController:
                 True, "requested stage is already active", self.active_stage
             )
 
+        # A broken external TF tree must never prevent the owning session from
+        # stopping the mapping process group it started.
+        if request.stage == BASE:
+            self._stop_children()
+            return TransitionResult(True, "base stage active", BASE)
+
         conflicts = self.backend.find_conflicts(self.active_stage != BASE)
         if conflicts:
             return TransitionResult(
@@ -64,9 +70,6 @@ class StageController:
             )
 
         self._stop_children()
-        if request.stage == BASE:
-            return TransitionResult(True, "base stage active", BASE)
-
         try:
             primary = self.backend.start(commands[0])
             self.children.append(primary)

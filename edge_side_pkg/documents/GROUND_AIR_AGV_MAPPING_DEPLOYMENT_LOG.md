@@ -61,3 +61,16 @@
 - 闭环后阶段为 `BASE=0`，FAST-LIO、建图节点和 `manual_mapping_control.launch` 均退出，两个常驻 TF 节点继续运行，`ccs-edge-dev.service` 保持 active。
 - 原始 `manual_mapping.launch` SHA-256 仍为 `fbc332ac343f6c72f232de176db669738110f850ca77a3285d6dc789efc56326`，`save_mapping.launch` 仍为 `62cd3592256fd77b0c87001c69293c1034d088875e663d4e72a284b3eeea8f52`。
 - 验收证据保存在 `artifacts/agv_incremental_test/resident_tf_20260902/`；仅执行静态增量测试，未发送运动、解锁、模式或航点指令。
+## 2026-09-03 静态 TF 改由自启动 launch 直接管理
+
+- 按最新要求，统一启动脚本在 stage manager 之后、所有功能包的最后执行 `roslaunch car_bringup mapping_coordinate_transforms.launch`。该 launch 最终 SHA-256 为 `0b647a527fc4a7f9cc397ebe7d9cd3f56ae3e260139e06c74dd9368b414a6553`，展开后仅有 `/odom_camera_init_broadcaster` 与 `/base_link_body_broadcaster` 两个静态 TF 节点。
+- 首轮部署备份为 `/home/bitcq/.deployment_backups/20260903T093730Z_stage_manager_ccs`。首次 12 秒静态测试在开始阶段返回 `primary stage nodes did not become ready`：旧控制入口仍经 `start_mapping.launch -> mapping_system.launch -> mapping_coordinate_transforms.launch`，既不再能从精简后的 TF launch 启动 FAST-LIO，又会以同名节点替换开机 TF。建图进程退出后 supervisor 检测到 TF 缺失并完成一次自动重启，未遗留建图进程；该失败未被隐去。
+- 修正版不修改原始 `manual_mapping.launch`、`mapping_system.launch` 或 `start_mapping.launch`，而是将新增 `manual_mapping_control.launch` 改为直接组合 FAST-LIO、里程计适配、滤地、动态栅格、地图记录器、mapping 模式 world-TF owner 和 start service 调用。其 SHA-256 为 `0a00597b087b2941b0f708957e3301ce35033a0354ebb43d7efb89d5a4afcc64`。
+- 同步新增 `relocalization_control.launch`（SHA-256 `4574f03bcd88c6f26638a6323c6b413e490c3b65461a6947529119506dfe09f6`），避免 stage 2 再经旧重定位入口重复启动静态 TF；`system_stage_core.py` SHA-256 为 `755120930dcaabcde2a2e5e502463eefa5ecef8566ada8df739993de02024b95`。
+- 最终增量包 SHA-256 为 `c429e0c5efe791974e994880323d1b6a2c570b453a29db401d6eccfdd42d6410`，部署备份为 `/home/bitcq/.deployment_backups/20260903T101513Z_stage_manager_ccs`。脚本记录部署前 enabled/active 状态、19 个既有文件和 1 个新增文件，并在重启后等待实际 ROS 就绪。
+- 端侧 map-stream 目标测试 69 项通过、2 项按环境跳过；`car_bringup` core/manager/launch 契约测试 18 项全部通过；Bash、Python、XML、systemd 校验和 Release 增量构建通过。暂存 launch 经 `roslaunch --nodes` 展开确认：建图入口 8 个阶段节点、重定位入口 6 个阶段节点，均不含两个静态 TF 发布者。
+- 最终服务为 `enabled/active`、`KillMode=mixed`、`NRestarts=0`。supervisor PID 为 `53039`，stage manager PID 为 `55046`；建图前后两个静态 TF PID 均保持 `55368`、`55369`。实测 `odom -> camera_init` 与 `body -> base_link` 都是零平移、单位四元数，`/tf_static` 中除 MAVROS 外仅有这两个发布者。
+- 12 秒静态开始、重复开始、保存闭环通过，地图目录为 `/home/bitcq/catkin_ws/maps/20260903_181854/`：`cloud_map.pcd` 318040 字节、`map.pgm` 46049 字节、`map.yaml` 118 字节、`metadata.json` 188 字节。地面站归档为 `artifacts/agv_incremental_test/tf_direct_launch_20260903_v2/agv-static-20260903-181848.zip`，大小 287595 字节，SHA-256 为 `f319697f07ced6e23a91464f18c6a95df15908038c1d706b1eb137f71a76e0b0`。
+- 闭环结束后 stage 为 `BASE=0`，无 FAST-LIO、地图记录器、world-TF owner、动态栅格或 `manual_mapping_control.launch` 残留，基础服务和两条静态 TF 继续运行。
+- 原始 `manual_mapping.launch` SHA-256 仍为 `fbc332ac343f6c72f232de176db669738110f850ca77a3285d6dc789efc56326`，`save_mapping.launch` 仍为 `62cd3592256fd77b0c87001c69293c1034d088875e663d4e72a284b3eeea8f52`，均未修改。原命令保留为历史/整套回滚参考；当前诊断使用新增控制入口，旧命令在现行 TF 架构下不保证独立完成建图。
+- 本次仅执行静态增量测试，未重启整车，未发送运动、解锁、模式切换、位置或航点指令，也未主动制造保存失败。

@@ -41,7 +41,11 @@ class StageOwnershipTests(unittest.TestCase):
 
     def test_stop_owned_session_returns_base(self):
         self.transition()
+        self.backend.find_conflicts.reset_mock()
+        self.backend.find_conflicts.return_value = [
+            "coordinate transform pair is not ready"]
         self.assertTrue(self.transition(0).success)
+        self.backend.find_conflicts.assert_not_called()
         self.assertEqual(self.backend.stop.call_count, 1)
         self.assertEqual(self.controller.children, [])
         self.assertEqual(self.controller.active_owner, "")
@@ -96,6 +100,27 @@ class StageOwnershipTests(unittest.TestCase):
 
 
 class StageClientTests(unittest.TestCase):
+    def test_external_tf_check_requires_mode_and_both_nodes(self):
+        with self.assertRaisesRegex(RuntimeError, "legacy resident TF"):
+            client.require_external_tf(
+                lambda key, default: 1, lambda: list(client.STATIC_TF_NODES))
+        with self.assertRaisesRegex(RuntimeError, "external TF"):
+            client.require_external_tf(lambda key, default: 0, lambda: [])
+        external_mode = (
+            lambda key, default:
+            1 if key == client.EXTERNAL_TF_PARAM else default)
+        with self.assertRaisesRegex(RuntimeError, "not ready"):
+            client.require_external_tf(
+                external_mode, lambda: ["/odom_camera_init_broadcaster"])
+        client.require_external_tf(
+            external_mode, lambda: list(client.STATIC_TF_NODES))
+
+    def test_stop_and_abort_do_not_require_external_tf(self):
+        self.assertTrue(client.action_requires_external_tf("--check"))
+        self.assertTrue(client.action_requires_external_tf("--start"))
+        self.assertFalse(client.action_requires_external_tf("--stop"))
+        self.assertFalse(client.action_requires_external_tf("--abort"))
+
     def test_validates_success_and_stage(self):
         for success, active in ((False, 1), (True, 0)):
             call = Mock(return_value=SimpleNamespace(success=success, active_stage=active, message="busy"))

@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Short-lived CCS client; the boot stage manager owns all mapping processes."""
+"""Short-lived CCS client for the boot-owned mapping stage service."""
 import sys
 import time
 
 SERVICE = "/ground_air/system/set_stage"
 GUARD_PARAM = "/ground_air_stage_manager/ccs_session_guard_version"
+EXTERNAL_TF_PARAM = "/ground_air_stage_manager/external_tf_required"
+LEGACY_RESIDENT_TF_PARAM = "/ground_air_stage_manager/resident_tf_version"
+STATIC_TF_NODES = {
+    "/odom_camera_init_broadcaster",
+    "/base_link_body_broadcaster",
+}
 
 
 def request_stage(call, stage, map_id, timeout):
@@ -24,6 +30,22 @@ def wait_nodes(get_nodes, expected, timeout, clock=time.monotonic, sleep=time.sl
     raise RuntimeError("mapping nodes did not become ready: {}".format(",".join(expected)))
 
 
+def require_external_tf(get_param, get_nodes):
+    if get_param(LEGACY_RESIDENT_TF_PARAM, 0) == 1:
+        raise RuntimeError("legacy resident TF ownership is still enabled")
+    if get_param(EXTERNAL_TF_PARAM, 0) != 1:
+        raise RuntimeError("stage manager is not configured for external TF")
+    missing = STATIC_TF_NODES.difference(get_nodes())
+    if missing:
+        raise RuntimeError(
+            "startup coordinate transforms are not ready: {}".format(
+                ",".join(sorted(missing))))
+
+
+def action_requires_external_tf(mode):
+    return mode in ("--check", "--start")
+
+
 def main(args):
     import re
     import rospy
@@ -31,6 +53,8 @@ def main(args):
     from ground_air_msgs.srv import SetSystemStage
 
     mode = args[0]
+    if mode not in ("--check", "--start", "--stop", "--abort"):
+        raise ValueError("unsupported action")
     if mode == "--check":
         owner = "preflight"
     else:
@@ -41,6 +65,8 @@ def main(args):
     rospy.wait_for_service(SERVICE, timeout=4.0)
     if rospy.get_param(GUARD_PARAM, 0) != 1:
         raise RuntimeError("stage manager lacks CCS session ownership guard")
+    if action_requires_external_tf(mode):
+        require_external_tf(rospy.get_param, rosnode.get_node_names)
     if mode == "--check":
         print("ground-air stage service ready; session guard enabled")
         return
@@ -52,8 +78,6 @@ def main(args):
         raise ValueError("invalid timeout")
     proxy = rospy.ServiceProxy(SERVICE, SetSystemStage)
     target = 1 if mode == "--start" else 0
-    if mode not in ("--start", "--stop", "--abort"):
-        raise ValueError("unsupported action")
     started = time.monotonic()
     response = request_stage(proxy, target, map_id, timeout)
     if target == 1:

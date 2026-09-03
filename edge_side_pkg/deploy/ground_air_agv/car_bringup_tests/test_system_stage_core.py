@@ -65,7 +65,7 @@ class SystemStageCoreTests(unittest.TestCase):
                 (
                     "roslaunch",
                     "car_bringup",
-                    "start_relocalization.launch",
+                    "relocalization_control.launch",
                     "map_id:=site_a",
                     "service_wait_timeout:=60.0",
                     "relocalize_timeout:=60.0",

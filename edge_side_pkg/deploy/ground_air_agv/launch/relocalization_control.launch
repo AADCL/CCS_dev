@@ -1,0 +1,32 @@
+<launch>
+  <!--
+    CCS-owned relocalization entrypoint. The static odom -> camera_init and
+    body -> base_link publishers remain owned by the unified startup script.
+  -->
+  <arg name="map_id" />
+  <arg name="maps_root" default="/home/bitcq/catkin_ws/maps" />
+  <arg name="service_wait_timeout" default="90.0" />
+  <arg name="relocalize_timeout" default="60.0" />
+
+  <include file="$(find fast_lio_open3d)/launch/mapping_mid360.launch">
+    <arg name="rviz" value="false" />
+  </include>
+
+  <include file="$(find car_bringup)/launch/fastlio_pipeline.launch" />
+  <include file="$(find ground_air_localization)/launch/localization.launch">
+    <arg name="maps_root" value="$(arg maps_root)" />
+    <arg name="relocalize_timeout" value="$(arg relocalize_timeout)" />
+  </include>
+
+  <node pkg="car_bringup"
+        type="ground_air_operation_node.py"
+        name="ground_air_start_relocalization"
+        output="screen"
+        required="true">
+    <param name="operation" value="relocalize" />
+    <param name="map_id" value="$(arg map_id)" />
+    <param name="service_wait_timeout" value="$(arg service_wait_timeout)" />
+    <param name="relocalize_timeout" value="$(arg relocalize_timeout)" />
+    <param name="keep_alive" value="true" />
+  </node>
+</launch>

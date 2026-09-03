@@ -25,16 +25,45 @@ class GroundAirAgvProfileTests(unittest.TestCase):
             "body": "body", "sensor": "body",
         })
 
-    def test_control_launch_reuses_start_mapping_without_base_services(self):
-        launch = ElementTree.parse(
-            PROFILE / "launch" / "manual_mapping_control.launch").getroot()
-        self.assertEqual(launch.findall("node"), [])
-        include = launch.find("include")
-        self.assertIn("start_mapping.launch", include.attrib["file"])
-        args = {item.attrib["name"]: item.attrib["value"]
-                for item in include.findall("arg")}
-        self.assertEqual(args["start_mavros"], "false")
-        self.assertEqual(args["start_stack"], "true")
+    def test_control_launches_mapping_stack_without_static_tf(self):
+        path = PROFILE / "launch" / "manual_mapping_control.launch"
+        launch = ElementTree.parse(path).getroot()
+        includes = [item.attrib["file"] for item in launch.findall("include")]
+        self.assertEqual(includes, [
+            "$(find fast_lio_open3d)/launch/mapping_mid360.launch",
+            "$(find car_bringup)/launch/fastlio_pipeline.launch",
+            "$(find pcl_test)/launch/filter_ground.launch",
+            "$(find dynamic_mapping)/launch/dynamic_mapping.launch",
+            "$(find ground_air_mapping)/launch/mapping.launch",
+        ])
+        nodes = {item.attrib["name"]: item for item in launch.findall("node")}
+        self.assertEqual(set(nodes), {
+            "ground_air_world_tf_owner", "ground_air_start_mapping"})
+        world_params = {item.attrib["name"]: item.attrib["value"]
+                        for item in nodes["ground_air_world_tf_owner"].findall("param")}
+        self.assertEqual(world_params["mode"], "mapping")
+        text = path.read_text(encoding="utf-8")
+        for forbidden in (
+            "start_mapping.launch",
+            "mapping_system.launch",
+            "mapping_coordinate_transforms.launch",
+        ):
+            self.assertNotIn(forbidden, text)
+
+    def test_relocalization_control_reuses_static_tf(self):
+        path = PROFILE / "launch" / "relocalization_control.launch"
+        launch = ElementTree.parse(path).getroot()
+        includes = [item.attrib["file"] for item in launch.findall("include")]
+        self.assertEqual(includes, [
+            "$(find fast_lio_open3d)/launch/mapping_mid360.launch",
+            "$(find car_bringup)/launch/fastlio_pipeline.launch",
+            "$(find ground_air_localization)/launch/localization.launch",
+        ])
+        text = path.read_text(encoding="utf-8")
+        self.assertNotIn("mapping_coordinate_transforms.launch", text)
+        nodes = launch.findall("node")
+        self.assertEqual([item.attrib["name"] for item in nodes],
+                         ["ground_air_start_relocalization"])
 
     def test_coordinate_transform_launch_contains_only_requested_static_tfs(self):
         launch = ElementTree.parse(
@@ -57,24 +86,39 @@ class GroundAirAgvProfileTests(unittest.TestCase):
                          "0 0 0 0 0 0 $(arg body_frame) $(arg base_frame)")
         self.assertTrue(all(item["pkg"] == "tf2_ros" for item in nodes.values()))
 
-    def test_startup_runs_stage_manager_last(self):
+    def test_startup_runs_coordinate_transform_launch_last(self):
         startup = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
         manager_start = "rosrun car_bringup ground_air_stage_manager_node.py"
+        transform_start = (
+            "start_launch 8 /odom_camera_init_broadcaster "
+            "car_bringup mapping_coordinate_transforms.launch")
         self.assertEqual(startup.count(manager_start), 1)
-        self.assertNotIn("start_launch 7 /odom_camera_init_broadcaster", startup)
+        self.assertEqual(startup.count(transform_start), 1)
+        self.assertIn(
+            'fail "stage manager 已由其他进程启动，拒绝重复接管"',
+            startup)
         self.assertLess(startup.index("start_optional_launch 6 /epgeneral_video_srt"),
                         startup.index(manager_start))
+        self.assertLess(startup.index(manager_start), startup.index(transform_start))
+        self.assertLess(
+            startup.index("for index in 7 8; do"),
+            startup.index("for ((index=6; index>=0; index--)); do"))
+        self.assertIn(
+            'fail "mapping_tf 节点异常退出：/odom_camera_init_broadcaster"',
+            startup)
+        self.assertIn(
+            'fail "mapping_tf 节点异常退出：/base_link_body_broadcaster"',
+            startup)
         self.assertIn("rosservice type /ground_air/system/set_stage", startup)
+        self.assertIn(
+            "ground_air_stage_manager/ccs_session_guard_version", startup)
         manager = (PROFILE / "car_bringup_scripts" /
                    "ground_air_stage_manager_node.py").read_text(encoding="utf-8")
         core = (PROFILE / "car_bringup_scripts" /
                 "system_stage_core.py").read_text(encoding="utf-8")
-        self.assertIn("self._resident_transforms = self._backend.start", manager)
-        self.assertIn("resident_tf_version", manager)
-        self.assertLess(
-            manager.index("self._resident_transforms = self._backend.start"),
-            manager.index("self._service = rospy.Service"))
-        self.assertIn("self._backend.stop(self._resident_transforms)", manager)
+        self.assertNotIn("mapping_coordinate_transforms.launch", manager)
+        self.assertNotIn("_resident_transforms", manager)
+        self.assertIn("external_tf_required", manager)
         self.assertNotIn("mapping_coordinate_transforms.launch", core)
         mapping = yaml.safe_load((PROFILE / "config" / "map_stream.yaml").read_text(
             encoding="utf-8"))
@@ -86,7 +130,33 @@ class GroundAirAgvProfileTests(unittest.TestCase):
         unit = (PROFILE / "ccs-edge-dev.service").read_text(encoding="utf-8")
         self.assertIn("ExecStart=/home/bitcq/ccs_edge_ws/start_ccs_edge_dev.sh", unit)
         self.assertIn("Restart=on-failure", unit)
+        self.assertIn("KillMode=mixed", unit)
         self.assertIn("WantedBy=default.target", unit)
+
+    def test_deployment_guards_overwritten_runtime_and_final_readiness(self):
+        deploy = (PROFILE / "deploy_stage_manager_update.sh").read_text(
+            encoding="utf-8"
+        )
+        for guarded_target in (
+            "ground_air_mapping_stack.sh",
+            "ground_air_stage_client.py",
+        ):
+            self.assertIn(
+                'verify_known_version "${WS}/src/EPGeneral_map_stream/scripts/'
+                + guarded_target
+                + '"',
+                deploy,
+            )
+        self.assertIn("roslaunch --nodes", deploy)
+        self.assertIn("on-demand launch duplicates startup TF", deploy)
+        self.assertIn(
+            "rosservice type /ground_air/system/set_stage", deploy
+        )
+        self.assertIn(
+            "systemctl --user show ccs-edge-dev.service -p NRestarts --value",
+            deploy,
+        )
+        self.assertIn('"${restart_count}" == 0', deploy)
 
     def test_ground_station_frame_contract_matches_profile(self):
         ground = json.loads((ROOT / "config" / "map_building.json").read_text(

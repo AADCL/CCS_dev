@@ -2,80 +2,76 @@
 
 ## 设备与边界
 
-- 设备：`AGV_001`（金城空地无人机），端侧 IP `192.168.50.130`
+- 设备：`AGV_001`，端侧 IP `192.168.50.130`
 - 地面站：`192.168.50.101`
 - 系统：Jetson ARM64、Ubuntu 20.04、ROS Noetic
 - CCS 工作空间：`/home/bitcq/ccs_edge_ws`
-- 只读 underlay：`/opt/ros/noetic`、`/home/bitcq/catkin_ws`
+- 车辆工作空间：`/home/bitcq/catkin_ws`
 
-本轮一键启动包含 MAVROS、Livox MID-360 驱动、MQTT 状态上报、UDP
-遥测、A8 Mini 相机和 SRT 视频。不使用或修改 `/home/bitcq/start.sh`，
-不启动 FAST-LIO、地面滤波、动态建图、重定位、导航、控制或任务节点。
+部署过程不修改原始 `car_bringup/manual_mapping.launch` 或 `save_mapping.launch`，不使用明文凭据，不发送任何运动、解锁、模式或航点指令。
 
-## 部署内容
+## 一键启动组件
 
-`ccs_edge_ws/src` 部署 7 个通用包：设备配置、MQTT、UDP 遥测、SRT 视频、
-地图流、重定位和任务控制。Go2 专属桥接包不部署。除日志和必要的系统
-NTP 配置外，新增配置、脚本、任务、地图占位目录和运行 PID 均位于
-`ccs_edge_ws`。
+`start_ccs_edge_dev.sh` 依次启动 MAVROS、Livox MID-360、MQTT、UDP 遥测、map-stream、A8 Mini、SRT、stage manager，最后执行：
 
-MAVROS 使用系统二进制包和稳定串口：
-
-```text
-/dev/serial/by-id/usb-CUAV_PX4_CUAV_Nora_0-if00:57600
+```bash
+roslaunch car_bringup mapping_coordinate_transforms.launch
 ```
 
-Livox 使用 `catkin_ws` 中已有的 `livox_ros_driver2`，启动
-`launch_ROS1/msg_MID360.launch` 并设置 `msg_frame_id=base_link`。
+该 launch 只常驻 `/odom_camera_init_broadcaster` 与 `/base_link_body_broadcaster`，统一发布 `odom -> camera_init` 和 `body -> base_link`。FAST-LIO 不在开机阶段启动，收到建图或重定位阶段指令后才由 stage manager 启动。
 
-A8 Mini 使用只读 underlay 中的 `a8_mini_camera`，实际 launch 参数名为
-`camera_ip` 和 `image_topic`。相机地址为 `192.168.144.25`，ROS 图像话题
-为 `/a8_cam/image_raw`。SRT 将图像编码为 1280x720、30 FPS、3000 kbps
-baseline H.264/MPEG-TS，并在 `0.0.0.0:9000/UDP` 监听，延迟 120 ms。
+stage manager 的启动命令仍为：
 
-## 构建与启动
+```bash
+rosrun car_bringup ground_air_stage_manager_node.py
+```
+
+它只管理建图/重定位阶段和会话归属，不持有静态 TF。A8/SRT 可降级；其余必需节点或任一静态 TF 节点退出会触发 supervisor 失败处理。
+
+## 服务管理
+
+用户服务文件为 `~/.config/systemd/user/ccs-edge-dev.service`。部署脚本启用该服务；不需要整车重启。
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now ccs-edge-dev.service
+systemctl --user status ccs-edge-dev.service --no-pager
+```
+
+`KillMode=mixed` 允许主脚本按“stage manager/阶段进程 -> 静态 TF -> 其他服务”的顺序清理。统一服务重启会短暂中断 MAVROS、Livox、MQTT、UDP、map-stream 和视频链。
+
+## 建图与重定位响应
+
+指控开始建图时，map-stream 先验证 stage service、会话归属保护、外部 TF 模式和两个 TF 节点，再请求 `stage=1`。manager 通过 `manual_mapping_control.launch` 启动 FAST-LIO、滤地、动态栅格、地图记录器和建图态 `map -> odom`；重复开始保持幂等。该入口不引用旧 `mapping_system.launch`，不会重复启动静态 TF。
+
+结束建图仍运行 `roslaunch car_bringup save_mapping.launch`。地图文件验证成功后请求 BASE 并停止建图专用进程；保存失败时保持建图运行。TF 故障不能阻止所属会话执行停止或取消。
+
+重定位 stage 使用 `relocalization_control.launch` 启动 FAST-LIO 与定位层，同样复用两条常驻静态 TF。原始建图与重定位 launch 均保留为历史/整套回滚参考，但旧入口依赖已变化，当前架构不保证其可独立完成阶段启动；统一服务运行时不得人工执行会间接包含 `mapping_coordinate_transforms.launch` 的旧入口。
+
+完整细节见 [GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md](GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)。
+
+## 构建与日志
 
 ```bash
 cd /home/bitcq/ccs_edge_ws
 source /opt/ros/noetic/setup.bash
 source /home/bitcq/catkin_ws/devel/setup.bash --extend
-catkin_make -j1 --force-cmake -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=/usr/bin/python3
-./start_ccs_edge_dev.sh
+catkin_make --pkg epgeneral_map_stream -DCMAKE_BUILD_TYPE=Release -j1
 ```
 
-脚本要求 systemd-timesyncd 已与 `192.168.50.101` 同步。日志位于
-`~/.ros/ccs_edge_dev_ground_air_agv/log`，PID 位于 `ccs_edge_ws/run`。
+日志位于 `~/.ros/ccs_edge_dev_ground_air_agv/log/`；其中 `startup.log` 记录启动顺序，`stage_manager.log` 记录阶段切换，`mapping_tf.log` 记录静态 TF launch。PID 位于 `/home/bitcq/ccs_edge_ws/run/`。
 
 ## 静态验收
 
-确认四个基础节点及 `/a8_mini_camera`、`/epgeneral_video_srt` 在线，并检查：
-
 ```bash
-rostopic echo -n 1 /mavros/state
-rostopic echo -n 1 /mavros/imu/data
-rostopic echo -n 1 /mavros/battery
+systemctl --user is-enabled ccs-edge-dev.service
+systemctl --user is-active ccs-edge-dev.service
+rostopic echo -n 1 /ground_air/system/stage
+rosnode list
 rostopic echo -n 1 /livox/lidar
 rostopic echo -n 1 /livox/imu
-rostopic echo -n 1 /agv/AGV_001/link/udp_tx
-rostopic echo -n 1 /agv/AGV_001/diagnostics
-rostopic type /a8_cam/image_raw
-rostopic hz /a8_cam/image_raw
+rosrun tf tf_echo odom camera_init
+rosrun tf tf_echo body base_link
 ```
 
-地面站 MQTT broker 应收到 `mqtav/AGV_001/presence`、
-`mqtav/AGV_001/heartbeat` 和 `mqtav/AGV_001/status`；UDP 遥测发送至
-`192.168.50.101:14560`。
-
-地面站以 Caller 连接
-`srt://192.168.50.130:9000?mode=caller&transtype=live&latency=120000`。
-A8/SRT 属于可降级服务：30 秒无图像或视频节点异常时记录告警，但不会
-停止 MAVROS、Livox、MQTT 和 UDP；相机恢复后会自动继续出流。
-
-验收期间禁止解锁、模式切换、起飞、降落、非零速度、位置设定点和任务
-目标。按 `Ctrl+C` 后检查六个节点和脚本管理的 ROS Master 均已清理。
-
-## 后续占位
-
-建图、重定位和任务 profile 已创建，但没有加入启动链。后续获得完整流程
-后，必须重新核对传感器外参、地图产物、TF、适配器、安全停止和真实设备
-验收要求，不能直接启用当前占位配置。
+确认 TF 只有一套发布者，启动日志中 TF launch 最后出现，建图开始/重复开始/结束闭环后静态 TF PID 不变，FAST-LIO、world-TF owner 和建图节点退出而基础服务继续运行。端侧仅评价流程、接口和产物，不评价车辆移动后的建图精度。
