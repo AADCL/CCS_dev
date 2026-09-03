@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+prefix="$HOME/Applications/CCS"
+yes=false
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --prefix) [ "$#" -ge 2 ] || { echo "--prefix requires a directory" >&2; exit 2; }; prefix="$2"; shift 2 ;;
+        --yes) yes=true; shift ;;
+        --help) echo "Usage: bash CCS-@VERSION@-linux-x64.run [--prefix DIRECTORY] [--yes]"; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+if [ "$yes" = false ]; then
+    read -r -p "Install CCS in [$prefix]: " answer
+    [ -z "$answer" ] || prefix="$answer"
+fi
+[ "$(uname -m)" = x86_64 ] || { echo "CCS requires x86_64 Linux." >&2; exit 1; }
+case "$prefix" in /*) ;; *) prefix="$PWD/$prefix";; esac
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/ccs-install.XXXXXXXX")"
+trap 'rm -rf -- "$tmp"' EXIT
+payload_line="$(awk '/^__CCS_PAYLOAD__$/ { print NR + 1; exit }' "$0")"
+tail -n +"$payload_line" "$0" > "$tmp/payload.tar.gz"
+printf '%s  %s\n' '@SHA256@' "$tmp/payload.tar.gz" | sha256sum --check --status
+mkdir "$tmp/payload"
+tar -xzf "$tmp/payload.tar.gz" -C "$tmp/payload"
+"$tmp/payload/ccs-maintenance" --install "$tmp/payload" --prefix "$prefix"
+exit 0
+__CCS_PAYLOAD__

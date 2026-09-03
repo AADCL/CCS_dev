@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from .runtime_paths import application_root
 from pathlib import Path
 
 
-DEFAULT_MAP_BUILDING_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "map_building.json"
+DEFAULT_MAP_BUILDING_CONFIG_PATH = application_root() / "config" / "map_building.json"
 
 
 class MapBuildingConfigError(ValueError):

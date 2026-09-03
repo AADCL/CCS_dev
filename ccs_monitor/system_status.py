@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .external_process import start_external_process
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -163,7 +165,7 @@ class SrtCapabilityProbe(QObject):
         self.process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self.process.errorOccurred.connect(self._on_error)
         self.process.finished.connect(self._on_finished)
-        self.process.start(config.ffmpeg_executable, ["-hide_banner", "-protocols"])
+        start_external_process(self.process, config.ffmpeg_executable, ["-hide_banner", "-protocols"])
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
         if error != QProcess.ProcessError.FailedToStart:

@@ -7,6 +7,8 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
+from .external_process import external_environment
+
 from .device_address import (
     DeviceAddressError,
     DeviceAddressResolutionError,
@@ -61,6 +63,8 @@ def ping_ip(
             timeout=3,
             check=False,
             shell=False,
+            env=external_environment(),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
         return PingResult(normalized, False, "连接测试超时", target)

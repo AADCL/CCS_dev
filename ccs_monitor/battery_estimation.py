@@ -6,11 +6,12 @@ import statistics
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from .runtime_paths import application_root
 from pathlib import Path
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "battery_estimation.json"
-DEFAULT_HISTORY_ROOT = Path(__file__).resolve().parent.parent / "data" / "battery_history"
+DEFAULT_CONFIG_PATH = application_root() / "config" / "battery_estimation.json"
+DEFAULT_HISTORY_ROOT = application_root() / "data" / "battery_history"
 
 
 @dataclass(frozen=True)

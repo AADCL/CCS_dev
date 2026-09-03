@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from .runtime_paths import resource_root
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
@@ -12,7 +13,7 @@ from .styles import ThemeMode, ThemePalette
 
 LOGGER = logging.getLogger(__name__)
 APP_ICON_SIZE = QSize(18, 18)
-ICON_ROOT = Path(__file__).resolve().parents[1] / "icons"
+ICON_ROOT = resource_root() / "icons"
 APP_ICON_ROOT = ICON_ROOT / "app_icons"
 
 

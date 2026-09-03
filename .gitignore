@@ -37,4 +37,7 @@ data/map_fusion_algorithms/*
 # Build and distribution output
 build/
 dist/
+config/appearance.ini
 *.egg-info/
+
+.ccs-running.lock

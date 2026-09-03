@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from .runtime_paths import application_root
 from pathlib import Path
 from typing import Any
 
 
-DEFAULT_NTP_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "ntp.json"
+DEFAULT_NTP_CONFIG_PATH = application_root() / "config" / "ntp.json"
 
 
 class NtpConfigError(ValueError):

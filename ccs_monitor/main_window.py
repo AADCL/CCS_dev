@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from .runtime_paths import resource_root
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QTimer, Signal
@@ -291,7 +292,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _logo_path() -> Path:
-        return Path(__file__).resolve().parent / "assets" / "ccs_logo.svg"
+        return resource_root() / "ccs_monitor" / "assets" / "ccs_logo.svg"
 
     @property
     def current_page_index(self) -> int:

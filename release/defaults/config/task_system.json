@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "protocol_id": "ccs-task-control-v2",
+  "network": {
+    "bind_host": "0.0.0.0",
+    "status_port": 14564,
+    "device_control_port": 14563,
+    "max_datagram_bytes": 1400
+  },
+  "transport": {
+    "chunk_payload_bytes": 800,
+    "retry_seconds": 0.5,
+    "max_attempts": 5,
+    "heartbeat_timeout_seconds": 5.0,
+    "group_start_delay_seconds": 3.0,
+    "group_ack_deadline_seconds": 1.0
+  },
+  "limits": {
+    "max_waypoints_per_subtask": 500,
+    "max_compressed_bytes": 1048576
+  }
+}

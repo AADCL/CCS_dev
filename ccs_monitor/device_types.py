@@ -6,6 +6,7 @@ import re
 import shutil
 import tempfile
 import uuid
+from .runtime_paths import application_root
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,8 +26,8 @@ DEVICE_TYPE_SCHEMA_VERSION = 1
 TYPE_ID_PATTERN = re.compile(r"^[A-Z0-9_-]{2,16}$")
 SUPPORTED_ICON_SUFFIXES = {".png", ".jpg", ".jpeg", ".svg"}
 MAX_ICON_BYTES = 5 * 1024 * 1024
-DEFAULT_DEVICE_TYPES_PATH = Path(__file__).resolve().parent.parent / "config" / "device_types.json"
-DEFAULT_DEVICE_TYPE_ASSET_DIR = Path(__file__).resolve().parent.parent / "data" / "device_type_assets"
+DEFAULT_DEVICE_TYPES_PATH = application_root() / "config" / "device_types.json"
+DEFAULT_DEVICE_TYPE_ASSET_DIR = application_root() / "data" / "device_type_assets"
 
 
 class DeviceTypeConfigError(RuntimeError):

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "server": {
+    "enabled": true,
+    "bind_host": "0.0.0.0",
+    "port": 123,
+    "stratum": 1,
+    "precision": -20,
+    "reference_id": "CCS"
+  }
+}

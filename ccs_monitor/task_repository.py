@@ -12,6 +12,7 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
+from .runtime_paths import application_root
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -31,7 +32,7 @@ from .task_models import (
 
 
 TASK_SCHEMA_VERSION = 2
-DEFAULT_TASK_ROOT = Path(__file__).resolve().parent.parent / "data" / "task_server"
+DEFAULT_TASK_ROOT = application_root() / "data" / "task_server"
 
 
 class TaskRepositoryError(RuntimeError):

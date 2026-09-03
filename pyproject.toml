@@ -1,11 +1,11 @@
 [project]
 name = "ccs-monitor"
-version = "0.22.9"
+version = "0.23.0"
 description = "多异构智能体指挥与控制地面站"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 dependencies = [
-    "PySide6>=6.6,<7",
+    "PySide6==6.8.3",
     "amqtt>=0.11,<1",
     "paho-mqtt>=2,<3",
     "zeroconf>=0.147,<1",
@@ -19,3 +19,6 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+release = ["pyinstaller==6.22.2", "tomli>=2,<3"]
