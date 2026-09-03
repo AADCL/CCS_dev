@@ -5,7 +5,9 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 WS=/home/bitcq/ccs_edge_ws
 CAR=/home/bitcq/catkin_ws/src/car_bringup
 USER_UNIT=/home/bitcq/.config/systemd/user/ccs-edge-dev.service
-source "${WS}/devel/setup.bash"
+source /opt/ros/noetic/setup.bash
+source /home/bitcq/catkin_ws/devel/setup.bash --extend
+source "${WS}/devel/setup.bash" --extend
 [[ "$(id -un)" == bitcq ]] || { echo "run as bitcq" >&2; exit 1; }
 if rosnode list 2>/dev/null | grep -Eq '^/(fast_lio_node|ground_air_map_recorder|ground_air_map_manager|ground_air_global_relocalizer)$'; then
   echo "active mapping/relocalization: deployment refused" >&2; exit 1
@@ -28,6 +30,7 @@ verify_known_version() {
   exit 1
 }
 verify_known_version "${WS}/start_ccs_edge_dev.sh" \
+  84f41b241e7a9bb60ef8f5e665b36425e8438adcc33375c841a5e3c9474eec95 \
   f608cf5edf99c68442af23e94a18342c6b4768b97c28bfe0e8cbfbb3201f7601 \
   9a1de3eb2cfa43afce77c43613009d6da299b706841c261d86fcf0bbf6de1c8c \
   7ab979eac7eb7a7a6c59c81492b47c3dc9750aa142943d9f76ccf501862fd74d \
@@ -35,6 +38,10 @@ verify_known_version "${WS}/start_ccs_edge_dev.sh" \
 verify_known_version "${USER_UNIT}" \
   78f938e51fb56254c8f4fb774d732e3d936c5c2abf672852034227fb7a782272 \
   25ef74acf3d7a4c0e558b54984f665e49b09d04c0d703493f33d73b9a4435b9f
+verify_known_version "${WS}/config/ground_air_agv/map_stream.yaml" \
+  9f407bea824e0b4f07a06b859a6f7c8504a94b4f8348d4c95cbd67157cf3a6b5 \
+  1c849d10636c17cee5eefc5d2fb6163e158f2415d18e89f73ecadb665d4975f2 \
+  2d8f3a2e154e293030847c96ba87c6cb34975e73d09d128793fa5503a1bd7e77
 verify_known_version "${CAR}/scripts/ground_air_stage_manager_node.py" \
   c4982816e6e925a9400dd3e5ef8c87d67dde5f7ef63cc77a77377d5251bc3c3d \
   f04e11e3d2314f5f273a0435dd6f1a6211ba66133791318ed25379c0372ca976 \
@@ -75,6 +82,7 @@ declare -a SOURCES=() TARGETS=() MODES=()
 add() { SOURCES+=("$1"); TARGETS+=("$2"); MODES+=("$3"); }
 add edge_side_pkg/deploy/ground_air_agv/start_ccs_edge_dev.sh "${WS}/start_ccs_edge_dev.sh" 755
 add edge_side_pkg/deploy/ground_air_agv/ccs-edge-dev.service "${USER_UNIT}" 644
+add edge_side_pkg/deploy/ground_air_agv/config/map_stream.yaml "${WS}/config/ground_air_agv/map_stream.yaml" 644
 for name in manual_mapping_control.launch mapping_coordinate_transforms.launch relocalization_control.launch; do
   add "edge_side_pkg/deploy/ground_air_agv/launch/${name}" "${CAR}/launch/${name}" 644
 done

@@ -21,7 +21,7 @@ class GroundAirAgvProfileTests(unittest.TestCase):
         self.assertTrue(mapping["deployment"]["enabled"])
         self.assertEqual(mapping["integrations"]["backend"], "ground_air_service")
         self.assertEqual(mapping["ros"]["frames"], {
-            "map": "camera_init", "preview": "camera_init",
+            "map": "camera_init", "preview": "odom",
             "body": "body", "sensor": "body",
         })
 
@@ -147,6 +147,22 @@ class GroundAirAgvProfileTests(unittest.TestCase):
                 + '"',
                 deploy,
             )
+        self.assertIn(
+            'verify_known_version "${WS}/config/ground_air_agv/map_stream.yaml"',
+            deploy,
+        )
+        self.assertIn(
+            'add edge_side_pkg/deploy/ground_air_agv/config/map_stream.yaml '
+            '"${WS}/config/ground_air_agv/map_stream.yaml" 644',
+            deploy,
+        )
+        device_setup = (
+            "source /home/bitcq/catkin_ws/devel/setup.bash --extend"
+        )
+        edge_setup = 'source "${WS}/devel/setup.bash" --extend'
+        self.assertIn(device_setup, deploy)
+        self.assertIn(edge_setup, deploy)
+        self.assertLess(deploy.index(device_setup), deploy.index(edge_setup))
         self.assertIn("roslaunch --nodes", deploy)
         self.assertIn("on-demand launch duplicates startup TF", deploy)
         self.assertIn(
@@ -159,13 +175,19 @@ class GroundAirAgvProfileTests(unittest.TestCase):
         self.assertIn('"${restart_count}" == 0', deploy)
 
     def test_ground_station_frame_contract_matches_profile(self):
-        ground = json.loads((ROOT / "config" / "map_building.json").read_text(
-            encoding="utf-8"))
-        self.assertEqual(ground["device_frames"]["AGV_001"], {
-            "remote_mapping": "camera_init",
+        expected = {
+            "remote_mapping": "odom",
             "preview_source": "camera_init",
             "remote_artifact": "map",
-        })
+        }
+        paths = (
+            ROOT / "config" / "map_building.json",
+            ROOT / "release" / "defaults" / "config" / "map_building.json",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                ground = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(ground["device_frames"]["AGV_001"], expected)
 
 
     def test_identity_matches_ground_station(self):

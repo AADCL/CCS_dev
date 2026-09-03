@@ -4,7 +4,7 @@
 
 适用于 `AGV_001`（`192.168.50.130`），复用 Scout 的指令应答、会话状态、产物校验、下载和日志组织方式。原始 `manual_mapping.launch` 与 `save_mapping.launch` 保持只读，部署前后必须校验 SHA-256，不修改、不覆盖。
 
-指控协议、UDP/TCP 端口和 `epgeneral_map_stream` 包版本不因本次 TF 启动调整而变化。
+指控协议、UDP/TCP 端口和 `epgeneral_map_stream` 包版本不因本次 TF 启动及预览帧调整而变化。指控端不修改建图协调器业务代码，只同步 `AGV_001` 的声明式帧配置。
 
 ## 自启动顺序与所有权
 
@@ -19,6 +19,21 @@ roslaunch car_bringup mapping_coordinate_transforms.launch
 `ground_air_stage_manager_node.py` 仍以 `rosrun car_bringup ground_air_stage_manager_node.py` 常驻，但只提供 `/ground_air/system/set_stage` 及建图/重定位进程组管理，不再创建、复用或停止静态 TF。manager 发布 `ccs_session_guard_version=1` 与 `external_tf_required=1`，并清除旧的 `resident_tf_version` 标识。
 
 `ccs-edge-dev.service` 使用 `KillMode=mixed`：停止服务时先通知主脚本，由脚本先停止 stage manager 及其 FAST-LIO/阶段子进程，再停止静态 TF，超时后才由 systemd 清理剩余进程。
+
+## 实时预览坐标系契约
+
+FAST-LIO 发布的 `/cloud_registered` 保持 `camera_init` 源坐标。Ground-Air profile 使用 `ros.frames.map=camera_init`、`ros.frames.preview=odom`；MapStream 以点云窗口时间戳查询 `odom <- camera_init`，并将点坐标实际变换到 `odom` 后再生成 PCD 分片，不能只修改 frame 标签。
+
+端侧与指控端的契约必须同时满足：
+
+| 阶段/产物 | 坐标系 |
+| --- | --- |
+| `prepare_result.frame_id` | `odom` |
+| `cloud_fragment_ready.frame_id` | `odom` |
+| `cloud_fragment_ready.source_frame_id` | `camera_init` |
+| 成果 manifest `frame_id` | `map` |
+
+指控端 `config/map_building.json` 及发布默认镜像中的 `device_frames.AGV_001` 对应配置为 `remote_mapping=odom`、`preview_source=camera_init`、`remote_artifact=map`。先前端侧准备响应返回 `camera_init`，而指控准备阶段要求全局 `odom`，因此协商通过后立即触发 `FRAME_MISMATCH` 并自动取消；只把端侧预览标签改为 `odom` 又会使首个分片与原 AGV profile 不一致。本次采用端侧真实转换与指控设备配置同步，保持准备和分片阶段语义一致。
 
 ## 建图指令流程
 
@@ -41,11 +56,12 @@ roslaunch car_bringup mapping_coordinate_transforms.launch
 
 1. 拒绝在 FAST-LIO、建图记录器或重定位节点活动时部署。
 2. 校验原始建图/保存 launch 及全部已知目标版本。
-3. 将启动脚本、systemd unit、三个控制 launch、manager/runtime/core、响应客户端、测试和说明文档备份到时间戳目录。
-4. 只增量编译 `epgeneral_map_stream`，运行 Bash/Python/XML/systemd 检查和目标单测。
-5. 执行 `systemctl --user daemon-reload`，启用并重启 `ccs-edge-dev.service`，最长等待 180 秒，直至基础必需节点、manager、两条静态 TF 和能力参数均就绪；不重启整车。
+3. 将启动脚本、systemd unit、三个控制 launch、manager/runtime/core、响应客户端、Ground-Air `map_stream.yaml`、测试和说明文档备份到时间戳目录。
+4. 依次加载 `/opt/ros/noetic/setup.bash`、车辆 `catkin_ws/devel/setup.bash --extend` 和 CCS `ccs_edge_ws/devel/setup.bash --extend`，再只增量编译 `epgeneral_map_stream`，运行 Bash/Python/XML/systemd 检查和目标单测。禁止只加载 CCS overlay，否则 `fast_lio_open3d` 等车辆包无法参与 launch 解析。
+5. 将 profile 写入 `/home/bitcq/ccs_edge_ws/config/ground_air_agv/map_stream.yaml`，执行 `systemctl --user daemon-reload`，启用并重启 `ccs-edge-dev.service`，最长等待 180 秒，直至基础必需节点、manager、两条静态 TF 和能力参数均就绪；不重启整车。
+6. 同步指控运行目录及发布默认镜像的 `config/map_building.json`，重启 CCS 以重新加载设备帧配置；不修改 `ccs_monitor/map_building_v2.py`。
 
-部署脚本输出的 `BACKUP=...` 必须写入部署日志。`before.sha256`、`after.sha256`、`manifest.tsv`、`service.enabled.before`、`service.active.before` 和 `original-launch.sha256` 用于审计及逐文件回滚。
+端侧与指控配置必须在同一维护窗口成对更新。部署脚本输出的 `BACKUP=...` 必须写入部署日志。`before.sha256`、`after.sha256`、`manifest.tsv`、`service.enabled.before`、`service.active.before` 和 `original-launch.sha256` 用于审计及逐文件回滚。
 
 ## 静态验收
 
@@ -62,7 +78,7 @@ rosrun tf tf_echo odom camera_init
 rosrun tf tf_echo body base_link
 ```
 
-验收至少覆盖：BASE 无建图节点、两个静态 TF 唯一发布；开始、重复开始、保存、BASE 复位；建图期间存在且仅存在一个建图态 world-TF owner；建图前后两个静态 TF PID 不变；结束后无 FAST-LIO、建图 roslaunch 或孤儿进程；原始 launch 校验值不变。保存失败保活只用本地单测验证，不在端侧主动制造磁盘或权限故障。
+验收至少覆盖：BASE 无建图节点、两个静态 TF 唯一发布；`prepare_result.frame_id=odom`，首个分片为 `frame_id=odom/source_frame_id=camera_init` 且被指控接受；开始、重复开始、保存、BASE 复位；建图期间存在且仅存在一个建图态 world-TF owner；建图前后两个静态 TF PID 不变；结束后无 FAST-LIO、建图 roslaunch 或孤儿进程；成果 manifest 为 `map`；原始 launch 校验值不变。保存失败保活只用本地单测验证，不在端侧主动制造磁盘或权限故障。
 
 ## 产物与日志
 
@@ -74,4 +90,4 @@ rosrun tf tf_echo body base_link
 
 ## 回滚
 
-确认没有活动建图后停止用户服务，按备份 `manifest.tsv` 恢复所有 `existing` 文件，并只删除标记为 `new` 的文件；随后增量编译 `epgeneral_map_stream` 并执行 `systemctl --user daemon-reload`。根据 `service.enabled.before` 恢复 enable/disable 状态，根据 `service.active.before` 恢复 active/inactive 状态，不固定重新启动服务。回滚后再次校验原始 `manual_mapping.launch` 与 `save_mapping.launch`。
+确认没有活动建图后停止用户服务，按备份 `manifest.tsv` 恢复所有 `existing` 文件，并只删除标记为 `new` 的文件；随后增量编译 `epgeneral_map_stream` 并执行 `systemctl --user daemon-reload`。根据 `service.enabled.before` 恢复 enable/disable 状态，根据 `service.active.before` 恢复 active/inactive 状态，不固定重新启动服务。指控端同时恢复同一批次备份的 `config/map_building.json` 并重启 CCS，禁止只回滚一端。回滚后再次校验原始 `manual_mapping.launch` 与 `save_mapping.launch`，并确认准备与首个预览分片的帧契约回到同一版本。

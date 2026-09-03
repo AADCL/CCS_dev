@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
+import math
 import socket
 import time
 import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 
 import msgpack
+
+PREVIEW_FRAME = "odom"
+PREVIEW_SOURCE_FRAME = "camera_init"
+ARTIFACT_FRAME = "map"
 
 
 def envelope(map_id: str, session_id: str, message_type: str, sequence: int,
@@ -33,7 +40,97 @@ def decode(datagram: bytes) -> dict:
     return msgpack.unpackb(datagram, raw=False, strict_map_key=True)
 
 
-def wait_for(sock: socket.socket, deadline: float, predicate, events: list[dict]) -> dict:
+def validate_prepare_contract(payload: dict) -> None:
+    actual = payload.get("frame_id")
+    if actual != PREVIEW_FRAME:
+        raise RuntimeError(
+            "prepare frame mismatch: expected %s, got %r"
+            % (PREVIEW_FRAME, actual)
+        )
+
+
+def validate_fragment_contract(payload: dict) -> None:
+    actual = (payload.get("frame_id"), payload.get("source_frame_id"))
+    expected = (PREVIEW_FRAME, PREVIEW_SOURCE_FRAME)
+    if actual != expected:
+        raise RuntimeError(
+            "fragment frame mismatch: expected %r, got %r" % (expected, actual)
+        )
+    transform = payload.get("display_from_source")
+    keys = ("x", "y", "z", "qx", "qy", "qz", "qw")
+    if not isinstance(transform, dict) or any(
+            not isinstance(transform.get(key), (int, float))
+            or not math.isfinite(float(transform[key]))
+            for key in keys):
+        raise RuntimeError("fragment display_from_source is incomplete or invalid")
+
+
+def validate_fragment_content(payload: dict, content: bytes) -> dict:
+    digest = hashlib.sha256(content).hexdigest()
+    if len(content) != payload.get("byte_count"):
+        raise RuntimeError("fragment byte count mismatch")
+    if digest != payload.get("sha256"):
+        raise RuntimeError("fragment SHA-256 mismatch")
+    marker = b"DATA binary\n"
+    marker_offset = content.find(marker)
+    if marker_offset < 0:
+        raise RuntimeError("fragment is not a binary PCD")
+    header = content[:marker_offset].decode("ascii", errors="strict")
+    for required in ("FIELDS x y z", "SIZE 4 4 4", "TYPE F F F"):
+        if required not in header.splitlines():
+            raise RuntimeError("fragment PCD header is missing %s" % required)
+    point_count = payload.get("point_count")
+    if not isinstance(point_count, int) or point_count < 0:
+        raise RuntimeError("fragment point count is invalid")
+    if "POINTS %d" % point_count not in header.splitlines():
+        raise RuntimeError("fragment PCD point count does not match descriptor")
+    binary = content[marker_offset + len(marker):]
+    if len(binary) != point_count * 12:
+        raise RuntimeError("fragment binary XYZ payload length is invalid")
+    return {
+        "byte_count": len(content),
+        "sha256": digest,
+        "point_count": point_count,
+    }
+
+
+def download_fragment(payload: dict) -> dict:
+    url = payload.get("url")
+    if not isinstance(url, str) or not url:
+        raise RuntimeError("fragment URL is missing")
+    with urllib.request.urlopen(url, timeout=30) as response:
+        content = response.read()
+    return validate_fragment_content(payload, content)
+
+
+def validate_artifact(content: bytes) -> dict:
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        names = set(archive.namelist())
+        required = {"manifest.json", "map.pgm", "map.yaml"}
+        missing = sorted(required - names)
+        if missing:
+            raise RuntimeError("artifact is missing required files: %s" % missing)
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        if manifest.get("frame_id") != ARTIFACT_FRAME:
+            raise RuntimeError(
+                "artifact frame mismatch: expected %s, got %r"
+                % (ARTIFACT_FRAME, manifest.get("frame_id"))
+            )
+        for kind in ("pgm", "yaml"):
+            descriptor = manifest.get("files", {}).get(kind, {})
+            path = descriptor.get("path")
+            if not path or path not in names:
+                raise RuntimeError("artifact manifest has no valid %s entry" % kind)
+            data = archive.read(path)
+            if len(data) != descriptor.get("byte_count"):
+                raise RuntimeError("artifact %s byte count mismatch" % kind)
+            if hashlib.sha256(data).hexdigest() != descriptor.get("sha256"):
+                raise RuntimeError("artifact %s SHA-256 mismatch" % kind)
+        return manifest
+
+
+def wait_for(sock: socket.socket, deadline: float, predicate, events: list[dict],
+             fragment_handler=None) -> dict:
     while time.monotonic() < deadline:
         sock.settimeout(max(0.1, min(2.0, deadline - time.monotonic())))
         try:
@@ -51,8 +148,13 @@ def wait_for(sock: socket.socket, deadline: float, predicate, events: list[dict]
             "accepted": payload.get("accepted"),
             "error_code": payload.get("error_code"),
             "reason": payload.get("reason"),
+            "frame_id": payload.get("frame_id"),
+            "source_frame_id": payload.get("source_frame_id"),
+            "display_from_source": payload.get("display_from_source"),
         }, ensure_ascii=False), flush=True)
         if item.get("message_type") == "cloud_fragment_ready":
+            if fragment_handler is not None:
+                fragment_handler(payload)
             fragment_id = payload.get("fragment_id")
             ack = envelope(item["map_id"], item["session_id"], "cloud_fragment_ack", 9000 + int(fragment_id), {
                 "request_id": "fragment-ack-%s" % fragment_id,
@@ -97,6 +199,7 @@ def main() -> int:
             lambda item: item.get("message_type") == "prepare_result", events)
         if not prepared["payload"].get("accepted"):
             raise RuntimeError("prepare rejected: %s" % prepared["payload"])
+        validate_prepare_contract(prepared["payload"])
 
         start = envelope(map_id, session_id, "start_mapping", 1, {
             "request_id": "start-" + session_id,
@@ -118,6 +221,18 @@ def main() -> int:
             raise RuntimeError("duplicate start was not idempotently accepted")
 
         sample_deadline = time.monotonic() + args.sample_seconds
+        fragment_summary = {}
+
+        def validate_first_fragment(payload):
+            validate_fragment_contract(payload)
+            fragment_summary.update(download_fragment(payload))
+
+        first_fragment = wait_for(
+            sock, sample_deadline,
+            lambda item: item.get("message_type") == "cloud_fragment_ready",
+            events,
+            fragment_handler=validate_first_fragment,
+        )
         try:
             wait_for(sock, sample_deadline, lambda unused: False, events)
         except TimeoutError:
@@ -152,6 +267,7 @@ def main() -> int:
         digest = hashlib.sha256(content).hexdigest()
         if len(content) != ready["payload"]["byte_count"] or digest != ready["payload"]["sha256"]:
             raise RuntimeError("downloaded artifact size or SHA-256 mismatch")
+        manifest = validate_artifact(content)
         report = args.output / (map_id + ".json")
         report.write_text(json.dumps({
             "map_id": map_id,
@@ -159,10 +275,23 @@ def main() -> int:
             "archive": str(archive),
             "byte_count": len(content),
             "sha256": digest,
+            "frame_contract": {
+                "prepare": prepared["payload"]["frame_id"],
+                "preview": first_fragment["payload"]["frame_id"],
+                "preview_source": first_fragment["payload"]["source_frame_id"],
+                "artifact": manifest["frame_id"],
+            },
+            "first_fragment": fragment_summary,
             "events": events,
         }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         print(json.dumps({"result": "PASS", "archive": str(archive),
-                          "byte_count": len(content), "sha256": digest}, ensure_ascii=False))
+                          "byte_count": len(content), "sha256": digest,
+                          "frame_contract": {
+                              "prepare": prepared["payload"]["frame_id"],
+                              "preview": first_fragment["payload"]["frame_id"],
+                              "preview_source": first_fragment["payload"]["source_frame_id"],
+                              "artifact": manifest["frame_id"],
+                          }}, ensure_ascii=False))
         return 0
     except Exception as exc:
         print(json.dumps({"result": "FAIL", "error": str(exc)}, ensure_ascii=False), flush=True)

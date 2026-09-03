@@ -46,6 +46,8 @@ systemctl --user status ccs-edge-dev.service --no-pager
 
 结束建图仍运行 `roslaunch car_bringup save_mapping.launch`。地图文件验证成功后请求 BASE 并停止建图专用进程；保存失败时保持建图运行。TF 故障不能阻止所属会话执行停止或取消。
 
+实时预览使用端侧真实坐标转换：`/cloud_registered` 的 `camera_init` 点云通过常驻 `odom <- camera_init` TF 转换到 `odom`。端侧返回 `prepare_result.frame_id=odom`，预览分片返回 `frame_id=odom/source_frame_id=camera_init`，最终成果保持 `frame_id=map`。指控端只同步 `AGV_001` 的 `remote_mapping=odom`、`preview_source=camera_init`、`remote_artifact=map` 配置，不修改建图协调器代码。
+
 重定位 stage 使用 `relocalization_control.launch` 启动 FAST-LIO 与定位层，同样复用两条常驻静态 TF。原始建图与重定位 launch 均保留为历史/整套回滚参考，但旧入口依赖已变化，当前架构不保证其可独立完成阶段启动；统一服务运行时不得人工执行会间接包含 `mapping_coordinate_transforms.launch` 的旧入口。
 
 完整细节见 [GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md](GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)。
@@ -59,7 +61,11 @@ source /home/bitcq/catkin_ws/devel/setup.bash --extend
 catkin_make --pkg epgeneral_map_stream -DCMAKE_BUILD_TYPE=Release -j1
 ```
 
+增量部署脚本在检查 launch 和构建前严格按 ROS Noetic、车辆 `catkin_ws`、CCS `ccs_edge_ws` 的顺序加载 overlay，后两项使用 `--extend`。只加载 CCS overlay 会使 `fast_lio_open3d` 等车辆包不可见，必须在服务重启前中止部署并修正环境。
+
 日志位于 `~/.ros/ccs_edge_dev_ground_air_agv/log/`；其中 `startup.log` 记录启动顺序，`stage_manager.log` 记录阶段切换，`mapping_tf.log` 记录静态 TF launch。PID 位于 `/home/bitcq/ccs_edge_ws/run/`。
+
+Ground-Air `map_stream.yaml` 部署到 `/home/bitcq/ccs_edge_ws/config/ground_air_agv/map_stream.yaml`。变更实时预览帧时必须同时更新指控运行配置和发布默认镜像中的 `config/map_building.json`，然后分别重启 `ccs-edge-dev.service` 与 CCS；回滚也必须恢复同一批次的两端配置。
 
 ## 静态验收
 

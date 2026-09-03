@@ -1,6 +1,13 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.22.7`，更新日期：2026-08-28。
+文档版本：`v0.23.0`，更新日期：2026-09-03。
+
+## 2026-09-03 Ground-Air AGV 建图预览坐标系契约
+
+- `AGV_001` 的建图输入点云仍为 `/cloud_registered`，源坐标系为 `camera_init`；端侧通过常驻的 `odom <- camera_init` TF 将点坐标实际转换到 `odom`，禁止只改 frame 标签。
+- `prepare_result.frame_id=odom`；`cloud_fragment_ready.frame_id=odom`、`source_frame_id=camera_init`；最终成果 manifest 仍声明 `frame_id=map`。
+- 指控端只调整 `config/map_building.json` 中 `AGV_001` 的设备帧配置，不修改协调器业务代码；`ccs-map-stream-v2` 的 schema、消息字段和端口均不变。
+- 端侧 `map_stream.yaml` 与指控端 `map_building.json` 必须成对部署和回滚。只修改任意一端都会在准备或首个预览分片阶段触发坐标系校验失败。
 
 ## v0.19.2 地面站初始位姿选择器修复
 
@@ -189,9 +196,9 @@ v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sen
 }
 ```
 
-`accepted` 必须等于所有 checks 的逻辑与。`start_mapping` 带 `coordinate_contract=sensor+map_body+body_sensor`、`preview_transport=pcd_fragment_http` 和 1 秒周期。每个 `cloud_fragment_ready` 包含 `fragment_id/url/byte_count/sha256/point_count/frame_id/source_frame_id/display_from_source/started_at_ns/ended_at_ns/expires_at`。其中 `frame_id=odom`、`source_frame_id=lio_odom`，`display_from_source` 为端侧实际用于点变换的 `{x,y,z,qx,qy,qz,qw}`。平台限制 URL 主机为设备地址或其 mDNS 解析结果，校验坐标契约、字节数、SHA-256 和二进制 XYZ PCD 后以 `odom` 增量显示，再以 request ID 和 fragment ID 确认。
+`accepted` 必须等于所有 checks 的逻辑与。`start_mapping` 带 `coordinate_contract=sensor+map_body+body_sensor`、`preview_transport=pcd_fragment_http` 和 1 秒周期。每个 `cloud_fragment_ready` 包含 `fragment_id/url/byte_count/sha256/point_count/frame_id/source_frame_id/display_from_source/started_at_ns/ended_at_ns/expires_at`。`frame_id` 和 `source_frame_id` 必须匹配 `config/map_building.json` 中当前设备的 `device_frames` 契约；`display_from_source` 为端侧实际用于点变换的 `{x,y,z,qx,qy,qz,qw}`。平台限制 URL 主机为设备地址或其 mDNS 解析结果，校验坐标契约、字节数、SHA-256 和二进制 XYZ PCD 后增量显示，再以 request ID 和 fragment ID 确认。
 
-实时预览坐标生命周期为 `lio_odom --(odom <- lio_odom TF)--> odom`。端侧以点云窗口最后一帧时间戳查询 TF，将窗口统一到 `lio_odom` 后再实际变换全部点坐标，禁止只修改 PCD 的 frame 标签。Scout 最终成果 ZIP 的 manifest 声明 `frame_id=map`；Go2 accumulator 成果保持 `frame_id=lio_odom`。平台按设备契约完整校验后再原子提交。
+端侧以点云窗口最后一帧时间戳查询 TF，并实际变换全部点坐标，禁止只修改 PCD 的 frame 标签。Ground-Air AGV 的实时预览生命周期为 `camera_init --(odom <- camera_init TF)--> odom`，因此返回 `frame_id=odom`、`source_frame_id=camera_init`；最终成果 ZIP 的 manifest 声明 `frame_id=map`。Scout 与 Go2 继续使用各自 profile 的帧契约，不受本次 AGV 调整影响。平台按设备契约完整校验后再原子提交。
 
 FAST_LIO 点云和里程计按 header 时间戳在 50 ms 窗口内匹配。点云回调先到时端侧最多缓存 3 帧等待对应位姿，不得直接匹配约 100 ms 前的上一帧位姿；位姿时间已越过窗口或缓存溢出时才丢帧，并记录原因和时间差。
 
@@ -410,6 +417,8 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 | `config/udp_telemetry.json` | `epgeneral_device_config/config/udp_telemetry.yaml` | protocol ID、目标 14560、descriptor 名称/类型/等级/哈希 |
 | `config/devices.json`、`config/srt_video.json` | `epgeneral_device_config/config/video.yaml` | 设备 IP 或 `.local` mDNS 地址、UDP 9000、延迟、H.264/MPEG-TS/SRT |
 | `config/map_building.json` | `epgeneral_device_config/config/map_stream.yaml` | protocol ID、14561/14562、包长、压缩、格式、速率、体素和资源上限 |
+
+`AGV_001` 还要求帧配置成对一致：指控端 `device_frames.AGV_001` 为 `remote_mapping=odom`、`preview_source=camera_init`、`remote_artifact=map`；端侧为 `ros.frames.map=camera_init`、`ros.frames.preview=odom`、`artifacts.frame=map`。部署时先确认常驻 `odom -> camera_init` TF 唯一且可查询，再重启两端加载配置。
 
 ## 端侧建图实现检查清单
 
