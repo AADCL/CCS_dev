@@ -4183,10 +4183,19 @@ class MapPage(QWidget):
             if snapshot is None and self.telemetry_store is not None:
                 snapshot = self.telemetry_store.telemetry(device.device_id)
             profile = self.source.profile(device.device_id)
-            binding = next((
-                item for item in getattr(profile, "map_bindings", ())
-                if item.map_id == definition.map_id
-            ), None)
+            relocalization_service = getattr(
+                self, "relocalization_service", None
+            )
+            binding = (
+                relocalization_service.binding(
+                    definition.map_id, device.device_id
+                )
+                if relocalization_service is not None
+                else next((
+                    item for item in getattr(profile, "map_bindings", ())
+                    if item.map_id == definition.map_id
+                ), None)
+            )
             pose = (
                 getattr(snapshot, binding.pose_source, None)
                 if binding is not None

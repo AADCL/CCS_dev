@@ -12,6 +12,29 @@ class RosIntegrationError(RuntimeError):
     pass
 
 
+def scoped_search_path(current, prepend="", excludes=()):
+    excluded = {
+        os.path.normcase(os.path.abspath(os.path.expanduser(str(item))))
+        for item in excludes
+    }
+    candidates = []
+    if prepend:
+        candidates.extend(str(prepend).split(os.pathsep))
+    candidates.extend(str(current or "").split(os.pathsep))
+    result = []
+    seen = set()
+    for candidate in candidates:
+        if not candidate:
+            continue
+        expanded = os.path.abspath(os.path.expanduser(candidate))
+        normalized = os.path.normcase(expanded)
+        if normalized in excluded or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(expanded)
+    return os.pathsep.join(result)
+
+
 def rostopic_has_subscriber(output):
     in_subscribers = False
     for raw_line in str(output).splitlines():
@@ -40,17 +63,33 @@ class StackManager(object):
         self.stop()
         values = {
             "map_id": map_id, "map_dir": map_dir,
-            "map_pcd": os.path.join(map_dir, "public_map.pcd"),
+            "map_root": os.path.dirname(map_dir),
+            "map_pcd": os.path.join(
+                map_dir, self.config.get("pcd_filename", "public_map.pcd")),
             "map_yaml": os.path.join(map_dir, "map.yaml"),
         }
         try:
             for stage in self.config["stages"]:
                 command = ["roslaunch", str(stage["package"]), str(stage["launch"])]
                 command.extend(str(item).format(**values) for item in stage.get("args", []))
+                environment = os.environ.copy()
+                package_path = stage.get("ros_package_path_prepend")
+                expanded = (
+                    str(package_path).format(**values) if package_path else ""
+                )
+                environment["ROS_PACKAGE_PATH"] = scoped_search_path(
+                    environment.get("ROS_PACKAGE_PATH", ""),
+                    expanded,
+                    stage.get("ros_package_path_exclude", ()),
+                )
+                environment["CMAKE_PREFIX_PATH"] = scoped_search_path(
+                    environment.get("CMAKE_PREFIX_PATH", ""),
+                    excludes=stage.get("cmake_prefix_path_exclude", ()),
+                )
                 self.logger.info("relocalization_stage_start name=%s command=%s", stage["name"], command)
                 process = self.popen(
                     command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    universal_newlines=True, preexec_fn=os.setsid,
+                    universal_newlines=True, preexec_fn=os.setsid, env=environment,
                 )
                 self.processes.append((str(stage["name"]), process))
                 drain = threading.Thread(
@@ -73,6 +112,11 @@ class StackManager(object):
             text = line.rstrip()
             if text:
                 self.logger.info("relocalization_stage_output name=%s output=%s", name, text[:4096])
+
+    def is_running(self):
+        return bool(self.processes) and all(
+            process.poll() is None for unused_name, process in self.processes
+        )
 
     def _wait_topics(self):
         deadline = self.clock() + self.config["startup_timeout_seconds"]
@@ -187,6 +231,9 @@ class RosBridge(object):
         thread.start()
 
     def _monitor(self, callback, generation):
+        if self.config.get("tf_continuous_reporting", False):
+            self._monitor_continuous(callback, generation)
+            return
         deadline = time.monotonic() + self.config["tf_timeout_seconds"]
         samples = []
         delay = 1.0 / self.config["tf_sample_hz"]
@@ -217,3 +264,54 @@ class RosBridge(object):
             time.sleep(delay)
         if self._monitor_is_current(generation):
             callback(False, None, "map<-odom TF did not stabilize before timeout")
+
+    def _monitor_continuous(self, callback, generation):
+        interval = self.config["tf_report_interval_seconds"]
+        started_at = time.monotonic()
+        next_sample = started_at
+        cached_sample = None
+        cached_stamp = None
+        while not self.rospy.is_shutdown() and self._monitor_is_current(generation):
+            now = time.monotonic()
+            if now < next_sample:
+                time.sleep(min(next_sample - now, 0.1))
+                continue
+            next_sample += interval
+            try:
+                transform = self.buffer.lookup_transform(
+                    self.config["map_frame"], self.config["odom_frame"],
+                    self.rospy.Time(0), self.rospy.Duration(min(interval, 0.2)))
+                t, q = transform.transform.translation, transform.transform.rotation
+                sample = (float(t.x), float(t.y), float(t.z),
+                          float(q.x), float(q.y), float(q.z), float(q.w))
+                stamp = float(transform.header.stamp.to_sec())
+                ros_now = float(self.rospy.Time.now().to_sec())
+                quaternion_norm = math.sqrt(sum(value * value for value in sample[3:]))
+                valid = (
+                    all(math.isfinite(value) for value in sample)
+                    and 0.5 <= quaternion_norm <= 1.5
+                    and stamp > 0.0
+                    and stamp <= ros_now + 1.0
+                )
+                if not valid:
+                    raise RosIntegrationError("map<-odom TF sample is invalid")
+                if cached_sample is None:
+                    if ros_now - stamp > self.config["tf_timeout_seconds"]:
+                        raise RosIntegrationError("map<-odom TF sample is stale")
+                    cached_sample = sample
+                    cached_stamp = stamp
+                elif stamp > cached_stamp:
+                    cached_sample = sample
+                    cached_stamp = stamp
+                sample = cached_sample
+            except Exception as error:
+                self.logger.warning("relocalization_tf_sample_skipped error=%s", error)
+                if cached_sample is None:
+                    if time.monotonic() - started_at < self.config["tf_timeout_seconds"]:
+                        continue
+                    if self._monitor_is_current(generation):
+                        callback(False, None, "map<-odom TF unavailable before timeout")
+                    return
+                sample = cached_sample
+            if self._monitor_is_current(generation):
+                callback(True, sample, "")

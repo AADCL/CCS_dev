@@ -143,7 +143,7 @@
       ],
       "srt_port": 9000,
       "srt_latency_ms": 120,
-      "relocalization_profile": "disabled",
+      "relocalization_profile": "ground_air_agv",
       "active_map_id": "76e41303-0974-4f40-9425-557a64841fec",
       "map_bindings": []
     },

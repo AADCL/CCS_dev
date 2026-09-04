@@ -32,7 +32,9 @@ def resolve_local_odom_pose(source, telemetry, device_id: str) -> PoseTelemetry 
         return None
     field = (
         "vision_pose"
-        if profile.relocalization_profile in {"scout_mini", "wheeltec_r550p"}
+        if profile.relocalization_profile in {
+            "scout_mini", "wheeltec_r550p", "ground_air_agv"
+        }
         else "global_pose"
     )
     pose = getattr(telemetry, field, None)
@@ -89,7 +91,11 @@ def resolve_device_map_context(source, relocalization_service, telemetry, device
     map_id = profile.active_map_id
     if not map_id:
         return DeviceMapContext(None, "未知空间", local_pose, None, "尚未设置活动地图")
-    binding = next((item for item in profile.map_bindings if item.map_id == map_id), None)
+    binding = (
+        relocalization_service.binding(map_id, device_id)
+        if relocalization_service is not None
+        else next((item for item in profile.map_bindings if item.map_id == map_id), None)
+    )
     snapshot = relocalization_service.snapshot(map_id, device_id) if relocalization_service else None
     if snapshot is not None and snapshot.session_id:
         localization_text = STATUS_TEXT[snapshot.status]

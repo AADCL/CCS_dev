@@ -226,6 +226,22 @@ class RelocalizationServiceTests(unittest.TestCase):
             self.service.protocol.encode(envelope), "192.168.50.120",
         )
 
+    def _tf_response(self, sequence, x, state="succeeded"):
+        envelope = RelocalizationEnvelope(
+            "map-1", "UGV_001", "session-1", "initial-request",
+            "relocalization_result", sequence, sequence, {
+                "request_id": "initial-request", "state": state,
+                "map_frame": "map", "odom_frame": "odom",
+                "map_from_odom": {
+                    "x": x, "y": 2.0, "z": 0.0,
+                    "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+                },
+            },
+        )
+        self.service.process_datagram(
+            self.service.protocol.encode(envelope), "192.168.50.120",
+        )
+
     def test_async_command_remains_retryable_until_terminal_status(self):
         snapshot = RelocalizationSnapshot(
             "map-1", "UGV_001", "session-1", RelocalizationStatus.MAP_TRANSFERRING,
@@ -392,6 +408,41 @@ class RelocalizationServiceTests(unittest.TestCase):
         self.assertEqual(
             self.service.snapshot("map-1", "UGV_001").status,
             RelocalizationStatus.SUCCEEDED,
+        )
+
+    def test_periodic_success_updates_live_binding_and_throttles_persistence(self):
+        current = [0.0]
+        self.service.clock = lambda: current[0]
+        self.service._snapshots[("map-1", "ugv_001")] = RelocalizationSnapshot(
+            "map-1", "UGV_001", "session-1",
+            RelocalizationStatus.RELOCALIZING, "relocalizing",
+        )
+        self._tf_response(1, 1.0)
+        current[0] = 1.0
+        self._tf_response(2, 2.0)
+        self.assertEqual(
+            self.service.snapshot("map-1", "UGV_001").status,
+            RelocalizationStatus.SUCCEEDED,
+        )
+        self.assertEqual(self.service.binding("map-1", "UGV_001").map_from_odom.x, 2.0)
+        self.assertEqual(len(self.source.saved_bindings), 1)
+        current[0] = 31.0
+        self._tf_response(3, 3.0)
+        self.assertEqual(len(self.source.saved_bindings), 2)
+        self.assertEqual(self.source.saved_bindings[-1][1].map_from_odom.x, 3.0)
+
+    def test_continuous_tf_failure_is_allowed_after_success(self):
+        self.service._snapshots[("map-1", "ugv_001")] = RelocalizationSnapshot(
+            "map-1", "UGV_001", "session-1",
+            RelocalizationStatus.RELOCALIZING, "relocalizing",
+        )
+        self._tf_response(1, 1.0)
+        self._response(
+            "initial-request", "relocalization_result", "failed", 2
+        )
+        self.assertEqual(
+            self.service.snapshot("map-1", "UGV_001").status,
+            RelocalizationStatus.FAILED,
         )
 
 

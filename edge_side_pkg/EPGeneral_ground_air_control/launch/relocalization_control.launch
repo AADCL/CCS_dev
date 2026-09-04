@@ -1,0 +1,25 @@
+<launch>
+  <arg name="map_id" />
+  <arg name="maps_root" default="/home/bitcq/ccs_edge_ws/maps/download" />
+  <arg name="service_wait_timeout" default="90.0" />
+  <arg name="relocalize_timeout" default="60.0" />
+
+  <include file="$(find fast_lio_open3d)/launch/mapping_mid360.launch">
+    <arg name="rviz" value="false" />
+  </include>
+  <include file="$(find car_bringup)/launch/fastlio_pipeline.launch" />
+  <include file="$(find ground_air_localization)/launch/localization.launch">
+    <arg name="maps_root" value="$(arg maps_root)" />
+    <arg name="relocalize_timeout" value="$(arg relocalize_timeout)" />
+  </include>
+
+  <node pkg="epgeneral_ground_air_control"
+        type="ground_air_initial_pose_adapter_node.py"
+        name="ground_air_initial_pose_adapter"
+        output="screen"
+        required="true">
+    <param name="map_id" value="$(arg map_id)" />
+    <param name="service_wait_timeout" value="$(arg service_wait_timeout)" />
+    <param name="relocalize_timeout" value="$(arg relocalize_timeout)" />
+  </node>
+</launch>

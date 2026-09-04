@@ -12,7 +12,7 @@
 
 ## 一键启动组件
 
-`start_ccs_edge_dev.sh` 依次启动 MAVROS、Livox MID-360、MQTT、UDP 遥测、map-stream、A8 Mini、SRT、stage manager，最后执行：
+`start_ccs_edge_dev.sh` 依次启动 MAVROS、Livox MID-360、MQTT、UDP 遥测、map-stream、A8 Mini、SRT、工作区 stage manager 和重定位协调器，最后执行：
 
 ```bash
 roslaunch car_bringup mapping_coordinate_transforms.launch
@@ -20,13 +20,13 @@ roslaunch car_bringup mapping_coordinate_transforms.launch
 
 该 launch 只常驻 `/odom_camera_init_broadcaster` 与 `/base_link_body_broadcaster`，统一发布 `odom -> camera_init` 和 `body -> base_link`。FAST-LIO 不在开机阶段启动，收到建图或重定位阶段指令后才由 stage manager 启动。
 
-stage manager 的启动命令仍为：
+stage manager 由 `ccs_edge_ws` 内的设备专属控制包提供，启动命令为：
 
 ```bash
-rosrun car_bringup ground_air_stage_manager_node.py
+rosrun epgeneral_ground_air_control ground_air_stage_manager_node.py
 ```
 
-它只管理建图/重定位阶段和会话归属，不持有静态 TF。A8/SRT 可降级；其余必需节点或任一静态 TF 节点退出会触发 supervisor 失败处理。
+它发布 `ccs_session_guard_version=2`，只管理建图/重定位阶段、互斥 owner 和所属进程组，不持有静态 TF。重定位协调器 `/epgeneral_relocalization` 在最终 TF launch 之前启动；A8/SRT 可降级，其余必需节点或任一静态 TF 节点退出会触发 supervisor 失败处理。
 
 ## 服务管理
 

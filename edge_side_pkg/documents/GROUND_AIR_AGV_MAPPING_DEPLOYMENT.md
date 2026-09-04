@@ -16,7 +16,7 @@ roslaunch car_bringup mapping_coordinate_transforms.launch
 
 `start_ccs_edge_dev.sh` 直接持有该 roslaunch 进程组，并分别等待 `/odom_camera_init_broadcaster` 与 `/base_link_body_broadcaster`。启动时若任一同名 TF 节点已由外部进程占用，脚本拒绝重复接管；运行期间任一节点退出，supervisor 失败退出并由 systemd 重启整套端侧服务。
 
-`ground_air_stage_manager_node.py` 仍以 `rosrun car_bringup ground_air_stage_manager_node.py` 常驻，但只提供 `/ground_air/system/set_stage` 及建图/重定位进程组管理，不再创建、复用或停止静态 TF。manager 发布 `ccs_session_guard_version=1` 与 `external_tf_required=1`，并清除旧的 `resident_tf_version` 标识。
+`ground_air_stage_manager_node.py` 以 `rosrun epgeneral_ground_air_control ground_air_stage_manager_node.py` 从 `ccs_edge_ws` 常驻，只提供 `/ground_air/system/set_stage`、建图/重定位互斥 owner 及所属进程组管理，不创建、复用或停止静态 TF。manager 发布 `ccs_session_guard_version=2` 与 `external_tf_required=1`，并清除旧的 `resident_tf_version` 标识。
 
 `ccs-edge-dev.service` 使用 `KillMode=mixed`：停止服务时先通知主脚本，由脚本先停止 stage manager 及其 FAST-LIO/阶段子进程，再停止静态 TF，超时后才由 systemd 清理剩余进程。
 
@@ -46,7 +46,7 @@ FAST-LIO 发布的 `/cloud_registered` 保持 `camera_init` 源坐标。Ground-A
 
 完整建图 TF 链为 `map -> odom -> camera_init -> body -> base_link`。`map -> odom` 由建图进程组内的 `ground_air_world_tf_owner` 以 mapping 模式发布，`camera_init -> body` 由 FAST-LIO 发布，另两条静态边由开机 launch 唯一发布。BASE 阶段只承诺两条常驻静态边。
 
-为避免相同回归，stage 2 使用新增 `relocalization_control.launch`，直接启动 FAST-LIO 与定位层并复用常驻静态 TF；原始 `start_relocalization.launch` 与 `relocalization_system.launch` 不修改。
+stage 2 由 `epgeneral_ground_air_control/relocalization_control.launch` 直接启动 FAST-LIO、定位层和初始位姿适配器并复用常驻静态 TF。顶层命令通过仅包含 `relocalization_system.launch` 的工作区覆盖保持 `roslaunch car_bringup relocalization_system.launch` 不变；underlay 原文件不修改。完整契约见 `GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md`。
 
 原始 `roslaunch car_bringup manual_mapping.launch` 保持逐字节不变，作为历史和整套回滚参考；它依赖旧 `mapping_system.launch` 的启动关系，在当前“静态 TF 独立常驻”架构下不保证可独立完成建图，也不得在统一服务运行时执行。当前人工诊断应停止 `ccs-edge-dev.service` 后显式启动所需基础层与 `manual_mapping_control.launch`；只有完整回滚关联 launch 后，才按旧说明使用原命令。
 

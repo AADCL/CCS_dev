@@ -40,7 +40,7 @@ CCS 是面向可信局域网的 PySide6 地面站，连接无人车、无人机�
 | Windows 安装包 | Windows 10/11 x64 日常使用 | 选择可写安装目录；自带 Python、Qt、FFmpeg |
 | Ubuntu .run 安装包 | Ubuntu 20.04/22.04 x64 桌面 | 交互或自动安装；自带应用运行依赖 |
 | 地面站便携 ZIP | 开发、现场调试、自定义 Python 插件 | 解压后先用 uv 或 pip 安装依赖 |
-| 端侧配套 ZIP | ROS 设备部署 | 按设备 profile 配置并在端侧构建七个 ROS 包 |
+| 端侧配套 ZIP | ROS 设备部署 | 七个公共 ROS 包；Ground-Air profile 另含专用控制包 |
 
 v0.23.0 新增本地构建能力。产物位于构建机 dist/，具体文件名、校验和安装参数见
 [发布指南](docs/RELEASING.md)。[验证记录](docs/RELEASE_VALIDATION.md) 单独列出已验证和待验证平台。
@@ -82,8 +82,9 @@ Input 部分应包含 srt。设备地址、端口、MQTT 和 NTP 参数位于 co
 | [发布指南](docs/RELEASING.md) | 构建、离线安装、便携版、升级卸载与迁移 |
 | [验证记录](docs/RELEASE_VALIDATION.md) | 构建证据、自动化回归及四系统实机验收状态 |
 | [使用与部署指南](docs/USER_GUIDE.md) | 页面操作、地面站与端侧部署、网络配置和故障排查 |
-| [端侧包](edge_side_pkg/README.md) | 七个 ROS 包与设备 profile |
+| [端侧包](edge_side_pkg/README.md) | 七个公共 ROS 包、Ground-Air 控制包与设备 profile |
 | [Ground-Air AGV 建图部署](edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md) | 自启动 TF、建图响应、静态验收与回滚 |
+| [Ground-Air AGV 重定位部署](edge_side_pkg/documents/GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md) | 两阶段重定位、1 Hz TF 采样/缓存重发、工作区边界与回滚 |
 | [接口总册](docs/EDGE_DEVICE_INTERFACES.md) | 消息格式、通道与协议约束 |
 | [需求分析](需求分析.md) | 需求基线、平台目标和交付门禁 |
 | [开发笔记](docs/DEVELOPMENT_NOTES.md) | 实现约束与维护说明 |

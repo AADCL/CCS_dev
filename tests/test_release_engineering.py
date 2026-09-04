@@ -145,14 +145,20 @@ class ReleaseContentsTests(unittest.TestCase):
                 self.assertIn(base + "ccs_monitor/runtime_paths.py", names)
                 self.assertIn(base + "release-manifest.json", names)
 
-    def test_edge_has_exactly_seven_packages(self):
+    def test_edge_has_exactly_eight_packages(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             output = root / "dist"
             output.mkdir()
             artifact = builder.edge(root, output)
             with zipfile.ZipFile(artifact) as archive:
-                packages = {name.split("/")[2] for name in archive.namelist() if name.endswith("/package.xml")}
+                packages = {
+                    Path(name).parts[2]
+                    for name in archive.namelist()
+                    if len(Path(name).parts) == 4
+                    and Path(name).parts[1] == "edge_side_pkg"
+                    and Path(name).name == "package.xml"
+                }
                 self.assertEqual(packages, set(builder.EDGE_PACKAGES))
                 self.assertTrue(any(n.endswith("epgeneral_video_srt_node.cpp") for n in archive.namelist()))
                 self.assertTrue(any(n.endswith("ccs-edge-dev.service") for n in archive.namelist()))
