@@ -55,6 +55,10 @@ class RelocalizationNode(object):
         self.map_dir = None
         self.response_cache = {}
         self.operation_generation = 0
+        self._latest_tf = None
+        self._latest_tf_map_id = ""
+        self._last_tf_persisted_at = 0.0
+        self._tf_dirty = False
         self.persisted_state = self._read_active_state()
         if self.persisted_state is not None:
             if not config["enabled"]:
@@ -81,6 +85,7 @@ class RelocalizationNode(object):
             pass
         if self.ros is not None:
             self.ros.cancel_monitor()
+        self._persist_latest_tf()
         self.stack.stop()
         if self.thread is not None and self.thread.is_alive():
             self.thread.join(timeout=2.0)
@@ -148,14 +153,15 @@ class RelocalizationNode(object):
             self.identity = new_identity
             self.map_dir = os.path.join(os.path.expanduser(self.config["map_root"]), message["map_id"])
             if not self.config["enabled"] or self.config["backend"] not in (
-                    "scout_mini", "wheeltec_r550p"):
+                    "scout_mini", "wheeltec_r550p", "ground_air_agv"):
                 self.state = "standby"
                 self._write_active_state(message["map_id"], "unsupported")
                 self._reply(message, "negotiation_status", {
                     "state": "unsupported", "reason": "UNSUPPORTED_BACKEND"})
                 return
             try:
-                validate_map_directory(self.map_dir, message["map_id"])
+                validate_map_directory(
+                    self.map_dir, message["map_id"], self.config["pcd_filename"])
             except ArtifactError:
                 self.state = "map_required"
                 self._write_active_state(message["map_id"], "map_required")
@@ -267,7 +273,7 @@ class RelocalizationNode(object):
             self._reply(message, "download_status", {"state": "verifying"})
             self.map_dir = install_archive(
                 partial, self.config["map_root"], message["map_id"],
-                self.config["max_artifact_bytes"])
+                self.config["max_artifact_bytes"], self.config["pcd_filename"])
             os.unlink(partial)
             self.state = "map_ready"
             self._write_active_state(message["map_id"], "map_ready")
@@ -280,16 +286,27 @@ class RelocalizationNode(object):
 
     def _start_stack(self, message):
         if not self.config["enabled"] or self.config["backend"] not in (
-                "scout_mini", "wheeltec_r550p"):
+                "scout_mini", "wheeltec_r550p", "ground_air_agv"):
             self._write_active_state(message["map_id"], "unsupported")
             self._reply(message, "command_error", {
                 "state": "error", "reason": "UNSUPPORTED_BACKEND"})
+            return
+        if (
+            self.state in ("awaiting_pose", "localized")
+            and self.stack.is_running()
+        ):
+            if self.state == "localized" and self.ros is not None:
+                self.ros.cancel_monitor()
+            self.state = "awaiting_pose"
+            self._write_active_state(message["map_id"], "awaiting_pose")
+            self._reply(message, "stack_status", {"state": "awaiting_pose"})
             return
         if self.state not in ("map_ready", "localized", "error") or not self.map_dir:
             self._reply(message, "command_error", {"state": "error", "reason": "MAP_NOT_READY"})
             return
         try:
-            validate_map_directory(self.map_dir, message["map_id"])
+            validate_map_directory(
+                self.map_dir, message["map_id"], self.config["pcd_filename"])
         except ArtifactError as exc:
             self.state = "map_required"
             self._write_active_state(message["map_id"], "map_required")
@@ -327,7 +344,7 @@ class RelocalizationNode(object):
 
     def _initial_pose(self, message):
         if not self.config["enabled"] or self.config["backend"] not in (
-                "scout_mini", "wheeltec_r550p"):
+                "scout_mini", "wheeltec_r550p", "ground_air_agv"):
             self._write_active_state(message["map_id"], "unsupported")
             self._reply(message, "command_error", {
                 "state": "error", "reason": "UNSUPPORTED_BACKEND"})
@@ -355,10 +372,20 @@ class RelocalizationNode(object):
             self.logger.info("stale_relocalization_result_ignored generation=%s", generation)
             return
         if success:
-            self.state = "localized"
             values = dict(zip(("x", "y", "z", "qx", "qy", "qz", "qw"), transform))
+            first_result = self.state != "localized"
+            self.state = "localized"
+            self._latest_tf = values
+            self._latest_tf_map_id = message["map_id"]
+            self._tf_dirty = True
             try:
-                self._write_active_state(message["map_id"], "localized", values)
+                now = time.monotonic()
+                if (first_result or not self.config.get("tf_continuous_reporting", False)
+                        or now - self._last_tf_persisted_at
+                        >= self.config.get("tf_persist_interval_seconds", 30.0)):
+                    self._write_active_state(message["map_id"], "localized", values)
+                    self._last_tf_persisted_at = now
+                    self._tf_dirty = False
             except OSError as exc:
                 self.state = "error"
                 self._write_active_state(message["map_id"], "error")
@@ -373,6 +400,17 @@ class RelocalizationNode(object):
             self._write_active_state(message["map_id"], "error")
             self._reply(message, "relocalization_result", {
                 "state": "failed", "reason": reason})
+
+    def _persist_latest_tf(self):
+        if not self._tf_dirty or self._latest_tf is None or not self._latest_tf_map_id:
+            return
+        try:
+            self._write_active_state(
+                self._latest_tf_map_id, "localized", self._latest_tf)
+            self._last_tf_persisted_at = time.monotonic()
+            self._tf_dirty = False
+        except OSError as exc:
+            self.logger.warning("relocalization_tf_shutdown_persist_failed error=%s", exc)
 
     def _heartbeat(self, unused_event):
         if self.identity is not None:

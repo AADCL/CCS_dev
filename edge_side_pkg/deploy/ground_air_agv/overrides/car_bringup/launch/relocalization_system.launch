@@ -1,0 +1,15 @@
+<launch>
+  <arg name="map_id" />
+  <arg name="service_wait_timeout" default="90.0" />
+  <arg name="relocalize_timeout" default="60.0" />
+
+  <node pkg="epgeneral_ground_air_control"
+        type="ground_air_relocalization_stage_node.py"
+        name="ccs_relocalization_stage_$(anon relocalization_owner)"
+        output="screen"
+        required="true">
+    <param name="map_id" value="$(arg map_id)" />
+    <param name="service_wait_timeout" value="$(arg service_wait_timeout)" />
+    <param name="relocalize_timeout" value="$(arg relocalize_timeout)" />
+  </node>
+</launch>

@@ -12,6 +12,7 @@ PACKAGE_DIRS = (
     "EPGeneral_map_stream",
     "epgeneral_mqtav",
     "EPGeneral_relocalization",
+    "EPGeneral_ground_air_control",
     "EPGeneral_task_control",
     "EPGeneral_udp_telemetry",
     "EPGeneral_video_srt",
@@ -29,7 +30,7 @@ CONFIG_FILES = (
 
 
 class EdgePackageLayoutTests(unittest.TestCase):
-    def test_edge_root_has_seven_packages_and_two_control_side_directories(self):
+    def test_edge_root_has_eight_packages_and_two_control_side_directories(self):
         actual = {
             path.name
             for path in EDGE_ROOT.iterdir()
@@ -48,6 +49,7 @@ class EdgePackageLayoutTests(unittest.TestCase):
             "epgeneral_map_stream",
             "epgeneral_mqtav",
             "epgeneral_relocalization",
+            "epgeneral_ground_air_control",
             "epgeneral_task_control",
             "epgeneral_udp_telemetry",
             "epgeneral_video_srt",

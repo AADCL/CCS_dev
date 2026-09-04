@@ -2,7 +2,7 @@
 
 This profile targets `AGV_001` at `192.168.50.130` on Ubuntu 20.04, ROS Noetic, and ARM64. The CCS overlay is `/home/bitcq/ccs_edge_ws`; vehicle packages remain in `/home/bitcq/catkin_ws`.
 
-`start_ccs_edge_dev.sh` starts MAVROS, Livox MID-360, MQTT, UDP telemetry, map-stream, optional A8/SRT, and the Ground-Air stage manager. Its final startup item is exactly:
+`start_ccs_edge_dev.sh` starts MAVROS, Livox MID-360, MQTT, UDP telemetry, map-stream, optional A8/SRT, the workspace-owned Ground-Air stage manager, and `epgeneral_relocalization`. Its final startup item is exactly:
 
 ```bash
 roslaunch car_bringup mapping_coordinate_transforms.launch
@@ -12,7 +12,7 @@ The transform launch owns only the resident `odom -> camera_init` and `body -> b
 
 The Ground-Air map-stream profile keeps `ros.frames.map=camera_init` and sets `ros.frames.preview=odom`. MapStream therefore looks up `odom <- camera_init` at the point-cloud timestamp and transforms the actual point coordinates before publishing a fragment; changing only the frame label is invalid. The wire contract is `prepare_result.frame_id=odom`, fragment `frame_id=odom`, fragment `source_frame_id=camera_init`, and artifact manifest `frame_id=map`.
 
-The user service uses `KillMode=mixed`, allowing the supervisor to stop the stage manager and any stage children before stopping the static transforms. Logs are under `~/.ros/ccs_edge_dev_ground_air_agv/log`; the transform log is `mapping_tf.log` and its PID file is `/home/bitcq/ccs_edge_ws/run/mapping_tf.pid`.
+The user service uses `KillMode=mixed`, allowing the supervisor to stop the coordinator and stage manager before stopping the static transforms. New application and ROS logs are under `/home/bitcq/ccs_edge_ws/log/ground_air_agv`, ROS home is `/home/bitcq/ccs_edge_ws/run/ros_home`, and the transform PID file is `/home/bitcq/ccs_edge_ws/run/mapping_tf.pid`.
 
 Deploy with the reviewed incremental bundle's `deploy_stage_manager_update.sh`. It verifies known target hashes, backs up every affected file and prior service state, includes the Ground-Air `map_stream.yaml` in the manifest, copies it to `/home/bitcq/ccs_edge_ws/config/ground_air_agv/map_stream.yaml`, runs targeted tests, incrementally builds `epgeneral_map_stream`, reloads the user unit, enables/restarts `ccs-edge-dev.service`, and waits up to 180 seconds for the required ROS nodes and capability parameters. It does not reboot the vehicle.
 
@@ -25,3 +25,5 @@ Acceptance is static only: verify the service and both resident transform edges;
 The original `manual_mapping.launch` remains byte-for-byte unchanged as a historical/full-rollback reference. Its legacy nested dependencies no longer form the supported standalone mapping path under this TF architecture. Use `manual_mapping_control.launch` for current diagnostics, and never run the legacy entry while `ccs-edge-dev.service` is active.
 
 See `edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md` for command mapping, artifacts, rollback, and evidence requirements.
+
+Relocalization updates use `deploy_relocalization_update.sh`. Every deployment, backup, temporary, configuration, package and evidence write is containment-checked below `/home/bitcq/ccs_edge_ws`; the vehicle underlay and existing user service definition are read-only. See `edge_side_pkg/documents/GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md`.

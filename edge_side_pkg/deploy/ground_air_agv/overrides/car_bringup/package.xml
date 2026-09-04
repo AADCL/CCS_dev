@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>car_bringup</name>
+  <version>0.0.1</version>
+  <description>Workspace-scoped CCS relocalization launch override.</description>
+  <maintainer email="ccs@example.invalid">CCS Team</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>catkin</buildtool_depend>
+</package>

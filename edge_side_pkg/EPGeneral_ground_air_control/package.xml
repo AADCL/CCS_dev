@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>epgeneral_ground_air_control</name>
+  <version>0.1.0</version>
+  <description>CCS-owned mapping and relocalization stage control for the Ground-Air AGV.</description>
+  <maintainer email="ccs@example.invalid">CCS Team</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>geometry_msgs</depend>
+  <depend>ground_air_msgs</depend>
+  <depend>rosnode</depend>
+  <depend>rospy</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
+</package>
