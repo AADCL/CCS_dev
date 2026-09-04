@@ -77,12 +77,17 @@ class NewDeviceDialog(QDialog):
         self.srt_latency_input.setRange(20, 8000)
         self.srt_latency_input.setValue(120)
         self.srt_latency_input.setSuffix(" ms")
+        self.battery_profile_input = QComboBox()
+        self.battery_profile_input.addItem("不估算", "disabled")
+        self.battery_profile_input.addItem("松灵 Scout Mini", "scout_mini")
+        self.battery_profile_input.addItem("轮趣 WheelTech R550P", "wheeltec_r550p")
         form.addRow("设备名称", self.name_input)
         form.addRow("设备类型", self.type_input)
         form.addRow("设备 ID", self.id_input)
         form.addRow("设备地址", self.ip_input)
         form.addRow("SRT 端口", self.srt_port_input)
         form.addRow("SRT 延迟", self.srt_latency_input)
+        form.addRow("电池估算", self.battery_profile_input)
         root.addLayout(form)
 
         test_row = QHBoxLayout()
@@ -208,6 +213,7 @@ class NewDeviceDialog(QDialog):
                 else "go2_edu" if str(self.type_input.currentData()).upper() == "QRD"
                 else "disabled"
             ),
+            battery_profile=str(self.battery_profile_input.currentData()),
         )
 
 
@@ -232,6 +238,8 @@ class EditDeviceDialog(NewDeviceDialog):
         self.ip_input.setText(profile.ip_address)
         self.srt_port_input.setValue(profile.srt_port)
         self.srt_latency_input.setValue(profile.srt_latency_ms)
+        battery_index = self.battery_profile_input.findData(profile.battery_profile)
+        self.battery_profile_input.setCurrentIndex(max(0, battery_index))
         if profile.last_tested_at is not None:
             self._tested_ip = profile.ip_address
             self._ping_result = PingResult(
@@ -254,6 +262,7 @@ class EditDeviceDialog(NewDeviceDialog):
             self.original_profile.relocalization_profile,
             self.original_profile.map_bindings,
             self.original_profile.active_map_id,
+            profile.battery_profile,
         )
 
 
@@ -375,8 +384,9 @@ class DeviceTypeTemplateDialog(QDialog):
         self.name_input = QLineEdit()
         self.shape_input = QComboBox()
         self.shape_input.addItem("箭头", MapMarkerShape.ARROW)
-        self.shape_input.addItem("立方体", MapMarkerShape.CUBE)
+        self.shape_input.addItem("长方体", MapMarkerShape.CUBE)
         self.shape_input.addItem("球体", MapMarkerShape.SPHERE)
+        self.shape_input.addItem("原点", MapMarkerShape.ORIGIN)
         form.addRow("类型 ID", self.id_input)
         form.addRow("显示名称", self.name_input)
         form.addRow("地图显示", self.shape_input)

@@ -19,11 +19,13 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 RETIRED_STATUS_CARDS = {"octomap_mapping", "occupancy_grid_mapping"}
 RELOCALIZATION_PROFILES = {
     "scout_mini", "wheeltec_r550p", "ground_air_agv", "go2_edu", "disabled"
 }
+RELOCALIZATION_PROFILES = {"scout_mini", "wheeltec_r550p", "go2_edu", "disabled"}
+BATTERY_PROFILES = {"scout_mini", "wheeltec_r550p", "disabled"}
 
 
 class DeviceConfigError(RuntimeError):
@@ -72,7 +74,7 @@ class DeviceConfigRepository:
             self._profiles = []
             return []
         self._profiles = profiles
-        if schema_version in {1, 2, 3, 4, 5}:
+        if schema_version in {1, 2, 3, 4, 5, 6}:
             self._write(profiles)
         return list(profiles)
 
@@ -201,6 +203,7 @@ class DeviceConfigRepository:
             "srt_latency_ms": profile.srt_latency_ms,
             "relocalization_profile": profile.relocalization_profile,
             "map_bindings": profile.map_bindings, "active_map_id": profile.active_map_id,
+            "battery_profile": profile.battery_profile,
         }
         values.update(changes)
         return DeviceProfile(**values)
@@ -213,7 +216,7 @@ class DeviceConfigRepository:
         if not isinstance(payload, dict):
             raise ValueError("根节点必须是对象")
         schema_version = payload.get("schema_version")
-        if schema_version not in {1, 2, 3, 4, 5, SCHEMA_VERSION}:
+        if schema_version not in {1, 2, 3, 4, 5, 6, SCHEMA_VERSION}:
             raise ValueError(f"不支持的 schema_version：{payload.get('schema_version')}")
         raw_devices = payload.get("devices")
         if not isinstance(raw_devices, list):
@@ -245,6 +248,12 @@ class DeviceConfigRepository:
                         for value in item.get("map_bindings", [])
                     ),
                     active_map_id=(str(item["active_map_id"]) if item.get("active_map_id") else None),
+                    battery_profile=str(item.get(
+                        "battery_profile",
+                        item.get("relocalization_profile", "disabled")
+                        if item.get("relocalization_profile") in BATTERY_PROFILES
+                        else "disabled",
+                    )),
                 )
             except (KeyError, ValueError, TypeError) as exc:
                 raise ValueError(f"devices[{index}] 字段无效：{exc}") from exc
@@ -273,6 +282,9 @@ class DeviceConfigRepository:
         relocalization_profile = profile.relocalization_profile.strip().lower()
         if relocalization_profile not in RELOCALIZATION_PROFILES:
             raise ValueError(f"未知重定位 profile：{profile.relocalization_profile}")
+        battery_profile = profile.battery_profile.strip().lower()
+        if battery_profile not in BATTERY_PROFILES:
+            raise ValueError(f"未知电池 profile：{profile.battery_profile}")
         bindings = tuple(self._validate_binding(item) for item in profile.map_bindings)
         if len({item.map_id for item in bindings}) != len(bindings):
             raise ValueError("map_bindings 包含重复地图 ID")
@@ -289,6 +301,7 @@ class DeviceConfigRepository:
             relocalization_profile=relocalization_profile,
             map_bindings=bindings,
             active_map_id=profile.active_map_id.strip() if profile.active_map_id else None,
+            battery_profile=battery_profile,
         )
 
     @staticmethod
@@ -382,6 +395,7 @@ class DeviceConfigRepository:
             "srt_port": profile.srt_port,
             "srt_latency_ms": profile.srt_latency_ms,
             "relocalization_profile": profile.relocalization_profile,
+            "battery_profile": profile.battery_profile,
             "active_map_id": profile.active_map_id,
             "map_bindings": [
                 {

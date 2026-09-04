@@ -284,14 +284,16 @@ class MqttDeviceSource(SimulatedDeviceSource):
         profile = self.profile(device.device_id)
         estimated = self.battery_estimator.observe(
             device.device_id,
-            profile.relocalization_profile if profile else "disabled",
+            profile.battery_profile if profile else "disabled",
             event.battery_voltage,
             self._wall_clock(),
             device.connection_status == ConnectionStatus.ONLINE,
         )
         battery_percent = event.battery_percentage
-        if profile is not None and profile.relocalization_profile == "scout_mini":
+        if battery_percent is None:
             battery_percent = estimated
+        if battery_percent is not None and battery_percent < 25:
+            health = HealthStatus.ATTENTION
         self._replace_device(
             replace(
                 device,

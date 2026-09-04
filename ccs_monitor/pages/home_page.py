@@ -56,7 +56,7 @@ class MetricCard(QFrame):
         layout.setHorizontalSpacing(12)
         layout.setVerticalSpacing(3)
         self.icon_label = CardIcon(
-            label, icon_name=icon_name, icon_file=icon_file, size=28
+            label, icon_name=icon_name, icon_file=icon_file, size=36
         )
         self.value_label = QLabel(value)
         self.value_label.setObjectName("metricValue")
@@ -82,7 +82,7 @@ class RuntimeStatusCard(QFrame):
         layout.setSpacing(5)
         header = QGridLayout()
         self.icon_label = (
-            CardIcon(status.display_name, icon_name=icon_name, size=24)
+            CardIcon(status.display_name, icon_name=icon_name, size=32)
             if icon_name is not None
             else None
         )

@@ -130,7 +130,7 @@ class DeviceBindingTests(unittest.TestCase):
             )
             repository.upsert_map_binding(profile.device_id, binding)
             saved = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(saved["schema_version"], 6)
+            self.assertEqual(saved["schema_version"], 7)
             self.assertEqual(saved["devices"][0]["map_bindings"][0]["map_id"], "map-1")
             self.assertEqual(repository.load()[0].map_bindings[0], binding)
 

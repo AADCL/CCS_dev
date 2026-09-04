@@ -198,15 +198,15 @@ class CommandDashboardUiTests(unittest.TestCase):
             {device.device_id for device in updated if device.connection_status == ConnectionStatus.ONLINE},
         )
 
-    def test_page_timers_and_manual_fullscreen_lifecycle(self):
+    def test_page_timers_scan_removal_and_manual_fullscreen_lifecycle(self):
         page = self.window.command_page
         self.assertTrue(page.render_timer.isActive())
-        self.assertTrue(page.animation_timer.isActive())
-        page.scan_toggle.setChecked(False)
-        self.assertFalse(page.animation_timer.isActive())
-        self.assertFalse(page.scan_overlay.isVisible())
-        page.scan_toggle.setChecked(True)
-        self.assertTrue(page.animation_timer.isActive())
+        self.assertTrue(page.clock_timer.isActive())
+        for removed_name in ("animation_timer", "scan_toggle", "scan_overlay"):
+            self.assertFalse(hasattr(page, removed_name))
+        self.assertEqual(page.top_bar.objectName(), "dashboardTopBar")
+        self.assertEqual(page.dashboard_title.text(), "指挥与控制系统信息总览")
+        self.assertEqual(page.dashboard_kicker.text(), "COMMAND & CONTROL OVERVIEW")
         with patch.object(self.window, "showFullScreen"), patch.object(self.window, "showNormal"):
             self.window.set_dashboard_fullscreen(True)
             self.assertTrue(self.window.dashboard_fullscreen)
@@ -217,7 +217,7 @@ class CommandDashboardUiTests(unittest.TestCase):
         self.window.set_current_page(0)
         self.app.processEvents()
         self.assertFalse(page.render_timer.isActive())
-        self.assertFalse(page.animation_timer.isActive())
+        self.assertFalse(page.clock_timer.isActive())
 
     def test_status_panel_responds_to_width_without_overriding_user_choice(self):
         page = self.window.command_page
@@ -243,6 +243,10 @@ class CommandDashboardUiTests(unittest.TestCase):
         page = self.window.command_page
         page.status_panel.set_expanded(True)
         self.app.processEvents()
+        self.assertEqual(page.status_panel.toggle_button.property("appIconName"), "expand")
+        page.status_panel.set_expanded(False)
+        self.assertEqual(page.status_panel.toggle_button.property("appIconName"), "close")
+        page.status_panel.set_expanded(True)
         position_chart = page.status_panel.position_chart
         attitude_chart = page.status_panel.attitude_chart
         self.assertEqual(position_chart.title_label.text(), "位置数据")
