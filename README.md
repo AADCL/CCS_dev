@@ -19,7 +19,7 @@ CCS 是面向可信局域网的 PySide6 地面站，连接无人车、无人机�
 
 **快速入口：** [安装与发布](docs/RELEASING.md) · [使用与部署](docs/USER_GUIDE.md) ·
 [端侧指南](edge_side_pkg/README.md) · [通信协议](docs/EDGE_DEVICE_INTERFACES.md) ·
-[版本记录](CHANGELOG.md)
+[电池曲线校准](docs/BATTERY_CALIBRATION.md) · [版本记录](CHANGELOG.md)
 
 ## 核心能力
 
@@ -85,6 +85,7 @@ Input 部分应包含 srt。设备地址、端口、MQTT 和 NTP 参数位于 co
 | [端侧包](edge_side_pkg/README.md) | 七个 ROS 包与设备 profile |
 | [Ground-Air AGV 建图部署](edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md) | 自启动 TF、建图响应、静态验收与回滚 |
 | [接口总册](docs/EDGE_DEVICE_INTERFACES.md) | 消息格式、通道与协议约束 |
+| [电池曲线校准](docs/BATTERY_CALIBRATION.md) | WheelTech 与 Scout 曲线、平滑、迁移和现场校准 |
 | [需求分析](需求分析.md) | 需求基线、平台目标和交付门禁 |
 | [开发笔记](docs/DEVELOPMENT_NOTES.md) | 实现约束与维护说明 |
 

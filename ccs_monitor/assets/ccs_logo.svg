@@ -1,11 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
-  <title>CCS telemetry network mark</title>
-  <rect x="7" y="7" width="114" height="114" rx="30" fill="#0E1720" stroke="#2A4A57" stroke-width="4"/>
-  <path d="M37 42L64 27L91 42L91 73L64 91L37 73V42Z" fill="#12352F" stroke="#37C5A0" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M37 42L64 57L91 42M64 57V91" stroke="#8DE2C7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="37" cy="42" r="8" fill="#8DE2C7" stroke="#0E1720" stroke-width="4"/>
-  <circle cx="91" cy="42" r="8" fill="#8DE2C7" stroke="#0E1720" stroke-width="4"/>
-  <circle cx="64" cy="91" r="8" fill="#37C5A0" stroke="#0E1720" stroke-width="4"/>
-  <circle cx="64" cy="57" r="7" fill="#F0F5FA" stroke="#0E1720" stroke-width="4"/>
-  <path d="M22 93C29 104 40 111 53 114M106 93C99 104 88 111 75 114" stroke="#2A4A57" stroke-width="4" stroke-linecap="round"/>
+  <title>CCS unified command mark</title>
+  <desc>Aligned map frames and a heading marker represent heterogeneous agents coordinated in one shared map.</desc>
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="#07111F" stroke="#1D3A55" stroke-width="3"/>
+  <path d="M99 35C90 23 77 17 62 17C36 17 15 38 15 64C15 90 36 111 62 111C77 111 90 104 99 93L85 81C79 88 71 92 62 92C46 92 33 79 33 64C33 49 46 36 62 36C71 36 79 40 85 47L99 35Z" fill="#38BDF8"/>
+  <path d="M94 49C87 42 78 38 68 38C54 38 42 50 42 64C42 78 54 90 68 90C78 90 87 86 94 79L82 68C78 72 74 74 68 74C62 74 57 70 57 64C57 58 62 54 68 54C74 54 78 56 82 60L94 49Z" fill="#EAF5FF"/>
+  <path d="M62 70L88 47L80 80L73 69L62 70Z" fill="#50D890" stroke="#07111F" stroke-width="4" stroke-linejoin="round"/>
 </svg>

@@ -63,6 +63,24 @@ class DeviceTypeTemplateRepositoryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.repository.create(DeviceTypeTemplate("VALID", "未知卡片", default_status_card_ids=("missing",)))
 
+    def test_origin_round_trip_and_legacy_cube_value_remain_supported(self) -> None:
+        self.repository.load()
+        self.repository.create(DeviceTypeTemplate(
+            "ORIGIN_MARKER", "原点标记", map_marker_shape=MapMarkerShape.ORIGIN,
+        ))
+        payload = json.loads(self.repository.path.read_text(encoding="utf-8"))
+        payload["device_types"].append({
+            "type_id": "LEGACY_CUBE", "display_name": "长方体",
+            "map_marker_shape": "cube", "default_status_cards": [],
+        })
+        self.repository.path.write_text(json.dumps(payload), encoding="utf-8")
+        reloaded = DeviceTypeTemplateRepository(
+            self.repository.path, self.repository.asset_dir,
+        ).load()
+        shapes = {item.type_id: item.map_marker_shape for item in reloaded}
+        self.assertEqual(shapes["ORIGIN_MARKER"], MapMarkerShape.ORIGIN)
+        self.assertEqual(shapes["LEGACY_CUBE"], MapMarkerShape.CUBE)
+
     def test_icon_is_copied_and_trashed_with_template(self) -> None:
         self.repository.load()
         source = Path(self.temporary.name) / "icon.png"

@@ -182,6 +182,40 @@ class MqttDeviceSourceTests(unittest.TestCase):
             self.source.device(self.device_id).connection_status, ConnectionStatus.ONLINE
         )
 
+    def test_battery_profile_estimates_only_when_percentage_is_missing(self):
+        class StubEstimator:
+            def __init__(self):
+                self.calls = []
+
+            def observe(self, *args):
+                self.calls.append(args)
+                return 0.0
+
+        estimator = StubEstimator()
+        self.source.battery_estimator = estimator
+        profile = self.source.profile(self.device_id)
+        self.source.update_device(
+            self.device_id, replace(profile, battery_profile="wheeltec_r550p")
+        )
+        base_health = {
+            "fcu_connected": True, "armed": False, "system_status": 3,
+            "flight_mode": "MANUAL", "mission_status": "standby",
+        }
+        self.message("status", 1, dict(
+            base_health, battery={"voltage": 20.0, "percentage": None},
+        ))
+        estimated = self.source.device(self.device_id)
+        self.assertEqual(estimator.calls[-1][1], "wheeltec_r550p")
+        self.assertEqual(estimated.battery_percent, 0.0)
+        self.assertEqual(estimated.health_status, HealthStatus.ATTENTION)
+
+        self.message("status", 2, dict(
+            base_health, battery={"voltage": 20.0, "percentage": 68.0},
+        ))
+        original = self.source.device(self.device_id)
+        self.assertEqual(original.battery_percent, 68.0)
+        self.assertEqual(original.health_status, HealthStatus.NORMAL)
+
     def test_mission_aliases(self):
         self.assertEqual(normalize_mission_status("running"), TaskStatus.EXECUTING)
         self.assertEqual(normalize_mission_status("standby"), TaskStatus.STANDBY)

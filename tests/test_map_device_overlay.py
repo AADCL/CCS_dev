@@ -13,10 +13,12 @@ from PySide6.QtWidgets import QApplication
 from ccs_monitor.map_building_v2 import RemoteMappingSnapshot
 from ccs_monitor.models import (
     ConnectionStatus,
+    DeviceMapMarker,
     DeviceProfile,
     DeviceSnapshot,
     DeviceTelemetrySnapshot,
     MapDefinition,
+    MapMarkerShape,
     MapTransform,
     PoseTelemetry,
     TaskStatus,
@@ -172,6 +174,47 @@ class MapOnlineDevicePanelTests(unittest.TestCase):
         ):
             self.assertEqual(visual.order, viewer.DEVICE_LAYER_ORDER)
         viewer.deleteLater()
+
+    def test_device_marker_shapes_use_required_geometry_and_depth(self):
+        viewer = PointCloudViewer()
+        try:
+            visuals = {
+                shape: viewer._create_marker_mesh(DeviceMapMarker(
+                    "DEVICE", "Device", 1.0, 2.0, 3.0,
+                    marker_shape=shape, color="#ff0000",
+                ))
+                for shape in MapMarkerShape
+            }
+            arrow = visuals[MapMarkerShape.ARROW]
+            np.testing.assert_allclose(
+                np.ptp(arrow.mesh_data.get_vertices(), axis=0),
+                (0.96, 0.68, 0.0), atol=1e-6,
+            )
+            self.assertGreater(
+                arrow.mesh_data.get_vertices()[:, 0].max(),
+                abs(arrow.mesh_data.get_vertices()[:, 0].min()),
+            )
+
+            cuboid = visuals[MapMarkerShape.CUBE]
+            vertices = cuboid.mesh_data.get_vertices()
+            np.testing.assert_allclose(np.ptp(vertices, axis=0), (0.80, 0.50, 0.35), atol=1e-6)
+            self.assertEqual(cuboid.mesh_data.get_faces().shape, (12, 3))
+            transformed = cuboid.transform.map(vertices)
+            self.assertAlmostEqual(float(transformed[:, 2].min()), 3.0)
+            self.assertTrue(cuboid._vshare.gl_state["depth_test"])
+            self.assertEqual(cuboid._vshare.gl_state["preset"], "opaque")
+
+            sphere = visuals[MapMarkerShape.SPHERE]
+            sphere_vertices = sphere.mesh_data.get_vertices()
+            self.assertAlmostEqual(float(np.abs(sphere_vertices).max()), 0.30, places=6)
+            self.assertTrue(sphere._vshare.gl_state["depth_test"])
+
+            origin = visuals[MapMarkerShape.ORIGIN]
+            self.assertEqual(float(origin._data["a_size"][0]), 9.0)
+            np.testing.assert_allclose(origin._data["a_position"][0], (0.0, 0.0, 0.0))
+            np.testing.assert_allclose(origin.transform.matrix[3, :3], (1.0, 2.0, 3.0))
+        finally:
+            viewer.deleteLater()
 
     def test_multiple_device_trails_do_not_add_attributes_to_frozen_visuals(self):
         viewer = PointCloudViewer()

@@ -1,5 +1,14 @@
 # 开发笔记
 
+## v0.23.0 地图界面与电池估算
+
+- `MapMarkerShape` 支持 `arrow/cube/sphere/origin`。`cube` 是兼容配置值，界面名称为“长方体”；VisPy `create_box()` 返回 `(structured_vertices, triangle_faces, outline_edges)`，必须使用 `structured_vertices["position"]` 和三角面，不能按 `MeshData` 调用。长方体与球体使用 opaque + depth test，箭头和 9 px 原点使用顶层半透明绘制。
+- 网格坐标不再单独持久化开关或刻度间距。坐标只随网格显示，刻度必须是网格分辨率的 1/2/5/10 整洁倍数；网格关闭时分辨率和透明度控件一起禁用。
+- 指控大屏不得重新引入扫描覆盖层或动画计时器。顶栏为左侧 MQTT/UDP 胶囊、中间中英文标题和 72 px 强调线、右侧在线数量/时钟胶囊；右栏展开时用向右图标表示向窗口边缘收起，收起时用向左图标表示向地图展开。
+- `DeviceProfile.battery_profile` 与重定位 profile 独立。设备配置 schema 7 对 schema 1–6 自动迁移；缺少字段时仅对同名 Scout/WheelTech 重定位 profile 推断。MQTT 合法原始百分比优先，缺失时才采用电压估算；统一快照低于 25% 时标记为需关注。
+- 电池配置 schema 2 支持多个 profile，各设备/profile 保留 15 样本滚动中位数，分钟历史保留两天。曲线、异常值和现场校准规则见 [设备电池曲线校准](BATTERY_CALIBRATION.md)。Scout 初始曲线属于待实测基线，不得写成厂商 SOC 数据。
+- 本次保持 v0.23.0、端侧包版本和 MQTT wire schema 不变。Qt offscreen 可验证控件和几何数据，但遮挡、球面着色和日夜顶栏仍需在实际 OpenGL 桌面人工检查。
+
 ## v0.23.0 发布工程
 
 统一路径接口位于 ccs_monitor.runtime_paths：application_root 管理可写配置和数据，resource_root 管理冻结资源。禁止新增基于 CWD 或 _internal 的持久化目录。主题默认使用 config/appearance.ini；首次源码启动读取旧 QSettings。融合安装版调用独立 worker，FFmpeg 经外部进程环境适配后启动。

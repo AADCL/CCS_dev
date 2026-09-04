@@ -8,11 +8,12 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QSize
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication
 
 from ccs_monitor.app_icons import app_icon, asset_icon, asset_icon_path, icon_path, lab_logo_path
+from ccs_monitor.runtime_paths import resource_root
 from ccs_monitor.styles import ThemeMode, theme_palette
 from ccs_monitor.widgets import CardIcon
 from ccs_monitor.pages.home_page import MetricCard
@@ -77,6 +78,28 @@ class AppIconTests(unittest.TestCase):
         self.assertFalse(logo.isNull())
         self.assertGreater(logo.width(), 0)
         self.assertGreater(logo.height(), 0)
+
+    def test_product_logo_is_self_contained_and_renders_at_runtime_sizes(self):
+        path = resource_root() / "ccs_monitor" / "assets" / "ccs_logo.svg"
+        root = ET.parse(path).getroot()
+        tags = {element.tag.rsplit("}", 1)[-1] for element in root.iter()}
+
+        self.assertEqual(root.attrib.get("viewBox"), "0 0 128 128")
+        self.assertTrue({"title", "desc"}.issubset(tags))
+        self.assertTrue(QSvgRenderer(str(path)).isValid())
+        self.assertFalse(tags.intersection({"image", "text", "style", "filter"}))
+
+        icon = QIcon(str(path))
+        for size in (16, 28, 256):
+            pixmap = icon.pixmap(size, size)
+            self.assertFalse(pixmap.isNull(), f"CCS logo failed at {size}px")
+            image = pixmap.toImage()
+            visible_pixels = sum(
+                image.pixelColor(x, y).alpha() > 0
+                for y in range(image.height())
+                for x in range(image.width())
+            )
+            self.assertGreater(visible_pixels, size * size // 2)
 
     def test_missing_or_invalid_icons_warn_without_removing_card_text(self):
         with tempfile.TemporaryDirectory() as directory:
