@@ -1,10 +1,82 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "profiles": {
-    "scout_mini": {
-      "full_voltage": 30.0,
+    "wheeltec_r550p": {
       "retention_days": 2,
-      "curve": []
+      "sample_window": 15,
+      "curve": [
+        {
+          "voltage": 20.0,
+          "percentage": 0
+        },
+        {
+          "voltage": 20.8,
+          "percentage": 10
+        },
+        {
+          "voltage": 21.5,
+          "percentage": 25
+        },
+        {
+          "voltage": 22.3,
+          "percentage": 45
+        },
+        {
+          "voltage": 23.1,
+          "percentage": 65
+        },
+        {
+          "voltage": 24.0,
+          "percentage": 82
+        },
+        {
+          "voltage": 24.8,
+          "percentage": 94
+        },
+        {
+          "voltage": 25.5,
+          "percentage": 100
+        }
+      ]
+    },
+    "scout_mini": {
+      "retention_days": 2,
+      "sample_window": 15,
+      "curve": [
+        {
+          "voltage": 24.5,
+          "percentage": 0
+        },
+        {
+          "voltage": 25.2,
+          "percentage": 10
+        },
+        {
+          "voltage": 25.9,
+          "percentage": 25
+        },
+        {
+          "voltage": 26.6,
+          "percentage": 45
+        },
+        {
+          "voltage": 27.3,
+          "percentage": 65
+        },
+        {
+          "voltage": 28.0,
+          "percentage": 82
+        },
+        {
+          "voltage": 28.7,
+          "percentage": 94
+        },
+        {
+          "voltage": 29.4,
+          "percentage": 100
+        }
+      ],
+      "calibration_status": "待实测修正"
     }
   }
 }

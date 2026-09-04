@@ -120,8 +120,13 @@ class DevicesPage(QWidget):
         self.connection_label.setObjectName("mqttStatusTitle")
         self.connection_message = QLabel("数据源已加载")
         self.connection_message.setObjectName("muted")
-        self.connection_message.setMaximumWidth(300)
-        self.connection_message.setWordWrap(True)
+        self.connection_message.setWordWrap(False)
+        self.connection_message.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed,
+        )
+        self.mqtt_module_card.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed,
+        )
         mqtt_header = QHBoxLayout()
         mqtt_header.setSpacing(8)
         self.mqtt_icon = CardIcon("MQTT 状态", icon_name="mqtt", size=24)
@@ -504,6 +509,8 @@ class DevicesPage(QWidget):
     def _set_module_status(self, message: str, healthy: bool) -> None:
         self.connection_label.setText(f"MQTT · {'正常' if healthy else '故障'}")
         self.connection_message.setText(message)
+        self.connection_message.adjustSize()
+        self.mqtt_module_card.adjustSize()
         self.mqtt_module_card.setProperty("state", "healthy" if healthy else "error")
         self.mqtt_module_card.style().unpolish(self.mqtt_module_card)
         self.mqtt_module_card.style().polish(self.mqtt_module_card)

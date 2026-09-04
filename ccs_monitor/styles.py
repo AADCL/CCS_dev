@@ -289,6 +289,23 @@ def _replace_style_colors(style: str, palette: ThemePalette) -> str:
         "#f0bd70": palette.warning,
         "#ef9a9a": palette.error,
         "#f3a0a0": palette.error,
+        "#15372f": palette.primary_soft,
+        "#173c35": palette.primary_soft,
+        "#2b7968": palette.border_strong,
+        "#ffe3a0": palette.warning,
+        "#a87d2c": palette.warning,
+        "#a9d9ff": palette.text,
+        "#3978a8": palette.border_strong,
+        "#b88c32": palette.warning,
+        "#9fe8b4": palette.primary,
+        "#39835a": palette.border_strong,
+        "#a54b4b": palette.error,
+        "#ffc3c3": palette.error,
+        "#3a2d18": "#FFF2D4" if palette.mode == ThemeMode.DAY else "#3A2A12",
+        "#3d3017": "#FFF2D4" if palette.mode == ThemeMode.DAY else "#3A2A12",
+        "#172e40": palette.primary_soft,
+        "#173525": palette.primary_soft,
+        "#3b1e24": "#FFE2E6" if palette.mode == ThemeMode.DAY else "#421C27",
         "#342816": "#FFF2D4" if palette.mode == ThemeMode.DAY else "#3A2A12",
         "#392d18": "#FFF2D4" if palette.mode == ThemeMode.DAY else "#3A2A12",
         "#3a2023": "#FFE2E6" if palette.mode == ThemeMode.DAY else "#421C27",
@@ -1114,6 +1131,32 @@ QScrollBar::add-line, QScrollBar::sub-line {
 }
 QWidget#commandDashboard {
     background: #050b10;
+}
+QFrame#dashboardTopBar {
+    background: #09131b;
+    border: 1px solid #1b5360;
+    border-radius: 8px;
+}
+QFrame#dashboardHeaderPill {
+    background: #0a1d25;
+    border: 1px solid #268392;
+    border-radius: 9px;
+}
+QLabel#dashboardMainTitle {
+    color: #dcebf2;
+    font-family: 'Microsoft YaHei';
+    font-size: 16px;
+    font-weight: 700;
+}
+QLabel#dashboardTitleKicker {
+    color: #8fb3c9;
+    font-family: Consolas, monospace;
+    font-size: 9px;
+}
+QFrame#dashboardTitleAccent {
+    background: #2bc4b8;
+    border: none;
+    border-radius: 1px;
 }
 QLabel#dashboardSystemStatus, QLabel#dashboardOnlineCount, QLabel#dashboardClock {
     color: #68d9d1;

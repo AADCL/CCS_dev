@@ -27,7 +27,7 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         self.assertEqual(profiles[0].status_card_ids, ("fastlio2",))
         self.repository.set_active_map("UGV_001", "map-1")
         saved = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(saved["schema_version"], 6)
+        self.assertEqual(saved["schema_version"], 7)
         self.assertEqual(saved["devices"][0]["active_map_id"], "map-1")
 
     def setUp(self):
@@ -43,7 +43,7 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         self.assertEqual(len(profiles), 6)
         self.assertTrue(self.path.exists())
         payload = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(payload["schema_version"], 6)
+        self.assertEqual(payload["schema_version"], 7)
         self.assertEqual(payload["devices"][0]["srt_port"], 9000)
         self.assertEqual(payload["devices"][0]["srt_latency_ms"], 120)
         self.assertIsNone(payload["devices"][0]["status_cards"])
@@ -112,12 +112,30 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         profiles = self.repository.load()
         self.assertEqual(profiles[0].status_card_ids, DEFAULT_DEVICE_STATUS_CARDS)
         migrated = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(migrated["schema_version"], 6)
+        self.assertEqual(migrated["schema_version"], 7)
         selected = ("fastlio2", "mapping_mode")
         updated = self.repository.update_status_cards("uav-001", selected)
         self.assertEqual(updated[0].status_card_ids, selected)
         reloaded = DeviceConfigRepository(self.path).load()
         self.assertEqual(reloaded[0].status_card_ids, selected)
+
+    def test_schema_six_infers_battery_profile_and_schema_seven_keeps_independent_value(self):
+        legacy = {
+            "schema_version": 6,
+            "devices": [{
+                "device_id": "UGV-001", "device_name": "Scout", "device_type": "UGV",
+                "ip_address": "127.0.0.1", "relocalization_profile": "scout_mini",
+            }],
+        }
+        self.path.write_text(json.dumps(legacy), encoding="utf-8")
+        migrated = self.repository.load()[0]
+        self.assertEqual(migrated.battery_profile, "scout_mini")
+        stored = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(stored["schema_version"], 7)
+        self.assertEqual(stored["devices"][0]["battery_profile"], "scout_mini")
+        stored["devices"][0]["battery_profile"] = "wheeltec_r550p"
+        self.path.write_text(json.dumps(stored), encoding="utf-8")
+        self.assertEqual(DeviceConfigRepository(self.path).load()[0].battery_profile, "wheeltec_r550p")
 
     def test_schema_three_migrates_srt_defaults_and_schema_four_persists_values(self):
         legacy = {
@@ -131,7 +149,7 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         profiles = self.repository.load()
         self.assertEqual((profiles[0].srt_port, profiles[0].srt_latency_ms), (9000, 120))
         migrated = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(migrated["schema_version"], 6)
+        self.assertEqual(migrated["schema_version"], 7)
         custom = DeviceProfile("UGV-900", "Custom", "UGV", "127.0.0.2",
                                srt_port=19000, srt_latency_ms=350)
         self.repository.create(custom)
@@ -150,7 +168,7 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         self.path.write_text(json.dumps(legacy), encoding="utf-8")
         profile = self.repository.load()[0]
         self.assertEqual((profile.srt_port, profile.srt_latency_ms), (9000, 120))
-        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["schema_version"], 6)
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["schema_version"], 7)
 
     def test_srt_port_and_latency_are_validated(self):
         self.repository.load()

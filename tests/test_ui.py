@@ -13,7 +13,7 @@ if PYSIDE_AVAILABLE:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QSettings, Qt
     from PySide6.QtGui import QPalette
-    from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
+    from PySide6.QtWidgets import QApplication, QSizePolicy, QDialog, QLabel, QMessageBox
 
     from ccs_monitor.data_source import SimulatedDeviceSource, simulated_overview
     from ccs_monitor.app import configure_application_font
@@ -248,12 +248,14 @@ class UiTests(unittest.TestCase):
                 )
                 self.assertEqual(card.icon_label.property("appIconMode"), mode.value)
                 self.assertFalse(card.icon_label.pixmap().isNull())
+                self.assertEqual(card.icon_label.width(), 32)
                 self.assertEqual(
                     card.icon_label.pixmap().toImage(),
-                    app_icon(expected_runtime_icons[key], mode).pixmap(24, 24).toImage(),
+                    app_icon(expected_runtime_icons[key], mode).pixmap(32, 32).toImage(),
                 )
             for card in page.metric_cards:
                 self.assertFalse(card.icon_label.pixmap().isNull())
+                self.assertEqual(card.icon_label.width(), 36)
                 self.assertTrue(card.caption_label.text())
 
     def test_device_list_icons_preserve_filters_edit_selection_and_mqtt_on_theme_switch(self):
@@ -437,6 +439,9 @@ class UiTests(unittest.TestCase):
             templates=self.source.device_type_templates(),
         )
         self.assertTrue(dialog.create_button.isEnabled())
+        battery_index = dialog.battery_profile_input.findData("wheeltec_r550p")
+        dialog.battery_profile_input.setCurrentIndex(battery_index)
+        self.assertEqual(dialog.profile().battery_profile, "wheeltec_r550p")
         dialog.ip_input.setText("127.0.0.50")
         self.app.processEvents()
         self.assertFalse(dialog.create_button.isEnabled())
@@ -606,6 +611,12 @@ class UiTests(unittest.TestCase):
         self.app.processEvents()
         detail = window.devices_page.detail_page
         self.assertIn("订阅已连接", window.devices_page.connection_message.text())
+        self.assertFalse(window.devices_page.connection_message.wordWrap())
+        self.assertGreater(window.devices_page.mqtt_module_card.maximumWidth(), 300)
+        self.assertEqual(
+            window.devices_page.mqtt_module_card.sizePolicy().horizontalPolicy(),
+            QSizePolicy.Policy.Fixed,
+        )
         self.assertEqual(detail.fields["运行模式"].text(), "GUIDED")
         self.assertNotIn("解锁状态", detail.fields)
         self.assertNotIn("MAVLink 系统状态", detail.fields)

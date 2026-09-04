@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "devices": [
     {
       "device_id": "UGV_001",
@@ -12,7 +12,7 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "scout_mini",
-      "active_map_id": "76e41303-0974-4f40-9425-557a64841fec",
+      "active_map_id": "a45abe49-6212-4eb6-b077-15ad8212d455",
       "map_bindings": [
         {
           "map_id": "d0ad7c7f-b391-48c5-8f24-c5059e9a1a01",
@@ -94,7 +94,8 @@
             "qw": 0.7451695816837548
           }
         }
-      ]
+      ],
+      "battery_profile": "scout_mini"
     },
     {
       "device_id": "QRD_001",
@@ -113,7 +114,8 @@
       "srt_latency_ms": 120,
       "relocalization_profile": "go2_edu",
       "active_map_id": "d0ad7c7f-b391-48c5-8f24-c5059e9a1a01",
-      "map_bindings": []
+      "map_bindings": [],
+      "battery_profile": "disabled"
     },
     {
       "device_id": "UAV_001",
@@ -127,7 +129,8 @@
       "srt_latency_ms": 120,
       "relocalization_profile": "disabled",
       "active_map_id": null,
-      "map_bindings": []
+      "map_bindings": [],
+      "battery_profile": "disabled"
     },
     {
       "device_id": "AGV_001",
@@ -144,8 +147,9 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "disabled",
-      "active_map_id": "76e41303-0974-4f40-9425-557a64841fec",
-      "map_bindings": []
+      "active_map_id": "29c55f28-56bd-4899-adde-665bd0494e1e",
+      "map_bindings": [],
+      "battery_profile": "disabled"
     },
     {
       "device_id": "FGV_001",
@@ -159,7 +163,8 @@
       "srt_latency_ms": 120,
       "relocalization_profile": "disabled",
       "active_map_id": null,
-      "map_bindings": []
+      "map_bindings": [],
+      "battery_profile": "disabled"
     },
     {
       "device_id": "UGV_003",
@@ -171,7 +176,7 @@
       "status_cards": null,
       "srt_port": 9000,
       "srt_latency_ms": 120,
-      "relocalization_profile": "scout_mini",
+      "relocalization_profile": "wheeltec_r550p",
       "active_map_id": "3a65592b-841d-4d59-bfda-a53c9703613a",
       "map_bindings": [
         {
@@ -238,7 +243,8 @@
             "qw": 0.9995393179840015
           }
         }
-      ]
+      ],
+      "battery_profile": "wheeltec_r550p"
     }
   ]
 }

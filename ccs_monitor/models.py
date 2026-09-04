@@ -82,6 +82,7 @@ class MapMarkerShape(str, Enum):
     ARROW = "arrow"
     CUBE = "cube"
     SPHERE = "sphere"
+    ORIGIN = "origin"
 
 
 class MapBuildMode(str, Enum):
@@ -188,6 +189,7 @@ class DeviceProfile:
     relocalization_profile: str = "disabled"
     map_bindings: tuple["DeviceMapBinding", ...] = ()
     active_map_id: str | None = None
+    battery_profile: str = "disabled"
 
 
 @dataclass(frozen=True)

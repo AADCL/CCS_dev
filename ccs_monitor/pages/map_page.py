@@ -249,8 +249,6 @@ class MapViewerSettings(QObject):
         self.grid_visible = self._bool("map_viewer/grid_visible", True)
         self.grid_spacing = self._float("map_viewer/grid_spacing", 1.0, 0.01, 1000.0)
         self.grid_opacity = self._float("map_viewer/grid_opacity", 35.0, 10.0, 100.0)
-        self.coordinates_visible = self._bool("map_viewer/coordinates_visible", True)
-        self.tick_spacing = self._float("map_viewer/tick_spacing", 5.0, 0.01, 1000.0)
         self.cursor_visible = self._bool("map_viewer/cursor_visible", True)
 
     def update(self, **values) -> None:
@@ -280,6 +278,17 @@ class MapViewerSettings(QObject):
 
 
 MAP_VIEWER_SETTINGS = MapViewerSettings()
+
+
+def coordinate_tick_spacing(grid_spacing: float, span: float, target_labels: int = 8) -> float:
+    """Choose a sparse, readable coordinate interval as a tidy grid multiple."""
+    spacing = max(float(grid_spacing), 1e-9)
+    required_multiple = max(1.0, float(span) / max(1, target_labels) / spacing)
+    exponent = math.floor(math.log10(required_multiple))
+    scale = 10.0 ** exponent
+    normalized = required_multiple / scale
+    tidy = next((value for value in (1.0, 2.0, 5.0, 10.0) if value >= normalized), 10.0)
+    return spacing * tidy * scale
 
 
 def calculate_turntable_pan(
@@ -1928,14 +1937,11 @@ class PointCloudViewer(QWidget):
         self.grid_spacing_input.setRange(0.01, 1000.0)
         self.grid_spacing_input.setDecimals(2)
         self.grid_spacing_input.setSuffix(" m")
+        self.grid_spacing_label = QLabel("分辨率")
         self.grid_opacity_input = NoButtonSpinBox()
         self.grid_opacity_input.setRange(10, 100)
         self.grid_opacity_input.setSuffix(" %")
-        self.coordinate_check = QCheckBox("坐标")
-        self.tick_spacing_input = NoButtonDoubleSpinBox()
-        self.tick_spacing_input.setRange(0.01, 1000.0)
-        self.tick_spacing_input.setDecimals(2)
-        self.tick_spacing_input.setSuffix(" m")
+        self.grid_opacity_label = QLabel("透明度")
         self.cursor_check = QCheckBox("光标坐标")
         self.devices_check = QCheckBox("设备")
         self.devices_check.setChecked(True)
@@ -1943,8 +1949,9 @@ class PointCloudViewer(QWidget):
         self.height_legend.threshold.valueChanged.connect(lambda _value: self._refresh_point_colors())
         for widget in (
             QLabel("图层"), *self.layer_buttons.values(), self.grid_check,
-            self.grid_spacing_input, self.grid_opacity_input, self.coordinate_check,
-            self.tick_spacing_input, self.cursor_check, self.devices_check,
+            self.grid_spacing_label, self.grid_spacing_input,
+            self.grid_opacity_label, self.grid_opacity_input,
+            self.cursor_check, self.devices_check,
         ):
             controls.addWidget(widget)
         controls.addStretch()
@@ -1983,12 +1990,6 @@ class PointCloudViewer(QWidget):
         )
         self.grid_opacity_input.valueChanged.connect(
             lambda value: MAP_VIEWER_SETTINGS.update(grid_opacity=float(value))
-        )
-        self.coordinate_check.toggled.connect(
-            lambda value: MAP_VIEWER_SETTINGS.update(coordinates_visible=bool(value))
-        )
-        self.tick_spacing_input.valueChanged.connect(
-            lambda value: MAP_VIEWER_SETTINGS.update(tick_spacing=float(value))
         )
         self.cursor_check.toggled.connect(
             lambda value: MAP_VIEWER_SETTINGS.update(cursor_visible=bool(value))
@@ -2376,8 +2377,6 @@ class PointCloudViewer(QWidget):
             (self.grid_check, MAP_VIEWER_SETTINGS.grid_visible),
             (self.grid_spacing_input, MAP_VIEWER_SETTINGS.grid_spacing),
             (self.grid_opacity_input, int(MAP_VIEWER_SETTINGS.grid_opacity)),
-            (self.coordinate_check, MAP_VIEWER_SETTINGS.coordinates_visible),
-            (self.tick_spacing_input, MAP_VIEWER_SETTINGS.tick_spacing),
             (self.cursor_check, MAP_VIEWER_SETTINGS.cursor_visible),
         )
         for control, value in controls:
@@ -2387,9 +2386,11 @@ class PointCloudViewer(QWidget):
             else:
                 control.setValue(value)
             control.blockSignals(False)
-        self.grid_spacing_input.setEnabled(MAP_VIEWER_SETTINGS.grid_visible)
-        self.grid_opacity_input.setEnabled(MAP_VIEWER_SETTINGS.grid_visible)
-        self.tick_spacing_input.setEnabled(MAP_VIEWER_SETTINGS.coordinates_visible)
+        for control in (
+            self.grid_spacing_label, self.grid_spacing_input,
+            self.grid_opacity_label, self.grid_opacity_input,
+        ):
+            control.setEnabled(MAP_VIEWER_SETTINGS.grid_visible)
         if not MAP_VIEWER_SETTINGS.cursor_visible:
             self.cursor_coordinate.setVisible(False)
         self._render_coordinate_grid()
@@ -2502,10 +2503,8 @@ class PointCloudViewer(QWidget):
             connect="segments", width=1.0,
         )
         self._grid_visual.visible = bool(segments)
-        if not MAP_VIEWER_SETTINGS.coordinates_visible:
-            self._coordinate_visual.visible = False
-            return
-        tick = MAP_VIEWER_SETTINGS.tick_spacing
+        span = max(last_x - first_x, last_y - first_y)
+        tick = coordinate_tick_spacing(spacing, span)
         tx = np.arange(math.ceil(first_x / tick) * tick, last_x + tick * 0.5, tick)
         ty = np.arange(math.ceil(first_y / tick) * tick, last_y + tick * 0.5, tick)
         if len(tx) + len(ty) > 300:
@@ -2656,37 +2655,52 @@ class PointCloudViewer(QWidget):
         from vispy.visuals.transforms import MatrixTransform
 
         color = marker.color or device_display_color(marker.device_id)
+        solid = marker.marker_shape in {MapMarkerShape.CUBE, MapMarkerShape.SPHERE}
+        z_offset = 0.0
         if marker.marker_shape == MapMarkerShape.CUBE:
-            mesh_data = create_box(width=0.8, height=0.8, depth=0.8)
-            visual = scene.visuals.Mesh(
-                vertices=mesh_data.get_vertices(), faces=mesh_data.get_faces(),
-                color=color, parent=self._view.scene,
+            cuboid_height = 0.35
+            box_vertices, box_faces, _outline = create_box(
+                width=0.80, height=cuboid_height, depth=0.50,
             )
+            visual = scene.visuals.Mesh(
+                vertices=box_vertices["position"], faces=box_faces,
+                color=color, shading="flat", parent=self._view.scene,
+            )
+            z_offset = cuboid_height / 2.0
         elif marker.marker_shape == MapMarkerShape.ARROW:
             vertices = np.asarray([
-                (0.75, 0.0, 0.0), (-0.45, 0.42, 0.0), (-0.25, 0.0, 0.0),
-                (-0.45, -0.42, 0.0),
+                (0.60, 0.0, 0.0), (-0.36, 0.34, 0.0), (-0.20, 0.0, 0.0),
+                (-0.36, -0.34, 0.0),
             ], dtype=np.float32)
             faces = np.asarray([(0, 1, 2), (0, 2, 3)], dtype=np.uint32)
             visual = scene.visuals.Mesh(
                 vertices=vertices, faces=faces, color=color,
                 parent=self._view.scene,
             )
+            z_offset = 0.03
+        elif marker.marker_shape == MapMarkerShape.ORIGIN:
+            visual = scene.visuals.Markers(parent=self._view.scene)
+            visual.set_data(
+                np.asarray(((0.0, 0.0, 0.0),), dtype=np.float32),
+                face_color=color, edge_color=self.theme_palette.text_strong,
+                edge_width=1.0, size=9, symbol="disc",
+            )
+            z_offset = 0.0
         else:
-            mesh_data = create_sphere(rows=8, cols=12, radius=0.45)
+            mesh_data = create_sphere(rows=12, cols=18, radius=0.30)
             visual = scene.visuals.Mesh(
                 vertices=mesh_data.get_vertices(), faces=mesh_data.get_faces(),
-                color=color, parent=self._view.scene,
+                color=color, shading="smooth", parent=self._view.scene,
             )
         transform = MatrixTransform()
         transform.rotate(float(marker.yaw), (0, 0, 1))
-        transform.translate((marker.x, marker.y, marker.z))
+        transform.translate((marker.x, marker.y, marker.z + z_offset))
         visual.transform = transform
-        self._configure_device_visual(visual)
+        self._configure_device_visual(visual, solid=solid)
         return visual
 
-    def _configure_device_visual(self, visual: object) -> None:
-        visual.set_gl_state("translucent", depth_test=False)
+    def _configure_device_visual(self, visual: object, *, solid: bool = False) -> None:
+        visual.set_gl_state("opaque" if solid else "translucent", depth_test=solid)
         visual.order = self.DEVICE_LAYER_ORDER
 
     def set_selected_device_pose(self, pose: PoseTelemetry | None) -> None:

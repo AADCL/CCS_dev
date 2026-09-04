@@ -9,10 +9,9 @@ from enum import Enum
 from typing import Callable
 
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
-from PySide6.QtCore import QMargins, QPointF, QRectF, Signal, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QMargins, QPointF, Signal, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QFrame,
     QGridLayout,
@@ -26,7 +25,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
-    QStackedLayout,
     QVBoxLayout,
     QWidget,
 )
@@ -132,81 +130,6 @@ class TelemetryTrendBuffer:
         threshold = now - self.window_seconds
         while samples and samples[0].timestamp < threshold:
             samples.popleft()
-
-
-class TrapezoidTitle(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-        self.theme_palette = theme_palette(ThemeMode.NIGHT)
-        self.setMinimumHeight(56)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-    def set_theme(self, palette: ThemePalette) -> None:
-        self.theme_palette = palette
-        self.update()
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(4, 3, self.width() - 8, self.height() - 8)
-        inset = min(52.0, rect.width() * 0.12)
-        path = QPainterPath()
-        path.moveTo(rect.left(), rect.top())
-        path.lineTo(rect.right(), rect.top())
-        path.lineTo(rect.right() - inset, rect.bottom())
-        path.lineTo(rect.left() + inset, rect.bottom())
-        path.closeSubpath()
-        painter.fillPath(path, QColor(self.theme_palette.dashboard_panel))
-        painter.setPen(QPen(QColor(self.theme_palette.primary), 1.5))
-        painter.drawPath(path)
-        inner = rect.adjusted(6, 5, -6, -6)
-        inner_inset = max(10.0, inset - 3)
-        inner_path = QPainterPath()
-        inner_path.moveTo(inner.left(), inner.top())
-        inner_path.lineTo(inner.right(), inner.top())
-        inner_path.lineTo(inner.right() - inner_inset, inner.bottom())
-        inner_path.lineTo(inner.left() + inner_inset, inner.bottom())
-        inner_path.closeSubpath()
-        painter.setPen(QPen(QColor(self.theme_palette.dashboard_border), 1.0))
-        painter.drawPath(inner_path)
-        painter.setPen(QColor(self.theme_palette.dashboard_text))
-        font = painter.font()
-        font.setPointSize(15)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "指挥与控制系统信息总览")
-
-
-class ScanOverlay(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-        self.theme_palette = theme_palette(ThemeMode.NIGHT)
-        self.phase = 0.0
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-    def set_theme(self, palette: ThemePalette) -> None:
-        self.theme_palette = palette
-        self.update()
-
-    def advance(self) -> None:
-        self.phase = (self.phase + 0.009) % 1.0
-        self.update()
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        width, height = self.width(), self.height()
-        color = QColor(self.theme_palette.primary)
-        color.setAlpha(65)
-        painter.setPen(QPen(color, 1))
-        y = int(self.phase * max(1, height - 1))
-        painter.drawLine(14, y, max(14, width - 14), y)
-        painter.setPen(QPen(QColor(self.theme_palette.primary), 2))
-        length = 18
-        for x, y0, sx, sy in ((5, 5, 1, 1), (width - 5, 5, -1, 1), (5, height - 5, 1, -1), (width - 5, height - 5, -1, -1)):
-            painter.drawLine(x, y0, x + sx * length, y0)
-            painter.drawLine(x, y0, x, y0 + sy * length)
 
 
 class DevicePanelMode(str, Enum):
@@ -835,14 +758,10 @@ class CommandDashboardPage(QWidget):
         self.clock_timer.timeout.connect(self._update_clock)
         self.render_timer = QTimer(self)
         self.render_timer.timeout.connect(self._render_realtime)
-        self.animation_timer = QTimer(self)
-        self.animation_timer.timeout.connect(self.scan_overlay.advance)
         self._update_clock()
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
-        self.trapezoid.set_theme(palette)
-        self.scan_overlay.set_theme(palette)
         set_theme = getattr(self.viewer, "set_theme", None)
         if set_theme is not None:
             set_theme(palette)
@@ -857,24 +776,51 @@ class CommandDashboardPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 6, 10, 10)
         root.setSpacing(7)
-        top = QHBoxLayout()
+        self.top_bar = QFrame()
+        self.top_bar.setObjectName("dashboardTopBar")
+        top = QHBoxLayout(self.top_bar)
+        top.setContentsMargins(10, 7, 10, 7)
+        top.setSpacing(12)
+        status_pill = QFrame()
+        status_pill.setObjectName("dashboardHeaderPill")
+        status_layout = QHBoxLayout(status_pill)
+        status_layout.setContentsMargins(11, 6, 11, 6)
         self.system_status = QLabel("MQTT --  |  UDP --")
         self.system_status.setObjectName("dashboardSystemStatus")
-        self.system_status.setMinimumWidth(205)
-        top.addWidget(self.system_status)
+        status_layout.addWidget(self.system_status)
+        top.addWidget(status_pill)
         top.addStretch(1)
-        self.trapezoid = TrapezoidTitle()
-        top.addWidget(self.trapezoid, 4)
+        title_box = QWidget()
+        title_layout = QVBoxLayout(title_box)
+        title_layout.setContentsMargins(8, 0, 8, 0)
+        title_layout.setSpacing(1)
+        self.dashboard_title = QLabel("指挥与控制系统信息总览")
+        self.dashboard_title.setObjectName("dashboardMainTitle")
+        self.dashboard_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.dashboard_kicker = QLabel("COMMAND & CONTROL OVERVIEW")
+        self.dashboard_kicker.setObjectName("dashboardTitleKicker")
+        self.dashboard_kicker.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        accent = QFrame()
+        accent.setObjectName("dashboardTitleAccent")
+        accent.setFixedSize(72, 2)
+        title_layout.addWidget(self.dashboard_title)
+        title_layout.addWidget(self.dashboard_kicker)
+        title_layout.addWidget(accent, 0, Qt.AlignmentFlag.AlignHCenter)
+        top.addWidget(title_box, 3)
         top.addStretch(1)
-        right_header = QHBoxLayout()
+        right_pill = QFrame()
+        right_pill.setObjectName("dashboardHeaderPill")
+        right_header = QHBoxLayout(right_pill)
+        right_header.setContentsMargins(11, 6, 11, 6)
+        right_header.setSpacing(10)
         self.online_count = QLabel("ONLINE DEVICE 00")
         self.online_count.setObjectName("dashboardOnlineCount")
         self.clock_label = QLabel("--:--:--")
         self.clock_label.setObjectName("dashboardClock")
         right_header.addWidget(self.online_count)
         right_header.addWidget(self.clock_label)
-        top.addLayout(right_header)
-        root.addLayout(top)
+        top.addWidget(right_pill)
+        root.addWidget(self.top_bar)
 
         self.vertical_splitter = QSplitter(Qt.Orientation.Vertical)
         self.vertical_splitter.setObjectName("dashboardVerticalSplitter")
@@ -901,14 +847,7 @@ class CommandDashboardPage(QWidget):
         center_header.addStretch()
         center_header.addWidget(self.map_state)
         center_layout.addLayout(center_header)
-        stage = QWidget()
-        stage_layout = QStackedLayout(stage)
-        stage_layout.setStackingMode(QStackedLayout.StackingMode.StackAll)
-        stage_layout.setContentsMargins(0, 0, 0, 0)
-        stage_layout.addWidget(self.viewer)
-        self.scan_overlay = ScanOverlay()
-        stage_layout.addWidget(self.scan_overlay)
-        center_layout.addWidget(stage, 1)
+        center_layout.addWidget(self.viewer, 1)
         self.upper_splitter.addWidget(center)
 
         self.status_panel = TelemetryStatusPanel()
@@ -938,9 +877,6 @@ class CommandDashboardPage(QWidget):
         self.reset_button.clicked.connect(self.viewer.reset_view)
         self.fit_button = QPushButton("适配全图")
         self.fit_button.clicked.connect(self.viewer.fit_all)
-        self.scan_toggle = QCheckBox("扫描动画")
-        self.scan_toggle.setChecked(True)
-        self.scan_toggle.toggled.connect(self._scan_toggled)
         self.fullscreen_button = QPushButton("进入全屏")
         self.fullscreen_button.setObjectName("dashboardPrimaryButton")
         self.fullscreen_button.clicked.connect(self._toggle_fullscreen)
@@ -963,8 +899,7 @@ class CommandDashboardPage(QWidget):
             column += 2
         self.console_layout.addWidget(self.reset_button, 0, 6)
         self.console_layout.addWidget(self.fullscreen_button, 0, 7)
-        self.console_layout.addWidget(self.scan_toggle, 1, 0, 1, 2)
-        self.console_layout.addWidget(self.fit_button, 1, 2, 1, 2)
+        self.console_layout.addWidget(self.fit_button, 1, 0, 1, 2)
         self.console_layout.addWidget(self.start_button, 1, 6)
         self.console_layout.addWidget(self.stop_button, 1, 7)
         self.vertical_splitter.addWidget(self.console_panel)
@@ -1060,20 +995,10 @@ class CommandDashboardPage(QWidget):
         if self._active:
             self.clock_timer.start(1000)
             self.render_timer.start(100)
-            if self.scan_toggle.isChecked():
-                self.animation_timer.start(33)
             self._render_realtime()
         else:
             self.clock_timer.stop()
             self.render_timer.stop()
-            self.animation_timer.stop()
-
-    def _scan_toggled(self, enabled: bool) -> None:
-        self.scan_overlay.setVisible(enabled)
-        if enabled and self._active:
-            self.animation_timer.start(33)
-        else:
-            self.animation_timer.stop()
 
     def set_fullscreen_state(self, enabled: bool) -> None:
         self.fullscreen = bool(enabled)

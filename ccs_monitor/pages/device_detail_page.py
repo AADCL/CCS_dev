@@ -457,8 +457,6 @@ class DeviceDetailPage(QWidget):
     def _battery_text(device) -> str:
         if device.battery_percent is not None:
             return f"{device.battery_percent:g}%"
-        if device.battery_voltage is not None and device.device_type == "UGV":
-            return "待标定"
         return "--"
 
     @staticmethod
