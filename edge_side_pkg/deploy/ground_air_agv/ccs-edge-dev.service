@@ -10,7 +10,7 @@ ExecStart=/home/bitcq/ccs_edge_ws/start_ccs_edge_dev.sh
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=45
-KillMode=control-group
+KillMode=mixed
 StandardOutput=append:/home/bitcq/.ros/ccs_edge_dev_ground_air_agv/log/supervisor.log
 StandardError=append:/home/bitcq/.ros/ccs_edge_dev_ground_air_agv/log/supervisor.log
 

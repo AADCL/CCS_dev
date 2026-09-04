@@ -34,36 +34,11 @@ _PRIMARY_NODES = {
     },
 }
 
-_STATIC_NODES = {
-    "/odom_camera_init_broadcaster",
-    "/base_link_body_broadcaster",
-}
-_STATIC_EDGES = (
-    ("odom", "camera_init"),
-    ("body", "base_link"),
-)
 _STAGE_EDGES = (
     ("odom", "camera_init"),
     ("camera_init", "body"),
     ("body", "base_link"),
 )
-_TRANSFORM_COMMAND = (
-    "roslaunch",
-    "car_bringup",
-    "mapping_coordinate_transforms.launch",
-)
-
-
-class ExternalTransformHandle:
-    """Process-like marker for a complete TF pair owned outside this node."""
-
-    returncode = None
-
-    @staticmethod
-    def poll():
-        return None
-
-
 class RosProcessBackend:
     def __init__(self, tf_buffer, poll_interval=0.1, stop_timeout=8.0):
         self.tf_buffer = tf_buffer
@@ -76,22 +51,18 @@ class RosProcessBackend:
         except rosnode.ROSNodeIOException as error:
             raise RuntimeError("cannot query ROS nodes: {}".format(error))
         topology = analyze_active_nodes(active)
+        conflicts = list(topology.conflicts)
+        if not topology.coordinate_transforms_ready:
+            conflicts.append("coordinate transform pair is not ready")
         if managed_stage_active:
             return [
                 conflict
-                for conflict in topology.conflicts
-                if conflict == "incomplete coordinate transform pair"
+                for conflict in conflicts
+                if "coordinate transform" in conflict
             ]
-        return list(topology.conflicts)
+        return conflicts
 
     def start(self, command):
-        if "mapping_coordinate_transforms.launch" in command:
-            topology = analyze_active_nodes(set(rosnode.get_node_names()))
-            if "incomplete coordinate transform pair" in topology.conflicts:
-                raise RuntimeError("incomplete external coordinate transform pair")
-            if topology.coordinate_transforms_ready:
-                rospy.loginfo("reusing externally owned coordinate transform pair")
-                return ExternalTransformHandle()
         rospy.loginfo("starting managed stage process: %s", " ".join(command))
         return subprocess.Popen(list(command), start_new_session=True)
 
@@ -116,24 +87,6 @@ class RosProcessBackend:
 
         return self._wait(process, min(float(timeout), 30.0), ready)
 
-    def wait_resident_transforms(self, process, timeout):
-        def ready():
-            return (
-                self.resident_transform_nodes_ready()
-                and all(
-                    self.tf_buffer.can_transform(
-                        parent, child, rospy.Time(0), rospy.Duration(0.05)
-                    )
-                    for parent, child in _STATIC_EDGES
-                )
-            )
-
-        return self._wait(process, min(float(timeout), 30.0), ready)
-
-    @staticmethod
-    def resident_transform_nodes_ready():
-        return _STATIC_NODES.issubset(set(rosnode.get_node_names()))
-
     def wait_stage_transforms(self, stage, process, timeout):
         required_edges = list(_STAGE_EDGES)
         if stage == MAPPING:
@@ -150,8 +103,6 @@ class RosProcessBackend:
         return self._wait(process, min(float(timeout), 30.0), ready)
 
     def stop(self, process):
-        if isinstance(process, ExternalTransformHandle):
-            return
         if process.poll() is not None:
             return
         try:
@@ -180,17 +131,13 @@ class StageManagerNode:
         tf_buffer = tf2_ros.Buffer(cache_time=rospy.Duration(10.0))
         self._tf_listener = tf2_ros.TransformListener(tf_buffer)
         self._backend = RosProcessBackend(tf_buffer)
-        self._resident_transforms = self._backend.start(_TRANSFORM_COMMAND)
-        if not self._backend.wait_resident_transforms(
-            self._resident_transforms, 30.0
-        ):
-            self._backend.stop(self._resident_transforms)
-            raise RuntimeError("startup coordinate transforms did not become ready")
         self._controller = StageController(self._backend)
         self._shutting_down = False
         rospy.set_param("~ccs_session_guard_version", 1)
-        rospy.set_param("~resident_tf_version", 1)
-        self._publish("base stage active; resident coordinate transforms ready")
+        if rospy.has_param("~resident_tf_version"):
+            rospy.delete_param("~resident_tf_version")
+        rospy.set_param("~external_tf_required", 1)
+        self._publish("base stage active; coordinate transforms are externally managed")
         self._service = rospy.Service(
             "/ground_air/system/set_stage", SetSystemStage, self._handle_stage
         )
@@ -235,18 +182,6 @@ class StageManagerNode:
 
     def _monitor_children(self, _event):
         with self._lock:
-            if (
-                not self._shutting_down
-                and (
-                    self._resident_transforms.poll() is not None
-                    or not self._backend.resident_transform_nodes_ready()
-                )
-            ):
-                message = "resident coordinate transform process exited unexpectedly"
-                rospy.logerr(message)
-                self._publish(message)
-                rospy.signal_shutdown(message)
-                return
             exited = [
                 child for child in self._controller.children if child.poll() is not None
             ]
@@ -266,7 +201,6 @@ class StageManagerNode:
                 return
             self._shutting_down = True
             self._controller.shutdown()
-            self._backend.stop(self._resident_transforms)
             self._publish("stage manager stopped; base stage active")
 
 

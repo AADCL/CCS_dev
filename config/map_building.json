@@ -19,7 +19,7 @@
       "remote_artifact": "map"
     },
     "AGV_001": {
-      "remote_mapping": "camera_init",
+      "remote_mapping": "odom",
       "preview_source": "camera_init",
       "remote_artifact": "map"
     }

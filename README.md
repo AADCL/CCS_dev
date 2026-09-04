@@ -83,6 +83,7 @@ Input 部分应包含 srt。设备地址、端口、MQTT 和 NTP 参数位于 co
 | [验证记录](docs/RELEASE_VALIDATION.md) | 构建证据、自动化回归及四系统实机验收状态 |
 | [使用与部署指南](docs/USER_GUIDE.md) | 页面操作、地面站与端侧部署、网络配置和故障排查 |
 | [端侧包](edge_side_pkg/README.md) | 七个 ROS 包与设备 profile |
+| [Ground-Air AGV 建图部署](edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md) | 自启动 TF、建图响应、静态验收与回滚 |
 | [接口总册](docs/EDGE_DEVICE_INTERFACES.md) | 消息格式、通道与协议约束 |
 | [需求分析](需求分析.md) | 需求基线、平台目标和交付门禁 |
 | [开发笔记](docs/DEVELOPMENT_NOTES.md) | 实现约束与维护说明 |

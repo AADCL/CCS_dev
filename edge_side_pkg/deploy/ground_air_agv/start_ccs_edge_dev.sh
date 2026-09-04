@@ -15,10 +15,10 @@ START_LOG="${LOG_DIR}/startup.log"
 SHUTDOWN_STARTED=false
 ROSCORE_MANAGED=false
 
-LAUNCH_NAMES=(mavros livox mqtav udp_telemetry map_stream a8_camera video_srt stage_manager)
-NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_map_stream /a8_mini_camera /epgeneral_video_srt /ground_air_stage_manager)
-OPTIONAL=(false false false false false true true false)
-MANAGED=(false false false false false false false false)
+LAUNCH_NAMES=(mavros livox mqtav udp_telemetry map_stream a8_camera video_srt stage_manager mapping_tf)
+NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_map_stream /a8_mini_camera /epgeneral_video_srt /ground_air_stage_manager /odom_camera_init_broadcaster)
+OPTIONAL=(false false false false false true true false false)
+MANAGED=(false false false false false false false false false)
 
 mkdir -p "${PID_DIR}" "${LOG_DIR}"
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"${START_LOG}"; }
@@ -51,7 +51,12 @@ stop_managed_processes() {
   local index pid
   set +e
   report INFO "正在停止 AGV 端侧进程..."
-  for ((index=${#LAUNCH_NAMES[@]} - 1; index>=0; index--)); do
+  # The manager must stop its FAST-LIO group before the shared TF tree exits.
+  for index in 7 8; do
+    [[ "${MANAGED[index]}" == true ]] || continue
+    stop_launch_process "${index}"
+  done
+  for ((index=6; index>=0; index--)); do
     [[ "${MANAGED[index]}" == true ]] || continue
     stop_launch_process "${index}"
   done
@@ -98,6 +103,7 @@ a8_path="$(rospack find a8_mini_camera 2>/dev/null || true)"
 [[ -n "${a8_path}" ]] || fail "当前 ROS overlay 中找不到 a8_mini_camera"
 car_bringup_path="$(rospack find car_bringup 2>/dev/null || true)"
 [[ -x "${car_bringup_path}/scripts/ground_air_stage_manager_node.py" ]] || fail "缺少可执行 stage manager"
+[[ -r "${car_bringup_path}/launch/mapping_coordinate_transforms.launch" ]] || fail "缺少坐标转换 launch"
 report INFO "启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=${livox_path}；A8 包=${a8_path}"
 
 for attempt in $(seq 1 30); do
@@ -184,24 +190,33 @@ start_optional_launch 6 /epgeneral_video_srt epgeneral_video_srt epgeneral_video
   device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml" \
   video_config_file:="${PROFILE_CONFIG_DIR}/video.yaml" || true
 
-# Start last, after both optional camera/video startup attempts.
-if ! ros_node_exists /ground_air_stage_manager; then
-  rosrun car_bringup ground_air_stage_manager_node.py >"${LOG_DIR}/stage_manager.log" 2>&1 </dev/null &
-  printf '%s\n' "$!" >"${PID_DIR}/stage_manager.pid"
-  MANAGED[7]=true
-  wait_for_node /ground_air_stage_manager || fail "stage manager 启动失败"
-fi
+# Keep the stage service resident, but leave TF process ownership to this script.
+ros_node_exists /ground_air_stage_manager \
+  && fail "stage manager 已由其他进程启动，拒绝重复接管"
+rosrun car_bringup ground_air_stage_manager_node.py >"${LOG_DIR}/stage_manager.log" 2>&1 </dev/null &
+printf '%s\n' "$!" >"${PID_DIR}/stage_manager.pid"
+MANAGED[7]=true
+wait_for_node /ground_air_stage_manager || fail "stage manager 启动失败"
 stage_service_ready=false
 for attempt in $(seq 1 30); do
   if rosservice type /ground_air/system/set_stage 2>/dev/null | grep -Fxq ground_air_msgs/SetSystemStage; then stage_service_ready=true; break; fi
   sleep 1
 done
 [[ "${stage_service_ready}" == true ]] || fail "set_stage 服务未就绪"
-[[ "$(rosparam get /ground_air_stage_manager/resident_tf_version 2>/dev/null || true)" == 1 ]] \
-  || fail "stage manager 未启用自启动 TF 管理"
-wait_for_node /odom_camera_init_broadcaster || fail "自启动 TF 缺少 /odom_camera_init_broadcaster"
+[[ "$(rosparam get /ground_air_stage_manager/ccs_session_guard_version 2>/dev/null || true)" == 1 ]] \
+  || fail "stage manager 未启用 CCS 会话归属保护"
+[[ "$(rosparam get /ground_air_stage_manager/external_tf_required 2>/dev/null || true)" == 1 ]] \
+  || fail "stage manager 未启用外部 TF 模式"
+[[ "$(rosparam get /ground_air_stage_manager/resident_tf_version 2>/dev/null || true)" != 1 ]] \
+  || fail "stage manager 仍启用旧的内置 TF 管理"
+
+# The coordinate-transform launch is the final startup item and has one owner.
+if ros_node_exists /odom_camera_init_broadcaster || ros_node_exists /base_link_body_broadcaster; then
+  fail "坐标转换节点已由其他进程启动，拒绝重复接管"
+fi
+start_launch 8 /odom_camera_init_broadcaster car_bringup mapping_coordinate_transforms.launch
 wait_for_node /base_link_body_broadcaster || fail "自启动 TF 缺少 /base_link_body_broadcaster"
-report OK "所有功能启动完成，最后启动的 stage manager 与常驻 TF 已就绪；按 Ctrl+C 停止"
+report OK "所有功能启动完成，最后启动的坐标转换 launch 已就绪；按 Ctrl+C 停止"
 while true; do
   sleep 2
   for index in "${!NODE_NAMES[@]}"; do
@@ -214,4 +229,10 @@ while true; do
       fi
     fi
   done
+  if ! ros_node_exists /odom_camera_init_broadcaster; then
+    fail "mapping_tf 节点异常退出：/odom_camera_init_broadcaster"
+  fi
+  if ! ros_node_exists /base_link_body_broadcaster; then
+    fail "mapping_tf 节点异常退出：/base_link_body_broadcaster"
+  fi
 done

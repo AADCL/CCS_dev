@@ -2,6 +2,21 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## Ground-Air AGV 建图预览坐标系契约修复 - 2026-09-03
+
+- 定位准备阶段 `FRAME_MISMATCH` 根因：端侧原返回 `camera_init`，指控准备阶段按全局配置要求 `odom`，而后续分片又按旧 AGV 设备配置要求 `camera_init`。
+- Ground-Air map-stream profile 保持源/地图帧 `camera_init`，将预览帧改为 `odom`，通过常驻 `odom <- camera_init` TF 实际转换点坐标；准备响应和分片目标帧统一为 `odom`，分片源帧为 `camera_init`，成果帧仍为 `map`。
+- 指控端仅同步 `AGV_001` 的 `remote_mapping=odom`、`preview_source=camera_init`、`remote_artifact=map` 配置及发布默认镜像，不修改建图协调器业务代码。
+- 增量部署门禁纳入 Ground-Air `map_stream.yaml` 的已知校验、备份、复制和部署后校验，并按 ROS Noetic、车辆 workspace、CCS workspace 的顺序加载 overlay，修复 launch 检查找不到 `fast_lio_open3d` 的问题；接口总册及部署文档补充成对部署、静态验收与成对回滚要求。
+- v3 增量包已在端侧通过 69 项目标测试（2 项跳过）、18 项 manager 契约测试、两轮无运动建图闭环及一次 HTTP PCD 实体补充闭环；准备/预览/成果帧为 `odom`、`odom <- camera_init`、`map`，二进制 PCD header 与 XYZ 载荷通过校验，结束后无建图残留且常驻 TF PID 稳定。协议 schema、端口、FAST-LIO、原始建图/保存 launch 和 TF 自启动所有权均不变。
+
+## Ground-Air AGV 端侧 TF 自启动调整 - 2026-09-03
+
+- 统一启动脚本最后直接执行 `roslaunch car_bringup mapping_coordinate_transforms.launch`，并独立持有、监控两条常驻静态 TF；FAST-LIO 仍只在收到阶段指令后启动。
+- stage manager 移除静态 TF 进程所有权，仅保留阶段切换、会话归属和阶段进程组清理；TF 故障不再阻断所属会话停止或取消建图。
+- 精简 `manual_mapping_control.launch` 直接组合 FAST-LIO、建图节点和建图态 `map -> odom`，不再经过会重复启动静态 TF 的旧嵌套入口；新增等价的 `relocalization_control.launch` 保护 stage 2。
+- 用户 systemd 服务改用有序清理语义，增量部署补齐 launch、unit、版本校验、备份、180 秒实际就绪门禁及静态闭环验收。指控协议、端口和端侧包版本不变。
+
 ## v0.23.0 - 2026-09-03
 
 - 增加 Windows Inno Setup、Ubuntu 自解压安装包、本地便携 ZIP 和独立端侧配套 ZIP 构建入口；支持指定安装位置与无人值守参数。

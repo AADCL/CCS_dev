@@ -108,8 +108,13 @@ class GroundAirStageManagerTests(unittest.TestCase):
 
     def test_base_stops_only_managed_children(self):
         self.transition(self.core.RELOCALIZATION, "site_a")
+        self.backend.events = []
+        self.backend.conflicts = ["coordinate transform pair is not ready"]
         result = self.transition(self.core.BASE)
         self.assertTrue(result.success)
+        self.assertFalse(any(
+            event[0] == "conflicts" for event in self.backend.events))
+        self.assertTrue(any(event[0] == "stop" for event in self.backend.events))
         self.assertEqual(self.core.BASE, self.manager.active_stage)
         self.assertEqual([], self.manager.children)
 

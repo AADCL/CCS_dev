@@ -89,7 +89,7 @@ def build_stage_commands(request):
         primary = (
             "roslaunch",
             "car_bringup",
-            "start_relocalization.launch",
+            "relocalization_control.launch",
             "map_id:={}".format(request.map_id),
             "service_wait_timeout:={}".format(timeout),
             "relocalize_timeout:={}".format(timeout),

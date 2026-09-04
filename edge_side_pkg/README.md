@@ -28,6 +28,7 @@
 
 - `deploy/<profile>/`：设备 profile、设备适配 launch、一键启动脚本和系统配置原件。部署时只选择性复制其中内容，不能把 `deploy` 目录整体放入 catkin `src`。
 - `documents/`：部署指南、实际部署记录、回滚步骤和配置校验信息，不保存另一套运行配置。
+- Ground-Air AGV 的 TF 自启动、建图响应和静态验收以 `documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md` 为准。
 
 ## 部署
 

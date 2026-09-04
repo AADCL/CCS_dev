@@ -355,6 +355,63 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(scans[-1][3], self.transform_lookup.transform)
         self.assertIn("tf:odom<-lio_odom:123456789", self.events)
 
+    def test_ground_air_preview_uses_tf_and_writes_transformed_odom_points(self):
+        self.config.update(
+            map_frame="camera_init",
+            preview_frame="odom",
+            body_from_sensor={
+                "x": 0.0, "y": 0.0, "z": 0.0,
+                "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+            },
+        )
+        self.prepare()
+        prepare_result = self.messages()[-1]
+        self.assertEqual(prepare_result["payload"]["frame_id"], "odom")
+        self.start()
+
+        session = self.node.session
+        stamp = SimpleNamespace(to_nsec=lambda: 123456789)
+        pose = SimpleNamespace(
+            header=SimpleNamespace(stamp=stamp, frame_id="camera_init"),
+            child_frame_id=self.config["body_frame"],
+            pose=SimpleNamespace(pose=SimpleNamespace(
+                position=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+                orientation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0))))
+        cloud = SimpleNamespace(
+            header=SimpleNamespace(
+                stamp=stamp, frame_id=self.config["cloud_frame"]),
+            fields=[])
+        self.node._pose_callback(session.token, pose)
+        with patch("epgeneral_map_stream.node.extract_pointcloud2",
+                   return_value=np.asarray([[1.0, 0.0, 0.0]], dtype=np.float32)):
+            self.node._cloud_callback(session.token, cloud)
+            self.clock_value[0] += self.config["sample_window_seconds"] + 0.01
+            self.node._cloud_callback(session.token, cloud)
+
+        queued = self.node.preview_queue.get_nowait()
+        self.node.preview_queue.task_done()
+        self.assertIn("tf:odom<-camera_init:123456789", self.events)
+        captured = {}
+
+        def capture_pcd(unused_path, points):
+            captured["points"] = np.array(points, copy=True)
+            return {"byte_count": 128, "sha256": "0" * 64}
+
+        with patch("epgeneral_map_stream.node.write_binary_pcd",
+                   side_effect=capture_pcd):
+            self.node.preview_queue.put_nowait(queued)
+            self.node._preview_loop()
+
+        np.testing.assert_allclose(captured["points"], [[11.0, -2.0, 1.0]])
+        fragment = next(
+            item for item in reversed(self.messages())
+            if item["message_type"] == "cloud_fragment_ready")
+        self.assertEqual(fragment["payload"]["frame_id"], "odom")
+        self.assertEqual(fragment["payload"]["source_frame_id"], "camera_init")
+        self.assertEqual(
+            fragment["payload"]["display_from_source"],
+            self.transform_lookup.transform)
+
     def test_cloud_waits_for_matching_pose_when_callback_arrives_first(self):
         self.prepare()
         self.start()

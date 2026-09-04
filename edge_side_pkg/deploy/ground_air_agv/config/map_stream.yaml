@@ -12,7 +12,7 @@ ros:
   stream:
     cloud: {topic: "/cloud_registered", message_type: "sensor_msgs/PointCloud2", frame: "camera_init", coordinates: "map"}
     pose: {topic: "/Odometry", message_type: "nav_msgs/Odometry", position_path: "pose.pose.position", orientation_path: "pose.pose.orientation"}
-  frames: {map: "camera_init", preview: "camera_init", body: "body", sensor: "body"}
+  frames: {map: "camera_init", preview: "odom", body: "body", sensor: "body"}
   body_from_sensor: {x: 0.0, y: 0.0, z: 0.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0}
 
 integrations:

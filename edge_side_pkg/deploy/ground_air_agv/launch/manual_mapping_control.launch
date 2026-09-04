@@ -1,16 +1,45 @@
 <launch>
   <!--
     CCS-owned mapping entrypoint. The original car_bringup/manual_mapping.launch
-    remains untouched. MAVROS and Livox stay resident. Mapping-only static TF
-    publishers are started separately after FAST-LIO is ready.
+    remains untouched. MAVROS, Livox, and the two static coordinate transforms
+    stay resident and are owned by the unified startup script. This launch owns
+    only the on-demand FAST-LIO and mapping processes.
   -->
   <arg name="map_id" />
   <arg name="maps_root" default="/home/bitcq/catkin_ws/maps" />
+  <arg name="service_wait_timeout" default="90.0" />
 
-  <include file="$(find car_bringup)/launch/start_mapping.launch">
-    <arg name="map_id" value="$(arg map_id)" />
-    <arg name="start_stack" value="true" />
-    <arg name="start_mavros" value="false" />
+  <include file="$(find fast_lio_open3d)/launch/mapping_mid360.launch">
+    <arg name="rviz" value="false" />
+  </include>
+
+  <include file="$(find car_bringup)/launch/fastlio_pipeline.launch" />
+  <include file="$(find pcl_test)/launch/filter_ground.launch" />
+  <include file="$(find dynamic_mapping)/launch/dynamic_mapping.launch" />
+  <include file="$(find ground_air_mapping)/launch/mapping.launch">
     <arg name="maps_root" value="$(arg maps_root)" />
   </include>
+
+  <!-- Mapping alone owns the identity map -> odom edge. -->
+  <node pkg="ground_air_localization"
+        type="world_tf_owner_node.py"
+        name="ground_air_world_tf_owner"
+        output="screen"
+        required="true">
+    <param name="mode" value="mapping" />
+    <param name="map_frame" value="map" />
+    <param name="odom_frame" value="odom" />
+    <param name="rate" value="20.0" />
+  </node>
+
+  <node pkg="car_bringup"
+        type="ground_air_operation_node.py"
+        name="ground_air_start_mapping"
+        output="screen"
+        required="true">
+    <param name="operation" value="start_mapping" />
+    <param name="map_id" value="$(arg map_id)" />
+    <param name="service_wait_timeout" value="$(arg service_wait_timeout)" />
+    <param name="keep_alive" value="true" />
+  </node>
 </launch>

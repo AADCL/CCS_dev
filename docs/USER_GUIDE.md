@@ -38,6 +38,7 @@
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
 当前配套端侧 `epgeneral_map_stream` v0.13.1。联合模式由地面站为各设备创建独立 v2 会话，要求至少两台设备并指定主设备；端侧回传联合作业身份，地面站按外参融合 PCD 和 PGM。Scout 建图仍按 FAST-LIO、pointcloud mapper、TF manager、pose adapter 顺序启动；Go2 继续使用 accumulator backend；Ground-Air AGV 使用原生 mapping/save service backend。
+Ground-Air AGV 的两条静态 TF 由一键脚本最后直接启动；建图/重定位使用不含静态 TF 的精简控制入口。部署、人工诊断限制与回滚见 [专项说明](../edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)。
 
 地图详情页左侧显示可收起的在线设备栏，集中展示任务/建图状态、电量、坐标系和单路可控视频。Scout/WheelTech 的本地 odom 位姿取 UDP `vision_pose`，Go2 等设备取 `global_pose`；地图态势优先使用已持久化的 `map <- odom` 重定位绑定，未绑定时仅按同坐标系或与设备 ID 精确匹配的建图外参显示。所有地图点云按高度使用低红高紫的 rainbow 色谱。
 
