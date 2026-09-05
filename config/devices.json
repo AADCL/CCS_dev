@@ -148,9 +148,6 @@
       "srt_latency_ms": 120,
       "relocalization_profile": "ground_air_agv",
       "active_map_id": "76e41303-0974-4f40-9425-557a64841fec",
-      "map_bindings": []
-      "relocalization_profile": "disabled",
-      "active_map_id": "29c55f28-56bd-4899-adde-665bd0494e1e",
       "map_bindings": [],
       "battery_profile": "disabled"
     },
