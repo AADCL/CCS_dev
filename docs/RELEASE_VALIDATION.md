@@ -8,6 +8,7 @@
 - 检查当前文档链接/锚点、八包 README、产品版本和包版本，验证实际端侧/便携 ZIP 中的文档及相对链接。
 - 增量运行版本、端侧布局/配置/视频配置、发布工程、设备配置、地图上下文和 Ground-Air profile 测试；命令为：
 - 上述集合在 Windows / Python 3.10.19 发布环境中共 67 项，全部通过；日志保存在构建工作区 build/incremental-validation.log。
+- PR #33 由独立审核代理检查完整差异，发现 Ground-Air 从端侧 ZIP 首次安装缺少服务、launch/override 和源脚本权限步骤。使用手册及专项部署入口已修正，代理复核无剩余阻塞项；修正后文档及发布工程相关 17 项检查全部通过。该记录是代理代码审核，不代表 GitHub 同账号独立批准。
 
 ~~~bash
 python -m unittest tests.test_edge_documentation tests.test_version tests.test_edge_package_layout tests.test_edge_config tests.test_edge_video_config tests.test_release_engineering tests.test_device_config tests.test_device_map_context tests.test_ground_air_agv_profile -v

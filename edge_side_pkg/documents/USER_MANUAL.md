@@ -75,7 +75,7 @@ rospack find epgeneral_task_control
 rosmsg show epgeneral_task_control/TaskExecutionCommand
 ~~~
 
-构建失败先检查缺少的 ROS 包是否来自 underlay，以及 rospack 的解析路径。Ground-Air 用 `rospack find ground_air_msgs` 检查消息包。源码中 Python 节点入口由 catkin 安装，脚本权限应按部署指南设置；不要混用 Python 2。
+构建失败先检查缺少的 ROS 包是否来自 underlay，以及 rospack 的解析路径。Ground-Air 用 `rospack find ground_air_msgs` 检查消息包。源码中 Python 节点入口由 catkin 安装；ZIP 解压后的源文件可能没有执行权限，Ground-Air 启动预检还会检查源入口，按下节显式设置。不要混用 Python 2。
 
 ## 3. 安装实际运行配置
 
@@ -101,6 +101,51 @@ install -m 0750 "$PROFILE_SOURCE/start_ccs_edge_dev.sh" "$WORKSPACE/start_ccs_ed
 ~~~
 
 设备适配 launch 的安装位置以[专项指南](#9-设备专项操作)为准。尤其 Scout 使用额外 base launch，Ground-Air 还需 CCS launch、局部 overrides 和用户服务，不能只复制 YAML 就启动。
+
+#### Ground-Air 首次安装补充
+
+以下只适用于已经准备好车辆 underlay、完成八包构建的新 CCS 工作空间，以 bitcq 用户执行。PROFILE_SOURCE 必须包含完整的 deploy/ground_air_agv 目录内容，不能只上传 config。现有部署升级先按第 8 节备份并停止服务；不要用历史 deploy_stage_manager_update.sh 代替首次安装，它面向旧 underlay 阶段管理器且会启用服务。
+
+~~~bash
+WORKSPACE=/home/bitcq/ccs_edge_ws
+PROFILE=ground_air_agv
+PROFILE_SOURCE=/tmp/ccs-profile
+source /opt/ros/noetic/setup.bash
+source /home/bitcq/catkin_ws/devel/setup.bash --extend
+source "$WORKSPACE/devel/setup.bash" --extend
+CAR_BRINGUP=$(rospack find car_bringup)
+test -r "$CAR_BRINGUP/launch/fastlio_pipeline.launch"
+test -r "$CAR_BRINGUP/launch/manual_mapping.launch"
+rospack find ground_air_msgs
+install -d -m 0750 "$WORKSPACE/launch" "$WORKSPACE/overrides/car_bringup/launch" \
+  "$WORKSPACE/run" "$WORKSPACE/log/ground_air_agv" \
+  "$HOME/.ros/ccs_edge_dev_ground_air_agv/log" "$HOME/.config/systemd/user"
+install -m 0644 "$PROFILE_SOURCE/launch/"*.launch "$WORKSPACE/launch/"
+install -m 0644 "$PROFILE_SOURCE/overrides/car_bringup/package.xml" \
+  "$WORKSPACE/overrides/car_bringup/package.xml"
+install -m 0644 "$PROFILE_SOURCE/overrides/car_bringup/launch/"*.launch \
+  "$WORKSPACE/overrides/car_bringup/launch/"
+chmod 0755 "$WORKSPACE/src/EPGeneral_ground_air_control/scripts/"*.py \
+  "$WORKSPACE/src/EPGeneral_relocalization/scripts/"*.py \
+  "$WORKSPACE/src/EPGeneral_map_stream/scripts/"*.py \
+  "$WORKSPACE/src/EPGeneral_map_stream/scripts/"*.sh
+~~~
+
+当前主脚本和阶段管理器仍通过 car_bringup 查找静态 TF 与建图入口，因此首次集成还要安装下面两个适配 launch 到车辆包。先确认 CAR_BRINGUP 是预期的 /home/bitcq/catkin_ws/src/car_bringup；已有同名文件必须备份后比较差异。这里不覆盖原 manual_mapping.launch，不复制旧 car_bringup_scripts 阶段管理器。
+
+~~~bash
+test "$CAR_BRINGUP" = /home/bitcq/catkin_ws/src/car_bringup
+install -m 0644 "$PROFILE_SOURCE/launch/mapping_coordinate_transforms.launch" \
+  "$PROFILE_SOURCE/launch/manual_mapping_control.launch" "$CAR_BRINGUP/launch/"
+install -m 0644 "$PROFILE_SOURCE/ccs-edge-dev.service" \
+  "$HOME/.config/systemd/user/ccs-edge-dev.service"
+systemd-analyze --user verify "$HOME/.config/systemd/user/ccs-edge-dev.service"
+systemctl --user daemon-reload
+systemctl --user disable ccs-edge-dev.service
+systemctl --user is-enabled ccs-edge-dev.service
+~~~
+
+最后一条输出应为 disabled，退出码非零是 systemctl 的正常语义。服务文件的 WorkingDirectory、ExecStart 和 StandardOutput/StandardError 都是 bitcq 的绝对路径；换用户或工作空间时，先编辑这些字段及脚本的 CCS_* 配置再执行 verify/daemon-reload。上述步骤不启动服务；完成配置、授时和外部接口核验后再按第 4.3 节手动启动。后续局部修复遵循专项指南的工作空间写入边界；这两个车辆适配 launch 的首次安装不能误作日常增量覆盖流程。
 
 ### 3.2 修改必检项
 
