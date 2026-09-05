@@ -46,6 +46,11 @@ def write_json(path: Path, value) -> None:
 def copy_file(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
+    # Windows checkouts may use CRLF; POSIX shebangs and shell scripts require LF.
+    if source.suffix.lower() in {".sh", ".py"}:
+        content = destination.read_bytes()
+        if b"\r\n" in content:
+            destination.write_bytes(content.replace(b"\r\n", b"\n"))
 
 def copy_tree(source: Path, destination: Path, suffixes: set[str] | None = None) -> None:
     for path in sorted(source.rglob("*")):

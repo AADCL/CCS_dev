@@ -131,9 +131,23 @@ class InstallationTests(unittest.TestCase):
             self.assertEqual((other / "keep.txt").read_text(), "keep")
 
 class ReleaseContentsTests(unittest.TestCase):
+    def test_script_staging_normalizes_crlf_without_changing_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for suffix in (".sh", ".py"):
+                source = root / ("source" + suffix)
+                content = b"#!/usr/bin/env bash\r\nprintf 'ok\\n'\r\n"
+                source.write_bytes(content)
+                target = root / "staged" / source.name
+                builder.copy_file(source, target)
+                self.assertEqual(target.read_bytes(), content.replace(b"\r\n", b"\n"))
+                self.assertEqual(source.read_bytes(), content)
+
     def assert_documentation_links(self, archive):
         names = set(archive.namelist())
         for name in names:
+            if name.endswith((".sh", ".py")):
+                self.assertNotIn(b"\r\n", archive.read(name), name)
             if not name.endswith(".md"):
                 continue
             for link in document_links(archive.read(name).decode("utf-8")):

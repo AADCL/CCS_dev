@@ -10,6 +10,7 @@
 - 上述集合在 Windows / Python 3.10.19 发布环境中共 67 项，全部通过；日志保存在构建工作区 build/incremental-validation.log。
 - PR #33 由独立审核代理检查完整差异，发现 Ground-Air 从端侧 ZIP 首次安装缺少服务、launch/override 和源脚本权限步骤。使用手册及专项部署入口已修正，代理复核无剩余阻塞项；修正后文档及发布工程相关 17 项检查全部通过。该记录是代理代码审核，不代表 GitHub 同账号独立批准。
 - 最终安装冒烟发现 Windows 原有未锚定的 config/data 排除规则漏装第三方库中的同名目录，导致文件清单不一致；规则改为根目录匹配。最终安装器按清单哈希、文档链接、真实应用启动及 0.23.0 升级保留数据重新验证，结果以 Release 记录为准。
+- 清理临时 Linux 安装时发现 Windows 归档保留 CRLF，导致卸载脚本无法执行；分发复制阶段统一 Shell/Python 脚本为 LF，并检查两类 ZIP 的脚本行尾。最终产物需重新构建并验证安装、升级、启动及卸载保留数据，未公开的候选产物不作为发布结果。
 
 ~~~bash
 python -m unittest tests.test_edge_documentation tests.test_version tests.test_edge_package_layout tests.test_edge_config tests.test_edge_video_config tests.test_release_engineering tests.test_device_config tests.test_device_map_context tests.test_ground_air_agv_profile -v
