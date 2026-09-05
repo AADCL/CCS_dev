@@ -1,6 +1,13 @@
 # 更新记录
 
-<!-- epgeneral_map_stream_VERSION: 0.13.1 -->
+<!-- epgeneral_map_stream_VERSION: 0.13.2 -->
+
+## v0.13.2 - 2026-09-05
+
+- 修复 Ground-Air 建图预检将 guard `2` 的 stage manager 误判为缺少会话归属保护，导致 `prepare_mapping` 返回 `MAP_GENERATION_UNAVAILABLE`。
+- 客户端明确接受整数 guard `1`、`2`，未知值继续拒绝并显示实际值与支持范围；保持 caller/map_id、外部 TF 检查及停止/取消语义。
+- 补充客户端入口与当前 manager 的兼容回归，以及增量部署中的实际建图预检；部署和回滚保持设备已禁用的上电自启动设置。
+- 端侧部署与静态闭环的实际结果单独记录于 [AGV 建图部署日志](../documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT_LOG.md)。
 
 ## v0.13.1 - 2026-09-02
 

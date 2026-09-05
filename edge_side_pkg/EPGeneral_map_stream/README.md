@@ -1,8 +1,8 @@
 # epgeneral_map_stream
 
-<!-- epgeneral_map_stream_VERSION: 0.13.1 -->
+<!-- epgeneral_map_stream_VERSION: 0.13.2 -->
 
-版本：`v0.13.1`。运行配置统一由 `epgeneral_device_config/config/map_stream.yaml` 提供。
+版本：`v0.13.2`。运行配置统一由 `epgeneral_device_config/config/map_stream.yaml` 提供。
 
 Scout Mini profile 使用 `scout_finalize` backend。启动顺序固定为
 `fastlio_mapping_scout.launch rviz:=false`、`pointcloud_mapper.launch map_name:=MAP_NAME`、
@@ -11,10 +11,20 @@ Scout Mini profile 使用 `scout_finalize` backend。启动顺序固定为
 pose 和 TF，不调用 rosservice；随后使用开始建图时固化的同一个 `MAP_NAME` 执行
 `rosrun scout_map_tools finalize_map.py MAP_NAME --replace-raw`。
 
-Ground-Air AGV 使用 `ground_air_service` backend。开机脚本最后直接执行
+Ground-Air AGV 使用 `ground_air_service` backend。手动启动一键脚本后，其最后执行
 `roslaunch car_bringup mapping_coordinate_transforms.launch`，常驻两条静态 TF；stage manager
 只管理按指令启动的 `manual_mapping_control.launch`。该精简入口直接组合 FAST-LIO、建图节点和
 建图态 `map -> odom`，不再引用会重复静态 TF 的旧嵌套入口，结束建图时不会停止或重启常驻 TF。
+
+Ground-Air 客户端明确支持 `ccs_session_guard_version` 为整数 `1` 或 `2`，兼容旧版
+manager 与当前 `epgeneral_ground_air_control` manager；缺失、类型错误或未知版本仍拒绝，
+并报告实际值与支持范围。当前设备使用 guard `2`，继续通过 `/ccs_mapping_stage_<session>`
+调用 `/ground_air/system/set_stage`，保留 caller/map_id 归属保护。`--check` 仅检查就绪，
+不切换阶段；停止和取消不依赖外部 TF 可用性。
+
+`AGV_001` 已取消上电自启动，`ccs-edge-dev.service` 保持 `disabled`。需要运行时手动执行
+`systemctl --user start ccs-edge-dev.service`；部署与回滚保持该设置，当前运行服务不因禁用而停止。
+兼容修复、日志和验收步骤见 [AGV 建图部署说明](../documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)。
 
 `epgeneral_map_stream` 是 ROS Noetic/Python 3 端侧遥控建图包，使用独立的
 `ccs-map-stream-v2`。节点监听平台 UDP 14561，向协商得到的平台 UDP 14562

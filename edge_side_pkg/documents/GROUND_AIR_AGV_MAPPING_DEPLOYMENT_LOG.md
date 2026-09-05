@@ -1,5 +1,20 @@
 # Ground-Air AGV 建图部署日志
 
+## 2026-09-05 guard 版本不匹配诊断与兼容修复
+
+- 现场 `prepare_mapping` 请求 `8d20c14b` 于 11:00:45.300 到达；点云、IMU 和存储检查通过，11:00:49.820 在 `map_generation` 预检失败，返回 `MAP_GENERATION_UNAVAILABLE`。后续重发命中相同请求的缓存结果。
+- 运行 manager 已位于 `/home/bitcq/ccs_edge_ws/src/EPGeneral_ground_air_control/scripts/ground_air_stage_manager_node.py`，发布 `ccs_session_guard_version=2`；客户端 `EPGeneral_map_stream/scripts/ground_air_stage_client.py` 原第 66 行仍精确要求 `1`。实际只读 `--check` 复现 exit `1`，不是缺少保护机制或传感器不可用。
+- 重定位增量升级同步了新 manager 与 guard `2` 启动检查，却遗漏建图客户端适配和实际建图预检。v2 manager 继续接受原建图 caller，修复客户端即可保持原会话归属协议。
+- 修复版本为 `epgeneral_map_stream` v0.13.2：明确接受整数 guard `1`、`2`，保留未知值拒绝、外部 TF 检查、停止/取消语义。补充客户端入口及 v2 manager 回归，并为后续重定位增量部署增加客户端同步和真实预检。
+- 服务上电自启动已按用户要求禁用。实际部署批次为 `/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2`；清单记录 9 个目标文件的部署前后 SHA-256 与权限，文件均先在工作区内校验再原子替换。客户端最终 SHA-256 为 `d9ccec1f9c97ad39d66473b5c33b8a0486b82a2e1e67c77547b95802ef94c97d`。部署没有重启服务，也未修改 manager、车辆 underlay、unit 或生产 profile。
+- 首次端侧 25 项聚焦测试有 10 项仅因仓库样例 `EPGeneral_device_config/config/map_stream.yaml` 未随 AGV 生产包部署而报 `FileNotFoundError`，其余 15 项通过。随后以 `/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T035900Z_mapping_guard_test_fixture` 备份并部署支持 `CCS_MAP_STREAM_TEST_MAPPING` 的测试入口，将仓库样例放在 `.deploy` 隔离目录后重跑；25 项全部通过。候选部署脚本 `bash -n`、版本一致性检查和实际 `ground_air_stage_client.py --check` 均通过。
+- 第一次静态闭环误把地面站监听端口设为 `14572`，与生产 profile 的回传端口 `14562` 不一致，因此只得到地面站超时，不能作为端侧失败结论。改回 `14562` 后，会话 `90a4443f4f2d41d89e6fdb3a91cc28a6`（地图 `agv-static-20260905-113150`）完成准备、开始、重复开始幂等、11 个实时 PCD 分片、保存和成果下载；首分片 54234 点、650949 字节，帧契约为 `odom <- camera_init`。
+- 最终 ZIP 为 `artifacts/agv_mapping_guard_fix_20260905/cycle2/agv-static-20260905-113150.zip`，大小 248867 字节，SHA-256 为 `ba48d3cba52d3d1b2e5f19c47f2a00df946e181a2c8d363ef6bd080e8bf0400b`；包含 `map.pcd` 273436 字节、`map.pgm` 42275 字节、`map.yaml` 119 字节和 `manifest.json` 700 字节，成果帧为 `map`。
+- 最终复核时服务仍为 `disabled/inactive`，现有手动启动栈继续运行：supervisor PID 6424、roscore PID 6500、map-stream PID 8160、manager PID 8803，启动时间和部署前一致；两条静态 TF PID 9162/9163 均自 10:58:18 持续运行。stage 为 `BASE=0`，UDP 14561/14565 正常监听，无 FAST-LIO、地图记录器、world-TF owner、重定位器或 CCS 会话节点残留。四个 underlay launch 校验值未变化。
+
+以下为历史部署记录，其中旧路径和当时的 `enabled` 状态不代表当前部署要求。
+
+
 ## 2026-09-01 `epgeneral_map_stream` v0.13.0 增量部署
 
 - 目标设备：`AGV_001` / `192.168.50.130`；部署仅涉及建图响应，不下发车辆运动、解锁、模式切换或航点。

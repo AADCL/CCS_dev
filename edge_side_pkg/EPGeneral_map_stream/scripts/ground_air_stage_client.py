@@ -5,6 +5,7 @@ import time
 
 SERVICE = "/ground_air/system/set_stage"
 GUARD_PARAM = "/ground_air_stage_manager/ccs_session_guard_version"
+SUPPORTED_GUARD_VERSIONS = (1, 2)
 EXTERNAL_TF_PARAM = "/ground_air_stage_manager/external_tf_required"
 LEGACY_RESIDENT_TF_PARAM = "/ground_air_stage_manager/resident_tf_version"
 STATIC_TF_NODES = {
@@ -63,8 +64,13 @@ def main(args):
             raise ValueError("invalid CCS session identity")
     rospy.init_node("ccs_mapping_stage_" + owner, disable_signals=True)
     rospy.wait_for_service(SERVICE, timeout=4.0)
-    if rospy.get_param(GUARD_PARAM, 0) != 1:
-        raise RuntimeError("stage manager lacks CCS session ownership guard")
+    guard_version = rospy.get_param(GUARD_PARAM, None)
+    if (type(guard_version) is not int
+            or guard_version not in SUPPORTED_GUARD_VERSIONS):
+        raise RuntimeError(
+            "unsupported CCS session ownership guard version: "
+            "actual={!r}; supported={}".format(
+                guard_version, SUPPORTED_GUARD_VERSIONS))
     if action_requires_external_tf(mode):
         require_external_tf(rospy.get_param, rosnode.get_node_names)
     if mode == "--check":

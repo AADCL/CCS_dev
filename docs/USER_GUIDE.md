@@ -37,8 +37,8 @@
 
 系统面向可信局域网，不提供 MQTT、SRT 或其他 UDP 通道的加密认证。多设备同步任务要求地面站和端侧通过 NTP 对齐 UTC 时间。
 
-当前配套端侧 `epgeneral_map_stream` v0.13.1。联合模式由地面站为各设备创建独立 v2 会话，要求至少两台设备并指定主设备；端侧回传联合作业身份，地面站按外参融合 PCD 和 PGM。Scout 建图仍按 FAST-LIO、pointcloud mapper、TF manager、pose adapter 顺序启动；Go2 继续使用 accumulator backend；Ground-Air AGV 使用原生 mapping/save service backend。
-Ground-Air AGV 的两条静态 TF 由一键脚本最后直接启动；建图/重定位使用不含静态 TF 的精简控制入口。部署、人工诊断限制与回滚见 [专项说明](../edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)。
+当前配套端侧 `epgeneral_map_stream` v0.13.2。联合模式由地面站为各设备创建独立 v2 会话，要求至少两台设备并指定主设备；端侧回传联合作业身份，地面站按外参融合 PCD 和 PGM。Scout 建图仍按 FAST-LIO、pointcloud mapper、TF manager、pose adapter 顺序启动；Go2 继续使用 accumulator backend；Ground-Air AGV 使用原生 mapping/save service backend。
+Ground-Air AGV 已禁用上电自启动，需要时手动启动 `ccs-edge-dev.service`；两条静态 TF 由一键脚本最后直接启动，建图/重定位使用不含静态 TF 的精简控制入口。v0.13.2 建图客户端兼容 guard `1`、`2`，避免重定位升级后的准备阶段版本误拒绝。部署、人工诊断限制与回滚见 [专项说明](../edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)。
 
 地图详情页左侧显示可收起的在线设备栏，集中展示任务/建图状态、电量、坐标系和单路可控视频。Scout/WheelTech 的本地 odom 位姿取 UDP `vision_pose`，Go2 等设备取 `global_pose`；地图态势优先使用已持久化的 `map <- odom` 重定位绑定，未绑定时仅按同坐标系或与设备 ID 精确匹配的建图外参显示。所有地图点云按高度使用低红高紫的 rainbow 色谱。
 
@@ -169,7 +169,7 @@ sudo install -m 0640 edge_side_pkg/deploy/go2_edu/config/*.yaml \
 
 脚本在控制终端逐项输出时间同步、ROS Master 和功能包启动结果。全部节点就绪后脚本保持
 前台运行；按 `Ctrl+C` 会停止脚本管理的功能节点、对应 roslaunch 进程，以及由脚本自身创建的
-ROS Master。各组件完整日志保存在 `~/.ros/ccs_edge_dev/log/`。
+ROS Master。通用部署的各组件完整日志保存在 `~/.ros/ccs_edge_dev/log/`；Ground-Air AGV 使用 `/home/bitcq/ccs_edge_ws/log/ground_air_agv/`，ROS 日志位于其 `ros/latest/` 下。
 
 按需启动：
 
@@ -314,7 +314,7 @@ PCD 必须包含有限 XYZ；PGM 必须为 P2/P5，并由有效 ROS map_server Y
 
 ### PGM 下载提示端侧版本不支持
 
-当前端侧 `epgeneral_map_stream` v0.13.1 已实现实时 PCD 分片、最终 PCD/PGM/YAML 成果 ZIP、短期令牌 HTTP 服务和联合作业身份回传。Scout 使用本地时间 `YYYYMMDD_HHMMSS` 作为固定 `map_name`，同一名称贯穿 pointcloud mapper、`filtered_camera_init.pcd`、`finalize_map.py --replace-raw` 和成果 manifest；Go2 继续使用 accumulator backend，Ground-Air AGV 使用原生 mapping/save service backend。
+当前端侧 `epgeneral_map_stream` v0.13.2 已实现实时 PCD 分片、最终 PCD/PGM/YAML 成果 ZIP、短期令牌 HTTP 服务和联合作业身份回传。Scout 使用本地时间 `YYYYMMDD_HHMMSS` 作为固定 `map_name`，同一名称贯穿 pointcloud mapper、`filtered_camera_init.pcd`、`finalize_map.py --replace-raw` 和成果 manifest；Go2 继续使用 accumulator backend，Ground-Air AGV 使用原生 mapping/save service backend。
 
 ### 融合算法无法导入或执行失败
 

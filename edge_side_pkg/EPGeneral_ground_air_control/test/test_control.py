@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import Mock
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -102,6 +103,101 @@ class StageControllerTests(unittest.TestCase):
         )
         self.assertFalse(result.success)
         self.assertEqual(result.active_stage, MAPPING)
+
+
+class StageOwnershipTests(unittest.TestCase):
+    def setUp(self):
+        self.backend = Mock()
+        self.backend.find_conflicts.return_value = []
+        self.backend.wait_primary.return_value = True
+        self.backend.wait_stage_transforms.return_value = True
+        self.controller = StageController(self.backend)
+
+    def transition(self, stage=1, map_id="map1", owner="/ccs_mapping_stage_a"):
+        request = normalize_request(stage, map_id, 5)
+        return self.controller.transition(request, build_stage_commands(request), owner=owner)
+
+    def test_mapping_only_starts_primary_and_duplicate_is_idempotent(self):
+        self.assertTrue(self.transition().success)
+        commands = self.backend.start.call_args_list
+        self.assertIn("manual_mapping_control.launch", commands[0].args[0])
+        self.assertTrue(self.transition().success)
+        self.assertEqual(self.backend.start.call_count, 1)
+
+    def test_stop_owned_session_returns_base(self):
+        self.transition()
+        self.backend.find_conflicts.reset_mock()
+        self.backend.find_conflicts.return_value = [
+            "coordinate transform pair is not ready"]
+        self.assertTrue(self.transition(0).success)
+        self.backend.find_conflicts.assert_not_called()
+        self.assertEqual(self.backend.stop.call_count, 1)
+        self.assertEqual(self.controller.children, [])
+        self.assertEqual(self.controller.active_owner, "")
+        self.assertTrue(self.transition(0).success)
+
+    def test_does_not_adopt_same_map_started_manually(self):
+        self.transition(owner="")
+        self.assertFalse(self.transition().success)
+        self.assertFalse(self.transition(0).success)
+        self.backend.stop.assert_not_called()
+
+    def test_wrong_owner_or_map_cannot_stop_or_replace(self):
+        self.transition()
+        for stage in (0, 1):
+            self.assertFalse(self.transition(stage, owner="/ccs_mapping_stage_b").success)
+            self.assertFalse(self.transition(stage, map_id="other").success)
+        self.backend.stop.assert_not_called()
+
+    def test_ccs_does_not_interrupt_relocalization(self):
+        self.transition(2, owner="")
+        self.assertFalse(self.transition().success)
+        self.assertFalse(self.transition(0).success)
+        self.backend.stop.assert_not_called()
+
+    def test_manual_stage_switch_cannot_revoke_ccs_owner(self):
+        self.transition()
+        for stage in (0, 1, 2):
+            self.assertFalse(self.transition(stage, owner="").success)
+        self.backend.stop.assert_not_called()
+        self.assertEqual(self.controller.active_owner, "/ccs_mapping_stage_a")
+        self.assertTrue(self.transition(0).success)
+
+    def test_mapping_and_relocalization_cannot_take_each_others_session(self):
+        for active_stage, active_owner, other_stage, other_owner in (
+                (1, "/ccs_mapping_stage_a", 2, "/ccs_relocalization_stage_b"),
+                (2, "/ccs_relocalization_stage_b", 1, "/ccs_mapping_stage_a")):
+            with self.subTest(active_stage=active_stage):
+                self.backend.reset_mock()
+                self.controller = StageController(self.backend)
+                self.assertTrue(self.transition(active_stage, owner=active_owner).success)
+                self.assertFalse(self.transition(other_stage, owner=other_owner).success)
+                self.assertFalse(self.transition(0, owner=other_owner).success)
+                self.assertEqual(self.controller.active_stage, active_stage)
+                self.assertEqual(self.controller.active_owner, active_owner)
+                self.backend.stop.assert_not_called()
+                self.assertEqual(self.backend.start.call_count, 1)
+
+    def test_failed_start_stops_only_its_children(self):
+        self.backend.wait_stage_transforms.return_value = False
+        self.assertFalse(self.transition().success)
+        self.assertEqual(self.backend.stop.call_count, 1)
+        self.assertEqual(self.controller.active_stage, 0)
+        self.assertTrue(self.transition(0).success)
+
+    def test_stop_failure_is_not_reported_as_base(self):
+        self.transition()
+        self.backend.stop.side_effect = RuntimeError("still running")
+        with self.assertRaisesRegex(RuntimeError, "still running"):
+            self.transition(0)
+        self.assertEqual(self.controller.active_stage, 1)
+        self.assertEqual(len(self.controller.children), 1)
+
+    def test_unmanaged_nodes_rejected_without_stopping_anything(self):
+        self.backend.find_conflicts.return_value = ["/fast_lio_node"]
+        self.assertFalse(self.transition().success)
+        self.backend.stop.assert_not_called()
+        self.backend.start.assert_not_called()
 
 
 class AdapterTests(unittest.TestCase):
