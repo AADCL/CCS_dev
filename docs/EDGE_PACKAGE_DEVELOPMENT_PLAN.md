@@ -1,5 +1,7 @@
 # 端侧功能包 Alpha 开发计划
 
+当前操作基线为 CCS 0.23.1：[使用手册](../edge_side_pkg/documents/USER_MANUAL.md)、[设备内接口与完整配置参考](../edge_side_pkg/documents/INTERFACE_REFERENCE.md)。以下保留 Alpha 规划与当时状态，不作为当前部署命令或已完成验收的证明。
+
 ## 1. 目标、平台和边界
 
 端侧 Alpha 主线为 Ubuntu 20.04 + ROS1 Noetic + Python 3。现有 Ubuntu 18.04 + ROS Melodic 说明作为旧版维护信息保留，但不作为 Alpha 发布门禁。

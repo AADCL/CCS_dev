@@ -1,13 +1,15 @@
-# 发布与安装指南 · v0.23.0
+# 发布与安装指南 · v0.23.1
+
+本次渠道为 `pre-release-v0.23.1`。地面站安装包与便携包含 `docs/edge/` 离线端侧文档；端侧 ZIP 保留 `edge_side_pkg/` 布局。仅源码链接需要联网访问该标签，完整操作与参数文档可离线阅读。
 
 ## 发布形式
 
 | 文件 | 内容 |
 | --- | --- |
-| CCS-0.23.0-windows-x64-setup.exe | Windows 10/11 x64 离线安装包 |
-| CCS-0.23.0-linux-x64.run | Ubuntu 20.04/22.04 x64 离线安装包 |
-| CCS-0.23.0-portable.zip | 地面站源码、锁文件、干净配置及依赖安装脚本 |
-| CCS-0.23.0-edge.zip | 七个公共 ROS 包、Ground-Air 控制包、部署 profile 与协议说明 |
+| CCS-0.23.1-windows-x64-setup.exe | Windows 10/11 x64 离线安装包 |
+| CCS-0.23.1-linux-x64.run | Ubuntu 20.04/22.04 x64 离线安装包 |
+| CCS-0.23.1-portable.zip | 地面站源码、锁文件、干净配置及依赖安装脚本 |
+| CCS-0.23.1-edge.zip | 七个公共 ROS 包、Ground-Air 控制包、部署 profile 与协议说明 |
 
 每份产物附带同名 .sha256 校验文件。包内 release-manifest.json 记录版本、
 平台、构建解释器、文件列表和校验值。安装包不要求目标机安装 Python、uv 或
@@ -23,12 +25,12 @@ Windows 双击安装包，选择当前用户可写的目录。默认位置为
 
 静默安装示例：
 
-    CCS-0.23.0-windows-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="D:\Applications\CCS"
+    CCS-0.23.1-windows-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="D:\Applications\CCS"
 
 Ubuntu：
 
-    bash CCS-0.23.0-linux-x64.run
-    bash CCS-0.23.0-linux-x64.run --prefix "$HOME/Applications/CCS" --yes
+    bash CCS-0.23.1-linux-x64.run
+    bash CCS-0.23.1-linux-x64.run --prefix "$HOME/Applications/CCS" --yes
     "$HOME/Applications/CCS/CCS"
 
 Ubuntu 必须已有桌面环境与兼容显卡驱动。基线为 x86_64、glibc 2.31（Ubuntu
@@ -139,7 +141,7 @@ Windows 的 -v 路径可使用 D:/Projects/...。先创建 dist 目录。
 原生 Ubuntu 22.04 不作为最低兼容构建环境，请使用 Ubuntu 20.04 容器。
 
 所有产物输出至 dist/；build/release-* 保留构建日志和冻结目录供诊断。
-未配置 CI、代码签名和自动公开上传。签名或公开发布前应完成目标系统验收。
+未配置 CI 和代码签名。本次按增量验证发布预发布版本；四系统完整实机门禁保持单独记录，不能将预发布标记为正式验收通过。
 
 ## 发布门禁
 

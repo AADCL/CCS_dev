@@ -1,5 +1,7 @@
 # WheelTech R550P 端侧部署说明
 
+CCS 0.23.1 当前入口：[使用手册](USER_MANUAL.md) · [接口与配置](INTERFACE_REFERENCE.md)。本页保留设备专项步骤；运行配置以脚本传入的工作空间 config/profile 为准，不能只修改包内默认 YAML。
+
 ## 设备基线
 
 - 设备：轮趣 WheelTech R550P 四轮差速底盘

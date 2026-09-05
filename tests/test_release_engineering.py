@@ -9,10 +9,13 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
+import posixpath
+from urllib.parse import urlsplit
 
 from ccs_monitor import runtime_paths
 from ccs_monitor.installation import MARKER, install_tree, uninstall_tree, managed_path
 from ccs_monitor.external_process import external_environment
+from scripts.release_documentation import document_links
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("ccs_release_builder", ROOT / "scripts/build_release.py")
@@ -128,6 +131,22 @@ class InstallationTests(unittest.TestCase):
             self.assertEqual((other / "keep.txt").read_text(), "keep")
 
 class ReleaseContentsTests(unittest.TestCase):
+    def assert_documentation_links(self, archive):
+        names = set(archive.namelist())
+        for name in names:
+            if not name.endswith(".md"):
+                continue
+            for link in document_links(archive.read(name).decode("utf-8")):
+                parts = urlsplit(link)
+                if parts.scheme or parts.netloc or not parts.path:
+                    continue
+                from urllib.parse import unquote
+                target = posixpath.normpath(posixpath.join(
+                    posixpath.dirname(name), unquote(parts.path)))
+                self.assertTrue(target in names or any(
+                    item.startswith(target.rstrip("/") + "/") for item in names),
+                    f"{name}: {link}")
+
     def test_portable_uses_clean_defaults_and_contains_no_live_data(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -144,6 +163,9 @@ class ReleaseContentsTests(unittest.TestCase):
                 self.assertFalse(any("/edge_side_pkg/" in n or "/map_server/" in n or "/task_server/" in n or "/__pycache__/" in n for n in names))
                 self.assertIn(base + "ccs_monitor/runtime_paths.py", names)
                 self.assertIn(base + "release-manifest.json", names)
+                self.assertIn(base + "docs/edge/documents/INTERFACE_REFERENCE.md", names)
+                self.assertIn(base + "docs/edge/documents/USER_MANUAL.md", names)
+                self.assert_documentation_links(archive)
 
     def test_edge_has_exactly_eight_packages(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -162,6 +184,12 @@ class ReleaseContentsTests(unittest.TestCase):
                 self.assertEqual(packages, set(builder.EDGE_PACKAGES))
                 self.assertTrue(any(n.endswith("epgeneral_video_srt_node.cpp") for n in archive.namelist()))
                 self.assertTrue(any(n.endswith("ccs-edge-dev.service") for n in archive.namelist()))
+                base = f"CCS-{builder.VERSION}-edge/edge_side_pkg/"
+                for document in ("INTERFACE_REFERENCE.md", "USER_MANUAL.md"):
+                    self.assertIn(base + "documents/" + document, archive.namelist())
+                for package in builder.EDGE_PACKAGES:
+                    self.assertIn(base + package + "/README.md", archive.namelist())
+                self.assert_documentation_links(archive)
 
     def test_theme_ini_migrates_once_and_is_portable(self):
         from PySide6.QtCore import QSettings

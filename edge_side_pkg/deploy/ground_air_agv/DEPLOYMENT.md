@@ -1,5 +1,7 @@
 # Ground-Air AGV CCS Edge Deployment
 
+CCS 0.23.1 当前入口：[使用手册](../../documents/USER_MANUAL.md) · [接口与配置](../../documents/INTERFACE_REFERENCE.md)。本页保留设备专项步骤；运行配置以脚本传入的工作空间 config/profile 为准，不能只修改包内默认 YAML。
+
 This profile targets `AGV_001` at `192.168.50.130` on Ubuntu 20.04, ROS Noetic, and ARM64. The CCS overlay is `/home/bitcq/ccs_edge_ws`; vehicle packages remain in `/home/bitcq/catkin_ws`.
 
 `start_ccs_edge_dev.sh` starts MAVROS, Livox MID-360, MQTT, UDP telemetry, map-stream, optional A8/SRT, the workspace-owned Ground-Air stage manager, and `epgeneral_relocalization`. Its final startup item is exactly:

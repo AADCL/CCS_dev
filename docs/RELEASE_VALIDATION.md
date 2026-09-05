@@ -1,4 +1,21 @@
-# v0.23.0 发布验证记录
+# 发布验证记录
+
+## v0.23.1 增量验证
+
+日期：2026-09-05。产品补丁版本为 0.23.1，ROS 包版本保持不变，发布渠道为 pre-release-v0.23.1。
+
+- 配置参考覆盖默认七份 YAML 和四套 profile 共 35 份文件的叶级参数；核对公开 launch 参数及 CCS_* 脚本环境变量。
+- 检查当前文档链接/锚点、八包 README、产品版本和包版本，验证实际端侧/便携 ZIP 中的文档及相对链接。
+- 增量运行版本、端侧布局/配置/视频配置、发布工程、设备配置、地图上下文和 Ground-Air profile 测试；命令为：
+- 上述集合在 Windows / Python 3.10.19 发布环境中共 67 项，全部通过；日志保存在构建工作区 build/incremental-validation.log。
+
+~~~bash
+python -m unittest tests.test_edge_documentation tests.test_version tests.test_edge_package_layout tests.test_edge_config tests.test_edge_video_config tests.test_release_engineering tests.test_device_config tests.test_device_map_context tests.test_ground_air_agv_profile -v
+~~~
+
+最终四类产物从合并后的 main 提交重新构建。构建提交、文件 SHA-256、安装/启动冒烟结果及未验证项记录于对应 GitHub Release，不能把下述 v0.23.0 的测试结果计作本次重测。未执行真实设备部署、运动控制或四系统完整实机验收。
+
+## v0.23.0 历史发布验证
 
 验证日期：2026-09-03。下表记录已执行的测试；支持目标与完成验收的平台分开列出。
 

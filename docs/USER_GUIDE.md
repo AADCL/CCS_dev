@@ -108,80 +108,28 @@ uv run python run.py
 
 ### 2. 从零部署端侧
 
-在已安装 ROS Noetic 的 Ubuntu 20.04 上执行：
+完整步骤以[端侧使用手册](../edge_side_pkg/documents/USER_MANUAL.md)为准；跨工作空间的 ROS、TF、文件接口和七类配置逐参数说明见[接口参考](../edge_side_pkg/documents/INTERFACE_REFERENCE.md)。
 
-```bash
-sudo apt update
-sudo apt install python3-paho-mqtt python3-yaml python3-msgpack python3-numpy \
-  ntpdate \
-  python3-catkin-pkg python3-rospkg ros-noetic-mavros ros-noetic-mavros-extras \
-  ros-noetic-cv-bridge ros-noetic-image-transport ros-noetic-sensor-msgs \
-  ros-noetic-nav-msgs ros-noetic-geometry-msgs libgstreamer1.0-dev gstreamer1.0-tools \
-  gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
-  gstreamer1.0-plugins-ugly gstreamer1.0-libav
+端侧 ZIP 包含八个 ROS 源码包。常规设备选择七个公共包；Ground-Air 另加专用控制包及外部 ground_air_msgs 依赖。deploy、documents 不放入 catkin src，按所选 profile 安装运行配置、脚本和适配 launch。
 
-mkdir -p ~/catkin_ws/src
-EDGE_SRC=/path/to/CCS_dev/edge_side_pkg
-cp -r "${EDGE_SRC}/EPGeneral_device_config" \
-  "${EDGE_SRC}/EPGeneral_map_stream" \
-  "${EDGE_SRC}/epgeneral_mqtav" \
-  "${EDGE_SRC}/EPGeneral_relocalization" \
-  "${EDGE_SRC}/EPGeneral_task_control" \
-  "${EDGE_SRC}/EPGeneral_udp_telemetry" \
-  "${EDGE_SRC}/EPGeneral_video_srt" \
-  ~/catkin_ws/src/
-cd ~/catkin_ws
-source /opt/ros/noetic/setup.bash
-rosdep install --from-paths src --ignore-src -r -y
-catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3
-source devel/setup.bash
-```
+单包 launch 默认读取 epgeneral_device_config/config；设备一键脚本实际读取 <CCS工作空间>/config/<profile>。修改前确认入口、备份实际文件，修改后重启对应节点。默认 YAML 混有不同设备示例，部署必须选择并核对 profile。
 
-端侧只复制上述七个 ROS 包；`deploy` 和 `documents` 保留在指控端。部署前将所选 `deploy/<profile>/config/*.yaml` 覆盖到待发布副本的 `EPGeneral_device_config/config/`，并将 `device.yaml` 的 ID/IP 与地面站 `config/devices.json` 对齐。集中检查：
+公共顺序为 Noetic → 设备 underlay → CCS overlay，Scout 还需要按脚本顺序加载 RealSense/navigation/Livox 工作空间。设置设备身份、各网络目标、ROS 输入、外参、地图状态路径及 NTP 后再构建和启动。
 
-- `EPGeneral_device_config/config/epgeneral_mqtav.yaml` 的地面站 MQTT 地址。
-- `EPGeneral_device_config/config/udp_telemetry.yaml` 的 ROS 话题和 descriptor。
-- `EPGeneral_device_config/config/video.yaml` 的输入话题、输出尺寸、SRT 端口、延迟、帧率和码率。
-- `EPGeneral_device_config/config/map_stream.yaml` 的点云、位姿、外参和网络参数。
-- `EPGeneral_device_config/config/relocalization.yaml` 与 `task_control.yaml` 的设备后端、端口和 ROS 接口。
+- Go2：重定位功能禁用，一键脚本不启动任务包。
+- Scout：启用导航适配器和 D435i/SRT，启动时等待硬件实际消息。
+- Wheeltec：启用导航适配器，无相机，不启动视频，停止流程发送零速度。
+- Ground-Air：按[专项指南](../edge_side_pkg/documents/GROUND_AIR_AGV_DEPLOYMENT.md)手动启动用户服务，保持开机自启动 disabled；静态 TF 与阶段进程分别管理，一键脚本不启动任务包。
 
-端侧放行 UDP 9000、14561、14563，并执行 `gst-inspect-1.0 srtsink` 确认 SRT 插件可用。每个新终端先执行：
+按需单包调试应停止重复的一键节点并显式传入配置，例如：
 
-```bash
-source /opt/ros/noetic/setup.bash
-source ~/catkin_ws/devel/setup.bash
-```
+~~~bash
+CFG=/home/nvidia/ccs_edge_ws/config/scout_mini
+roslaunch epgeneral_mqtav epgeneral_mqtav.launch \
+  device_config_file:="$CFG/device.yaml" config_file:="$CFG/epgeneral_mqtav.yaml"
+~~~
 
-部署 profile 中的 `timesyncd-ccs.conf` 和 `start_ccs_edge_dev.sh`。`systemd-timesyncd`
-持续从地面站校时，一键脚本确认授时服务器和同步状态后才启动 ROS；校时失败时不会启动任何新的功能包：
-
-```bash
-sudo install -D -m 0644 edge_side_pkg/deploy/go2_edu/config/timesyncd-ccs.conf \
-  /etc/systemd/timesyncd.conf.d/ccs.conf
-sudo systemctl restart systemd-timesyncd
-sudo install -m 0750 edge_side_pkg/deploy/go2_edu/start_ccs_edge_dev.sh \
-  /home/nvidia/ccs_edge_ws/start_ccs_edge_dev.sh
-sudo install -d -m 0750 /home/nvidia/ccs_edge_ws/config/go2_edu
-sudo install -m 0640 edge_side_pkg/deploy/go2_edu/config/*.yaml \
-  /home/nvidia/ccs_edge_ws/config/go2_edu/
-/home/nvidia/ccs_edge_ws/start_ccs_edge_dev.sh
-```
-
-脚本在控制终端逐项输出时间同步、ROS Master 和功能包启动结果。全部节点就绪后脚本保持
-前台运行；按 `Ctrl+C` 会停止脚本管理的功能节点、对应 roslaunch 进程，以及由脚本自身创建的
-ROS Master。通用部署的各组件完整日志保存在 `~/.ros/ccs_edge_dev/log/`；Ground-Air AGV 使用 `/home/bitcq/ccs_edge_ws/log/ground_air_agv/`，ROS 日志位于其 `ros/latest/` 下。
-
-按需启动：
-
-```bash
-roslaunch epgeneral_mqtav epgeneral_mqtav.launch
-roslaunch epgeneral_video_srt epgeneral_video_srt.launch
-roslaunch epgeneral_udp_telemetry epgeneral_udp_telemetry.launch destination_host:=<地面站IP>
-roslaunch epgeneral_map_stream epgeneral_map_stream.launch
-roslaunch epgeneral_task_control epgeneral_task_control.launch
-```
-
-`epgeneral_task_control` 不直接操作 MAVROS。真实运动还需设备控制节点实现该包的 command/feedback 消息接口。
+设备身份必须与地面站设备表一致；仅设置 CCS_GROUND_STATION_IP 不会改写所有 YAML。网络、授时、单包使用及升级回滚命令详见手册。
 
 ### 3. 部署后验证
 
