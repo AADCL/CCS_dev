@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -260,6 +261,76 @@ class GroundAirAgvProfileTests(unittest.TestCase):
         self.assertNotIn('install -m 644 "${ROOT}" "${UNDERLAY}', deploy)
         self.assertNotIn("systemctl --user daemon-reload", deploy)
         self.assertNotIn("systemctl --user enable", deploy)
+
+    def test_relocalization_deploys_and_checks_mapping_compatibility(self):
+        deploy = (PROFILE / "deploy_relocalization_update.sh").read_text(
+            encoding="utf-8"
+        )
+        manifest = re.search(r"for relative in (.*?)\s*; do", deploy, re.DOTALL)
+        self.assertIsNotNone(manifest, "mapping compatibility files must be bundled")
+        relative_files = manifest.group(1).replace("\\\n", "").split()
+        required = {
+            "scripts/ground_air_stage_client.py", "scripts/check_version.py",
+            "package.xml", "setup.py", "src/epgeneral_map_stream/__init__.py",
+            "src/epgeneral_map_stream/config.py", "README.md", "CHANGELOG.md",
+            "test/test_ground_air_stage_client.py", "test/test_config.py",
+            "test/test_version_and_entrypoint.py", "test/test_paths.py",
+        }
+        self.assertTrue(required.issubset(relative_files))
+        self.assertEqual(len(relative_files), len(set(relative_files)))
+        package = ROOT / "edge_side_pkg" / "EPGeneral_map_stream"
+        for relative in relative_files:
+            with self.subTest(source=relative):
+                self.assertTrue((package / relative).is_file())
+        self.assertIn(
+            'add "edge_side_pkg/EPGeneral_map_stream/${relative}" '
+            '"${WS}/src/EPGeneral_map_stream/${relative}" "${mode}"', deploy)
+        self.assertIn(
+            "python3 -m unittest test_ground_air_stage_client test_config "
+            "test_version_and_entrypoint", deploy)
+        self.assertIn("python3 -m unittest test_control test_launch_contract", deploy)
+        self.assertIn(
+            'python3 "${WS}/src/EPGeneral_map_stream/scripts/check_version.py"',
+            deploy)
+        readiness = deploy[deploy.index("READY=false"):deploy.index(
+            'if [[ "${READY}" != true ]]')]
+        self.assertRegex(
+            readiness,
+            r'if python3 "\$\{WS\}/src/EPGeneral_map_stream/scripts/'
+            r'ground_air_stage_client\.py" --check [^\n]+; then\n'
+            r'\s+READY=true\n\s+break\n\s+fi',
+        )
+        self.assertIn("mapping-client-preflight.log", deploy)
+        self.assertIn(
+            'add edge_side_pkg/EPGeneral_device_config/config/map_stream.yaml '
+            '"${TEMP_ROOT}/fixtures/map_stream.yaml" 644', deploy)
+        self.assertIn(
+            'CCS_MAP_STREAM_TEST_MAPPING="${TEMP_ROOT}/fixtures/map_stream.yaml" '
+            'PYTHONPATH=', deploy)
+        self.assertTrue((ROOT / "edge_side_pkg" / "EPGeneral_device_config" /
+                         "config" / "map_stream.yaml").is_file())
+
+    def test_relocalization_deployment_preserves_boot_enablement(self):
+        deploy = (PROFILE / "deploy_relocalization_update.sh").read_text(
+            encoding="utf-8"
+        )
+        capture = (
+            'enablement_before="$(systemctl --user is-enabled '
+            'ccs-edge-dev.service || true)"'
+        )
+        self.assertIn(capture, deploy)
+        self.assertLess(deploy.index(capture), deploy.index("install -m"))
+        self.assertIn(
+            '[[ "${enablement_after}" == "${enablement_before}" ]] || {',
+            deploy)
+        self.assertIn("service-enablement.before", deploy)
+        self.assertIn("service-enablement.after", deploy)
+        after_restart = deploy[deploy.index(
+            "systemctl --user restart ccs-edge-dev.service"):]
+        self.assertEqual(after_restart.count("\nverify_service_enablement\n"), 2)
+        for forbidden in ("daemon-reload", " enable ", " disable ",
+                          "enable-linger", "disable-linger"):
+            self.assertNotIn(forbidden, deploy)
 
     def test_profile_uses_actual_mavros_and_livox_topics(self):
         mqtt = yaml.safe_load((PROFILE / "config" / "epgeneral_mqtav.yaml").read_text(encoding="utf-8"))

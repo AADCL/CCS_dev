@@ -55,6 +55,19 @@ sleep 2
 kill "${TF_PID}" 2>/dev/null || true
 wait "${TF_PID}" 2>/dev/null || true
 systemctl --user status ccs-edge-dev.service --no-pager >"${EVIDENCE}/service.before" 2>&1 || true
+enablement_before="$(systemctl --user is-enabled ccs-edge-dev.service || true)"
+[[ -n "${enablement_before}" ]] || { echo "could not read service enablement" >&2; exit 1; }
+printf '%s\n' "${enablement_before}" >"${EVIDENCE}/service-enablement.before"
+
+verify_service_enablement() {
+  local enablement_after
+  enablement_after="$(systemctl --user is-enabled ccs-edge-dev.service || true)"
+  printf '%s\n' "${enablement_after}" >"${EVIDENCE}/service-enablement.after"
+  [[ "${enablement_after}" == "${enablement_before}" ]] || {
+    echo "service enablement changed: ${enablement_before} -> ${enablement_after}" >&2
+    exit 1
+  }
+}
 
 declare -a SOURCES=() TARGETS=() MODES=()
 add() {
@@ -78,7 +91,26 @@ for package in EPGeneral_relocalization EPGeneral_ground_air_control; do
   done < <(cd "${ROOT}" && find "edge_side_pkg/${package}" -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
 done
 
-for document in GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT_LOG.md; do
+# Keep the standard test sample separate from the AGV's live profile.
+add edge_side_pkg/EPGeneral_device_config/config/map_stream.yaml "${TEMP_ROOT}/fixtures/map_stream.yaml" 644
+
+# Deploy the mapping client with the manager protocol it consumes, including
+# the version checks and regression tests needed to verify the installed pair.
+for relative in \
+  scripts/ground_air_stage_client.py scripts/check_version.py \
+  package.xml setup.py src/epgeneral_map_stream/__init__.py \
+  src/epgeneral_map_stream/config.py README.md CHANGELOG.md \
+  test/test_ground_air_stage_client.py test/test_config.py \
+  test/test_version_and_entrypoint.py test/test_paths.py; do
+  mode=644
+  [[ "${relative}" == scripts/*.py ]] && mode=755
+  add "edge_side_pkg/EPGeneral_map_stream/${relative}" "${WS}/src/EPGeneral_map_stream/${relative}" "${mode}"
+done
+
+for document in \
+  GROUND_AIR_AGV_DEPLOYMENT.md GROUND_AIR_AGV_DEPLOYMENT_LOG.md \
+  GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md GROUND_AIR_AGV_MAPPING_DEPLOYMENT_LOG.md \
+  GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT_LOG.md; do
   add "edge_side_pkg/documents/${document}" "${WS}/documents/${document}" 644
 done
 
@@ -108,20 +140,24 @@ for index in "${!TARGETS[@]}"; do
 done
 
 bash -n "${WS}/start_ccs_edge_dev.sh"
-python3 -m py_compile "${WS}/src/EPGeneral_relocalization/src/epgeneral_relocalization/"*.py "${WS}/src/EPGeneral_relocalization/scripts/"*.py "${WS}/src/EPGeneral_ground_air_control/src/epgeneral_ground_air_control/"*.py "${WS}/src/EPGeneral_ground_air_control/scripts/"*.py
+python3 -m py_compile "${WS}/src/EPGeneral_relocalization/src/epgeneral_relocalization/"*.py "${WS}/src/EPGeneral_relocalization/scripts/"*.py "${WS}/src/EPGeneral_ground_air_control/src/epgeneral_ground_air_control/"*.py "${WS}/src/EPGeneral_ground_air_control/scripts/"*.py "${WS}/src/EPGeneral_map_stream/src/epgeneral_map_stream/"*.py "${WS}/src/EPGeneral_map_stream/scripts/ground_air_stage_client.py" "${WS}/src/EPGeneral_map_stream/scripts/check_version.py"
+python3 "${WS}/src/EPGeneral_map_stream/scripts/check_version.py"
 python3 -c 'import sys, xml.etree.ElementTree as ET; [ET.parse(path) for path in sys.argv[1:]]' "${WS}/src/EPGeneral_relocalization/launch/epgeneral_relocalization.launch" "${WS}/src/EPGeneral_ground_air_control/launch/relocalization_control.launch" "${WS}/overrides/car_bringup/launch/relocalization_system.launch"
 
 cd "${WS}/src/EPGeneral_relocalization/test"
 CCS_GROUND_AIR_PROFILE_CONFIG="${PROFILE_DIR}" PYTHONPATH="${WS}/src/EPGeneral_relocalization/src" python3 -m unittest test_core
 cd "${WS}/src/EPGeneral_ground_air_control/test"
 PYTHONPATH="${WS}/src/EPGeneral_ground_air_control/src" python3 -m unittest test_control test_launch_contract
+cd "${WS}/src/EPGeneral_map_stream/test"
+CCS_MAP_STREAM_TEST_MAPPING="${TEMP_ROOT}/fixtures/map_stream.yaml" PYTHONPATH="${WS}/src/EPGeneral_map_stream/src" python3 -m unittest test_ground_air_stage_client test_config test_version_and_entrypoint
 
 cd "${WS}"
-catkin_make --force-cmake --pkg epgeneral_relocalization epgeneral_ground_air_control -DCMAKE_BUILD_TYPE=Release -j1
+catkin_make --force-cmake --pkg epgeneral_relocalization epgeneral_ground_air_control epgeneral_map_stream -DCMAKE_BUILD_TYPE=Release -j1
 source "${WS}/devel/setup.bash" --extend
 
 [[ "$(rospack find epgeneral_ground_air_control)" == "${WS}/src/EPGeneral_ground_air_control" ]]
 [[ "$(rospack find epgeneral_relocalization)" == "${WS}/src/EPGeneral_relocalization" ]]
+[[ "$(rospack find epgeneral_map_stream)" == "${WS}/src/EPGeneral_map_stream" ]]
 scoped_ros_package_path="${WS}/overrides:${WS}/src:/opt/ros/noetic/share"
 scoped_cmake_prefix_path="${WS}/devel:/opt/ros/noetic"
 override_path="$(ROS_PACKAGE_PATH="${scoped_ros_package_path}" CMAKE_PREFIX_PATH="${scoped_cmake_prefix_path}" rospack find car_bringup)"
@@ -136,6 +172,7 @@ fi
 
 sha256sum -c "${BACKUP}/underlay-launches.before.sha256"
 systemctl --user restart ccs-edge-dev.service
+verify_service_enablement
 
 READY=false
 for attempt in $(seq 1 120); do
@@ -147,14 +184,17 @@ for attempt in $(seq 1 120); do
   guard="$(rosparam get /ground_air_stage_manager/ccs_session_guard_version 2>/dev/null || true)"
   stage_service="$(rosservice type /ground_air/system/set_stage 2>/dev/null || true)"
   if ${required_ready} && systemctl --user is-active --quiet ccs-edge-dev.service && [[ "${guard}" == 2 ]] && [[ "${stage_service}" == ground_air_msgs/SetSystemStage ]] && ss -lun | grep -Eq '[:.]14565[[:space:]]'; then
-    READY=true
-    break
+    if python3 "${WS}/src/EPGeneral_map_stream/scripts/ground_air_stage_client.py" --check >"${EVIDENCE}/mapping-client-preflight.log" 2>&1; then
+      READY=true
+      break
+    fi
   fi
   sleep 2
 done
 if [[ "${READY}" != true ]]; then
   systemctl --user status ccs-edge-dev.service --no-pager >&2 || true
   tail -n 120 "${WS}/log/ground_air_agv/startup.log" >&2 || true
+  cat "${EVIDENCE}/mapping-client-preflight.log" >&2 2>/dev/null || true
   exit 1
 fi
 
@@ -163,6 +203,7 @@ restart_count="$(systemctl --user show ccs-edge-dev.service -p NRestarts --value
 sleep 5
 [[ "$(systemctl --user show ccs-edge-dev.service -p MainPID --value)" == "${main_pid}" ]]
 [[ "$(systemctl --user show ccs-edge-dev.service -p NRestarts --value)" == "${restart_count}" ]]
+verify_service_enablement
 
 rosnode list >"${EVIDENCE}/nodes.after"
 rosservice list >"${EVIDENCE}/services.after"

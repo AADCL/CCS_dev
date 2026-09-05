@@ -2,6 +2,13 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## Ground-Air AGV 建图会话保护兼容修复 - 2026-09-05
+
+- `epgeneral_map_stream` 升至 v0.13.2：建图客户端兼容 guard `1`、`2`，修复重定位升级后 manager 已发布 `2`、客户端仍要求 `1` 导致准备阶段拒绝的问题；缺失、类型错误和未知版本继续拒绝并给出明确诊断。
+- 保持原 caller/map_id 归属保护、建图/重定位互斥及外部 TF 生命周期；补充客户端真实入口与当前 manager 回归，增量部署增加建图 `--check` 门禁。
+- 同步当前 manager 与日志路径、手动启动说明及回滚要求，部署保持 `AGV_001` 已禁用的上电自启动设置；平台版本、wire schema 和端口不变。
+- 现场部署、静态建图闭环和最终服务状态以 `edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT_LOG.md` 的实际验收记录为准。
+
 ## Ground-Air AGV 重定位端侧优化 - 2026-09-04
 
 - 新增 `epgeneral_ground_air_control`，通过驻留阶段管理器互斥启动精简 FAST-LIO、定位层和初始位姿适配器；指控子进程仍执行 `roslaunch car_bringup relocalization_system.launch`，但仅在其局部环境解析工作区覆盖，原 underlay 文件不修改。

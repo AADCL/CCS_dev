@@ -3,16 +3,9 @@ import os
 import sys
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO = os.path.dirname(os.path.dirname(PACKAGE))
-STAGE_DIR = os.path.join(REPO, "edge_side_pkg", "deploy", "ground_air_agv", "car_bringup_scripts")
-if not os.path.isdir(STAGE_DIR):
-    STAGE_DIR = "/home/bitcq/catkin_ws/src/car_bringup/scripts"
-sys.path.insert(0, STAGE_DIR)
-from system_stage_core import normalize_request, build_stage_commands
-from system_stage_runtime import StageController
 
 spec = importlib.util.spec_from_file_location(
     "stage_client", os.path.join(PACKAGE, "scripts", "ground_air_stage_client.py"))
@@ -20,83 +13,107 @@ client = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(client)
 
 
-class StageOwnershipTests(unittest.TestCase):
+class StageClientMainTests(unittest.TestCase):
+    OWNER = "0123456789abcdef0123456789abcdef"
+    MAP_ID = "guard_v2_regression"
+    MAPPING_NODES = (
+        "/fast_lio_node", "/ground_air_map_recorder", "/ground_air_world_tf_owner")
+
     def setUp(self):
-        self.backend = Mock()
-        self.backend.find_conflicts.return_value = []
-        self.backend.wait_primary.return_value = True
-        self.backend.wait_stage_transforms.return_value = True
-        self.controller = StageController(self.backend)
+        self.params = {client.GUARD_PARAM: 2, client.EXTERNAL_TF_PARAM: 1}
+        self.proxy = Mock(side_effect=lambda **kwargs: SimpleNamespace(
+            success=True, active_stage=kwargs["stage"], message="ok"))
+        self.rospy = SimpleNamespace(
+            init_node=Mock(),
+            wait_for_service=Mock(),
+            get_param=Mock(side_effect=lambda key, default: self.params.get(key, default)),
+            ServiceProxy=Mock(return_value=self.proxy),
+        )
+        self.rosnode = SimpleNamespace(get_node_names=Mock(return_value=(
+            list(client.STATIC_TF_NODES) + list(self.MAPPING_NODES))))
+        self.stage_service = object()
+        services = SimpleNamespace(SetSystemStage=self.stage_service)
+        modules = {
+            "rospy": self.rospy,
+            "rosnode": self.rosnode,
+            "ground_air_msgs": SimpleNamespace(srv=services),
+            "ground_air_msgs.srv": services,
+        }
+        patcher = patch.dict(sys.modules, modules)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        stdout = patch("builtins.print")
+        stdout.start()
+        self.addCleanup(stdout.stop)
 
-    def transition(self, stage=1, map_id="map1", owner="/ccs_mapping_stage_a"):
-        request = normalize_request(stage, map_id, 5)
-        return self.controller.transition(request, build_stage_commands(request), owner=owner)
+    def args(self, mode):
+        return [mode, self.OWNER, self.MAP_ID, "7.5", ",".join(self.MAPPING_NODES)]
 
-    def test_mapping_only_starts_primary_and_duplicate_is_idempotent(self):
-        self.assertTrue(self.transition().success)
-        commands = self.backend.start.call_args_list
-        self.assertIn("manual_mapping_control.launch", commands[0].args[0])
-        self.assertTrue(self.transition().success)
-        self.assertEqual(self.backend.start.call_count, 1)
+    def assert_session_request(self, target):
+        self.rospy.init_node.assert_called_once_with(
+            "ccs_mapping_stage_" + self.OWNER, disable_signals=True)
+        self.rospy.wait_for_service.assert_called_once_with(client.SERVICE, timeout=4.0)
+        self.rospy.ServiceProxy.assert_called_once_with(client.SERVICE, self.stage_service)
+        self.proxy.assert_called_once_with(stage=target, map_id=self.MAP_ID, timeout=7.5)
 
-    def test_stop_owned_session_returns_base(self):
-        self.transition()
-        self.backend.find_conflicts.reset_mock()
-        self.backend.find_conflicts.return_value = [
-            "coordinate transform pair is not ready"]
-        self.assertTrue(self.transition(0).success)
-        self.backend.find_conflicts.assert_not_called()
-        self.assertEqual(self.backend.stop.call_count, 1)
-        self.assertEqual(self.controller.children, [])
-        self.assertEqual(self.controller.active_owner, "")
-        self.assertTrue(self.transition(0).success)
+    def test_supported_versions_pass_preflight_without_stage_request(self):
+        for version in (1, 2):
+            with self.subTest(version=version):
+                self.params[client.GUARD_PARAM] = version
+                self.rospy.init_node.reset_mock()
+                client.main(["--check"])
+                self.rospy.init_node.assert_called_once_with(
+                    "ccs_mapping_stage_preflight", disable_signals=True)
+                self.rospy.ServiceProxy.assert_not_called()
+                self.proxy.assert_not_called()
 
-    def test_does_not_adopt_same_map_started_manually(self):
-        self.transition(owner="")
-        self.assertFalse(self.transition().success)
-        self.assertFalse(self.transition(0).success)
-        self.backend.stop.assert_not_called()
+    def test_missing_guard_is_rejected_with_actual_and_supported_versions(self):
+        del self.params[client.GUARD_PARAM]
+        with self.assertRaisesRegex(RuntimeError, r"actual=None; supported=\(1, 2\)"):
+            client.main(["--check"])
+        self.rospy.ServiceProxy.assert_not_called()
+        self.rosnode.get_node_names.assert_not_called()
 
-    def test_wrong_owner_or_map_cannot_stop_or_replace(self):
-        self.transition()
-        for stage in (0, 1):
-            self.assertFalse(self.transition(stage, owner="/ccs_mapping_stage_b").success)
-            self.assertFalse(self.transition(stage, map_id="other").success)
-        self.backend.stop.assert_not_called()
+    def test_unknown_or_noninteger_guard_is_rejected_for_every_action(self):
+        for version in (0, 3, -1, "1", "2", True, False, 1.0, 2.0):
+            for mode in ("--check", "--start", "--stop", "--abort"):
+                with self.subTest(version=version, mode=mode):
+                    self.params[client.GUARD_PARAM] = version
+                    with self.assertRaises(RuntimeError) as raised:
+                        client.main(self.args(mode))
+                    self.assertIn("actual={!r}".format(version), str(raised.exception))
+                    self.assertIn("supported=(1, 2)", str(raised.exception))
+        self.rospy.ServiceProxy.assert_not_called()
+        self.rosnode.get_node_names.assert_not_called()
 
-    def test_ccs_does_not_interrupt_relocalization(self):
-        self.transition(2, owner="")
-        self.assertFalse(self.transition().success)
-        self.assertFalse(self.transition(0).success)
-        self.backend.stop.assert_not_called()
+    def test_v2_start_preserves_owner_map_and_timeout(self):
+        client.main(self.args("--start"))
+        self.assert_session_request(1)
+        self.assertGreaterEqual(self.rosnode.get_node_names.call_count, 2)
 
-    def test_manual_stage_switch_revokes_old_owner(self):
-        self.transition()
-        self.assertTrue(self.transition(2, "other", owner="").success)
-        calls = self.backend.stop.call_count
-        self.assertFalse(self.transition(0).success)
-        self.assertEqual(self.backend.stop.call_count, calls)
+    def test_v2_stop_preserves_session_without_external_tf(self):
+        self.params = {client.GUARD_PARAM: 2}
+        self.rosnode.get_node_names.side_effect = AssertionError("TF lookup on stop")
+        client.main(self.args("--stop"))
+        self.assert_session_request(0)
+        self.rospy.get_param.assert_called_once_with(client.GUARD_PARAM, None)
+        self.rosnode.get_node_names.assert_not_called()
 
-    def test_failed_start_stops_only_its_children(self):
-        self.backend.wait_stage_transforms.return_value = False
-        self.assertFalse(self.transition().success)
-        self.assertEqual(self.backend.stop.call_count, 1)
-        self.assertEqual(self.controller.active_stage, 0)
-        self.assertTrue(self.transition(0).success)
+    def test_v2_abort_preserves_session_without_external_tf(self):
+        self.params = {client.GUARD_PARAM: 2}
+        self.rosnode.get_node_names.side_effect = AssertionError("TF lookup on abort")
+        client.main(self.args("--abort"))
+        self.assert_session_request(0)
+        self.rospy.get_param.assert_called_once_with(client.GUARD_PARAM, None)
+        self.rosnode.get_node_names.assert_not_called()
 
-    def test_stop_failure_is_not_reported_as_base(self):
-        self.transition()
-        self.backend.stop.side_effect = RuntimeError("still running")
-        with self.assertRaisesRegex(RuntimeError, "still running"):
-            self.transition(0)
-        self.assertEqual(self.controller.active_stage, 1)
-        self.assertEqual(len(self.controller.children), 1)
-
-    def test_unmanaged_nodes_rejected_without_stopping_anything(self):
-        self.backend.find_conflicts.return_value = ["/fast_lio_node"]
-        self.assertFalse(self.transition().success)
-        self.backend.stop.assert_not_called()
-        self.backend.start.assert_not_called()
+    def test_v2_preflight_and_start_still_require_external_tf(self):
+        self.rosnode.get_node_names.return_value = []
+        for mode in ("--check", "--start"):
+            with self.subTest(mode=mode):
+                with self.assertRaisesRegex(RuntimeError, "transforms are not ready"):
+                    client.main(self.args(mode))
+        self.rospy.ServiceProxy.assert_not_called()
 
 
 class StageClientTests(unittest.TestCase):

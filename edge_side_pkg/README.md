@@ -7,7 +7,7 @@
 | 目录 | ROS 包 | 版本 | 职责 |
 | --- | --- | --- | --- |
 | `EPGeneral_device_config` | `epgeneral_device_config` | 0.1.1 | 设备身份及六类公共运行配置 |
-| `EPGeneral_map_stream` | `epgeneral_map_stream` | 0.13.1 | 遥控建图、预览和成果服务 |
+| `EPGeneral_map_stream` | `epgeneral_map_stream` | 0.13.2 | 遥控建图、预览和成果服务 |
 | `epgeneral_mqtav` | `epgeneral_mqtav` | 0.4.1 | MQTT presence、heartbeat 和状态 |
 | `EPGeneral_relocalization` | `epgeneral_relocalization` | 0.3.0 | 地图下载与重定位协调 |
 | `EPGeneral_ground_air_control` | `epgeneral_ground_air_control` | 0.1.0 | Ground-Air 建图/重定位阶段独占与初始位姿适配 |
@@ -29,7 +29,7 @@
 
 - `deploy/<profile>/`：设备 profile、设备适配 launch、一键启动脚本和系统配置原件。部署时只选择性复制其中内容，不能把 `deploy` 目录整体放入 catkin `src`。
 - `documents/`：部署指南、实际部署记录、回滚步骤和配置校验信息，不保存另一套运行配置。
-- Ground-Air AGV 的 TF 自启动、建图响应和静态验收以 `documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md` 为准。
+- Ground-Air AGV 的手动启动、常驻 TF、guard 1/2 兼容和建图静态验收以 `documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md` 为准；该设备上电自启动保持禁用。
 - Ground-Air AGV 的两阶段重定位、1 Hz TF 采样/缓存重发和工作区边界以 `documents/GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md` 为准。
 
 ## 部署

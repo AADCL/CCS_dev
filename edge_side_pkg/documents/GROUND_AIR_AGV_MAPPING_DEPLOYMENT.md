@@ -4,11 +4,13 @@
 
 适用于 `AGV_001`（`192.168.50.130`），复用 Scout 的指令应答、会话状态、产物校验、下载和日志组织方式。原始 `manual_mapping.launch` 与 `save_mapping.launch` 保持只读，部署前后必须校验 SHA-256，不修改、不覆盖。
 
-指控协议、UDP/TCP 端口和 `epgeneral_map_stream` 包版本不因本次 TF 启动及预览帧调整而变化。指控端不修改建图协调器业务代码，只同步 `AGV_001` 的声明式帧配置。
+`epgeneral_map_stream` v0.13.2 修复 guard 版本兼容，指控协议、UDP/TCP 端口与现有帧契约不变。当前部署使用工作区内 guard `2` manager；建图客户端兼容整数 guard `1`、`2`，缺失、类型错误和未知版本继续拒绝并报告实际值与支持范围。此次兼容修复不需要修改指控业务代码或帧配置。
 
-## 自启动顺序与所有权
+## 手动启动顺序与所有权
 
-统一启动顺序为：ROS Master -> MAVROS -> Livox -> MQTT -> UDP 遥测 -> map-stream -> A8 Mini（可降级）-> SRT（可降级）-> stage manager -> 静态 TF launch。最后一项必须使用：
+`AGV_001` 已取消上电自启动，`ccs-edge-dev.service` 保持 `disabled`。需要运行时执行 `systemctl --user start ccs-edge-dev.service`，也可在服务未运行时手动执行 `/home/bitcq/ccs_edge_ws/start_ccs_edge_dev.sh`。两种入口不能同时启动；禁用上电自启动不停止当前服务。
+
+统一启动顺序为：ROS Master -> MAVROS -> Livox -> MQTT -> UDP 遥测 -> map-stream -> A8 Mini（可降级）-> SRT（可降级）-> stage manager -> 重定位协调器 -> 静态 TF launch。最后一项必须使用：
 
 ```bash
 roslaunch car_bringup mapping_coordinate_transforms.launch
@@ -37,14 +39,15 @@ FAST-LIO 发布的 `/cloud_registered` 保持 `camera_init` 源坐标。Ground-A
 
 ## 建图指令流程
 
-- 开始建图：响应端调用 `/ground_air/system/set_stage`，`stage=1`。manager 启动 `roslaunch car_bringup manual_mapping_control.launch`，等待 FAST-LIO、地图记录器、建图态 `map -> odom` 和完整坐标链就绪；两条静态 TF 直接复用自启动实例。
+- 准备建图：短期客户端执行 `ground_air_stage_client.py --check`，验证服务、guard 和两条外部静态 TF，不调用阶段切换服务。guard `2` 与原建图 caller 协议兼容，不应将 manager 参数改回 `1`。
+- 开始建图：响应端调用 `/ground_air/system/set_stage`，`stage=1`。manager 启动 `roslaunch car_bringup manual_mapping_control.launch`，等待 FAST-LIO、地图记录器、建图态 `map -> odom` 和完整坐标链就绪；两条静态 TF 直接复用一键栈常驻实例。
 - 精简入口：`manual_mapping_control.launch` 直接组合 FAST-LIO、里程计适配、滤地、动态栅格、地图记录器、建图态 world-TF owner 和 `/ground_air/mapping/start` 调用，不再间接引用 `start_mapping.launch`、`mapping_system.launch` 或静态 TF launch。
 - 重复开始：同一会话与 `map_id` 幂等返回，不创建第二套 FAST-LIO、记录器或 TF。
 - 结束建图：先运行 `roslaunch car_bringup save_mapping.launch`，验证本次新生成且非空、配对的 PCD/PGM/YAML/metadata；成功后以同一会话请求 `stage=0`，由 manager 优雅停止本次建图进程组。
 - 保存失败：返回失败并保持 MAPPING，FAST-LIO 与建图进程继续运行，允许再次下发结束指令。
 - 取消或启动失败：以同一会话身份和 `map_id` 请求 BASE；即使外部 TF 已故障，也不得阻止所属会话停止建图。
 
-完整建图 TF 链为 `map -> odom -> camera_init -> body -> base_link`。`map -> odom` 由建图进程组内的 `ground_air_world_tf_owner` 以 mapping 模式发布，`camera_init -> body` 由 FAST-LIO 发布，另两条静态边由开机 launch 唯一发布。BASE 阶段只承诺两条常驻静态边。
+完整建图 TF 链为 `map -> odom -> camera_init -> body -> base_link`。`map -> odom` 由建图进程组内的 `ground_air_world_tf_owner` 以 mapping 模式发布，`camera_init -> body` 由 FAST-LIO 发布，另两条静态边由一键脚本持有的 launch 唯一发布。BASE 阶段只承诺两条常驻静态边。
 
 stage 2 由 `epgeneral_ground_air_control/relocalization_control.launch` 直接启动 FAST-LIO、定位层和初始位姿适配器并复用常驻静态 TF。顶层命令通过仅包含 `relocalization_system.launch` 的工作区覆盖保持 `roslaunch car_bringup relocalization_system.launch` 不变；underlay 原文件不修改。完整契约见 `GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md`。
 
@@ -52,16 +55,17 @@ stage 2 由 `epgeneral_ground_air_control/relocalization_control.launch` 直接�
 
 ## 增量部署
 
-使用 `deploy/ground_air_agv/deploy_stage_manager_update.sh`。脚本执行以下门禁：
+guard 兼容修复采用已审核文件清单，通过 SSH/SFTP 逐文件备份并原子替换客户端、版本元数据、相关测试和文档。所有新增、备份、临时与证据文件均位于 `/home/bitcq/ccs_edge_ws` 内，保留原有权限；不更新 manager、车辆 underlay、unit 或启动脚本。
 
-1. 拒绝在 FAST-LIO、建图记录器或重定位节点活动时部署。
-2. 校验原始建图/保存 launch 及全部已知目标版本。
-3. 将启动脚本、systemd unit、三个控制 launch、manager/runtime/core、响应客户端、Ground-Air `map_stream.yaml`、测试和说明文档备份到时间戳目录。
-4. 依次加载 `/opt/ros/noetic/setup.bash`、车辆 `catkin_ws/devel/setup.bash --extend` 和 CCS `ccs_edge_ws/devel/setup.bash --extend`，再只增量编译 `epgeneral_map_stream`，运行 Bash/Python/XML/systemd 检查和目标单测。禁止只加载 CCS overlay，否则 `fast_lio_open3d` 等车辆包无法参与 launch 解析。
-5. 将 profile 写入 `/home/bitcq/ccs_edge_ws/config/ground_air_agv/map_stream.yaml`，执行 `systemctl --user daemon-reload`，启用并重启 `ccs-edge-dev.service`，最长等待 180 秒，直至基础必需节点、manager、两条静态 TF 和能力参数均就绪；不重启整车。
-6. 同步指控运行目录及发布默认镜像的 `config/map_building.json`，重启 CCS 以重新加载设备帧配置；不修改 `ccs_monitor/map_building_v2.py`。
+1. 确认阶段为 BASE 且无活动建图/重定位会话，记录服务的 enabled/active 状态、主进程 PID、manager 与静态 TF PID，以及本次目标文件和原始 launch 的校验值。
+2. 对照已审核差异准备文件，在工作区内建立时间戳备份和清单；先校验传输后的临时文件，再原子替换目标。发布元数据与 Python 包版本保持 v0.13.2 一致。
+3. 按 ROS Noetic、车辆 `catkin_ws/devel/setup.bash --extend`、CCS `ccs_edge_ws/devel/setup.bash --extend` 的顺序加载环境，运行版本一致性、Python/Bash 检查和目标测试。
+4. 执行实际 `ground_air_stage_client.py --check`，确认 guard `2` 被接受、两条外部 TF 就绪、阶段仍为 BASE，再进行静态建图闭环。
+5. 复核服务仍为 `disabled`，原进程、静态 TF 与 underlay 校验值保持一致。短期客户端每次命令都会重新加载，因此本次修复无需重启服务；常驻 map-stream 进程已加载的版本/能力标记可能保留旧值，待下次手动重启后加载磁盘上的 v0.13.2。
 
-端侧与指控配置必须在同一维护窗口成对更新。部署脚本输出的 `BACKUP=...` 必须写入部署日志。`before.sha256`、`after.sha256`、`manifest.tsv`、`service.enabled.before`、`service.active.before` 和 `original-launch.sha256` 用于审计及逐文件回滚。
+后续重定位增量包使用 `deploy_relocalization_update.sh`，必须同步建图客户端及相应元数据/测试，并在重启后的就绪门禁中运行实际建图 `--check`。旧 `deploy_stage_manager_update.sh` 属于 guard `1`、underlay manager 部署链，不能用于当前 guard `2` 设备，也不能用于本次修复。
+
+将真实备份路径、文件清单、部署前后校验、服务状态及测试结果写入部署日志。本次不改两端帧配置；以后若修改 Ground-Air `map_stream.yaml` 的帧契约，仍需与指控运行配置及发布默认镜像 `config/map_building.json` 成对更新或回滚。
 
 ## 静态验收
 
@@ -72,22 +76,27 @@ systemctl --user is-enabled ccs-edge-dev.service
 systemctl --user is-active ccs-edge-dev.service
 systemctl --user show ccs-edge-dev.service -p MainPID -p NRestarts -p KillMode
 rostopic echo -n 1 /ground_air/system/stage
+rosparam get /ground_air_stage_manager/ccs_session_guard_version
 rosparam get /ground_air_stage_manager/external_tf_required
+rosrun epgeneral_map_stream ground_air_stage_client.py --check
 rosnode list | grep -E 'ground_air_stage_manager|odom_camera_init|base_link_body|fast_lio'
 rosrun tf tf_echo odom camera_init
 rosrun tf tf_echo body base_link
 ```
 
-验收至少覆盖：BASE 无建图节点、两个静态 TF 唯一发布；`prepare_result.frame_id=odom`，首个分片为 `frame_id=odom/source_frame_id=camera_init` 且被指控接受；开始、重复开始、保存、BASE 复位；建图期间存在且仅存在一个建图态 world-TF owner；建图前后两个静态 TF PID 不变；结束后无 FAST-LIO、建图 roslaunch 或孤儿进程；成果 manifest 为 `map`；原始 launch 校验值不变。保存失败保活只用本地单测验证，不在端侧主动制造磁盘或权限故障。
+`is-enabled` 预期输出 `disabled`，其非零返回值不代表服务故障。`--check` 应成功且不切换阶段。验收至少覆盖：BASE 无建图节点、两个静态 TF 唯一发布；`prepare_result.frame_id=odom`，首个分片为 `frame_id=odom/source_frame_id=camera_init` 且被指控接受；开始、重复开始、保存、BASE 复位；建图期间存在且仅存在一个建图态 world-TF owner；建图前后两个静态 TF PID 不变；结束后无 FAST-LIO、建图 roslaunch 或孤儿进程；成果 manifest 为 `map`；原始 launch 校验值不变。保存失败保活只用本地单测验证，不在端侧主动制造磁盘或权限故障。
 
 ## 产物与日志
 
 - 地图：`/home/bitcq/catkin_ws/maps/<YYYYMMDD_HHMMSS>/`，包含 `cloud_map.pcd`、`map.pgm`、`map.yaml`、`metadata.json`。
-- 启动顺序：`~/.ros/ccs_edge_dev_ground_air_agv/log/startup.log`。
+- 启动顺序：`/home/bitcq/ccs_edge_ws/log/ground_air_agv/startup.log`。
 - stage manager：同目录 `stage_manager.log`。
 - 静态 TF roslaunch：同目录 `mapping_tf.log`，PID 为 `/home/bitcq/ccs_edge_ws/run/mapping_tf.pid`。
-- 指控响应：`~/.ros/ccs_edge_dev/log/map_stream.log`；会话日志位于会话目录 `ground_air_mapping.log`。
+- 指控响应：`/home/bitcq/ccs_edge_ws/log/ground_air_agv/map_stream.log`；ROS 节点日志位于同目录 `ros/latest/epgeneral_map_stream-1.log`（编号以现场为准），会话日志位于会话目录 `ground_air_mapping.log`。
+- ROS home：`/home/bitcq/ccs_edge_ws/run/ros_home`；部署备份与验收证据分别位于工作区内 `.deployment_backups/`、`artifacts/`。
 
 ## 回滚
 
-确认没有活动建图后停止用户服务，按备份 `manifest.tsv` 恢复所有 `existing` 文件，并只删除标记为 `new` 的文件；随后增量编译 `epgeneral_map_stream` 并执行 `systemctl --user daemon-reload`。根据 `service.enabled.before` 恢复 enable/disable 状态，根据 `service.active.before` 恢复 active/inactive 状态，不固定重新启动服务。指控端同时恢复同一批次备份的 `config/map_building.json` 并重启 CCS，禁止只回滚一端。回滚后再次校验原始 `manual_mapping.launch` 与 `save_mapping.launch`，并确认准备与首个预览分片的帧契约回到同一版本。
+确认没有活动建图/重定位后，按本次备份清单逐文件原子恢复客户端、元数据、测试和文档，并保留权限。此次短期客户端修复不需要重启、构建或修改 unit；服务保持部署前的 active/inactive 状态和已禁用的上电自启动状态。复核目标文件与原始 launch 的校验值，并运行实际预检。仅回滚旧客户端会重新出现 guard `2` 被拒绝的问题，应将其作为已知回退结果记录，不能通过改 manager 参数绕过。
+
+若回滚的是未来包含常驻包或帧配置的其他批次，按该批次清单恢复、增量构建并按原 active/inactive 状态重载所需进程；仍保持上电自启动禁用。帧配置变更必须同时恢复端侧 YAML、指控运行 JSON 及发布默认镜像，随后确认准备和预览分片契约一致。
