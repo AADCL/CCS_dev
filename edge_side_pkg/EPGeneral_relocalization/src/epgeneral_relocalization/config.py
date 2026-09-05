@@ -26,6 +26,7 @@ def load_config(path, device_path):
     try:
         network, storage, ros, stability = (
             data["network"], data["storage"], data["ros"], data["tf_stability"])
+        reporting = data.get("tf_reporting", {})
         result = {
             "protocol_id": str(data["protocol_id"]), "enabled": bool(data["enabled"]),
             "backend": str(data["backend"]), "device_id": str(device_id),
@@ -34,6 +35,8 @@ def load_config(path, device_path):
             "status_port": int(network["status_port"]),
             "max_datagram_bytes": int(network["max_datagram_bytes"]),
             "map_root": str(storage["map_root"]),
+            "pcd_filename": str(storage.get(
+                "pcd_filename", "public_map.pcd")),
             "active_map_state_file": str(storage.get(
                 "active_map_state_file", "~/.ros/ccs_edge_dev/state/relocalization.json")),
             "max_artifact_bytes": int(storage["max_artifact_bytes"]),
@@ -48,27 +51,50 @@ def load_config(path, device_path):
             "tf_sample_count": int(stability["sample_count"]),
             "translation_tolerance_m": float(stability["translation_tolerance_m"]),
             "yaw_tolerance_deg": float(stability["yaw_tolerance_deg"]),
+            "tf_continuous_reporting": bool(reporting.get("continuous", False)),
+            "tf_report_interval_seconds": float(reporting.get(
+                "interval_seconds", 1.0 / float(stability["sample_hz"]))),
+            "tf_persist_interval_seconds": float(reporting.get(
+                "persist_interval_seconds", 30.0)),
         }
     except (KeyError, TypeError, ValueError) as exc:
         raise ConfigError("configuration field is invalid: %s" % exc)
-    if result["backend"] not in ("scout_mini", "wheeltec_r550p", "go2_edu"):
+    if result["backend"] not in (
+            "scout_mini", "wheeltec_r550p", "ground_air_agv", "go2_edu"):
         raise ConfigError("backend is unsupported")
     if any(not 1 <= result[key] <= 65535 for key in ("control_port", "status_port")):
         raise ConfigError("network port is invalid")
     if not 512 <= result["max_datagram_bytes"] <= 65507:
         raise ConfigError("max_datagram_bytes is invalid")
-    if result["backend"] in ("scout_mini", "wheeltec_r550p") and not result["stages"]:
+    if result["backend"] in (
+            "scout_mini", "wheeltec_r550p", "ground_air_agv") and not result["stages"]:
         raise ConfigError("relocalization stages are empty")
     if result["max_artifact_bytes"] <= 0 or result["download_timeout_seconds"] <= 0:
         raise ConfigError("storage limits are invalid")
+    if result["pcd_filename"] not in ("public_map.pcd", "cloud_map.pcd"):
+        raise ConfigError("storage pcd_filename is invalid")
     if (result["startup_timeout_seconds"] <= 0 or result["tf_timeout_seconds"] <= 0
             or result["tf_sample_hz"] <= 0 or result["tf_sample_count"] < 2
             or result["translation_tolerance_m"] <= 0
-            or result["yaw_tolerance_deg"] <= 0):
+            or result["yaw_tolerance_deg"] <= 0
+            or result["tf_report_interval_seconds"] <= 0
+            or result["tf_persist_interval_seconds"] <= 0):
         raise ConfigError("ROS readiness or TF stability limits are invalid")
     for stage in result["stages"]:
         if (not isinstance(stage, dict) or not stage.get("name")
                 or not stage.get("package") or not stage.get("launch")
                 or not isinstance(stage.get("args", []), list)):
             raise ConfigError("relocalization stage is invalid")
+        package_path = stage.get("ros_package_path_prepend")
+        if package_path is not None and not str(package_path).strip():
+            raise ConfigError("relocalization stage ROS package path is invalid")
+        for key in ("ros_package_path_exclude", "cmake_prefix_path_exclude"):
+            values = stage.get(key, [])
+            if (
+                not isinstance(values, list)
+                or any(not str(item).strip() for item in values)
+            ):
+                raise ConfigError(
+                    "relocalization stage %s is invalid" % key
+                )
     return result

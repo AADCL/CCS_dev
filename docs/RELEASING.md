@@ -7,7 +7,7 @@
 | CCS-0.23.0-windows-x64-setup.exe | Windows 10/11 x64 离线安装包 |
 | CCS-0.23.0-linux-x64.run | Ubuntu 20.04/22.04 x64 离线安装包 |
 | CCS-0.23.0-portable.zip | 地面站源码、锁文件、干净配置及依赖安装脚本 |
-| CCS-0.23.0-edge.zip | 七个 ROS 包、部署 profile、部署文档与协议说明 |
+| CCS-0.23.0-edge.zip | 七个公共 ROS 包、Ground-Air 控制包、部署 profile 与协议说明 |
 
 每份产物附带同名 .sha256 校验文件。包内 release-manifest.json 记录版本、
 平台、构建解释器、文件列表和校验值。安装包不要求目标机安装 Python、uv 或

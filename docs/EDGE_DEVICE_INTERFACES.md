@@ -1,6 +1,19 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.23.0`，更新日期：2026-09-03。
+文档版本：`v0.23.0`，更新日期：2026-09-05。
+
+## 2026-09-05 Ground-Air AGV 建图 guard 兼容
+
+- `epgeneral_map_stream` v0.13.2 明确接受整数 `ccs_session_guard_version` 为 `1`、`2`，当前工作区 manager 发布 `2`；缺失、类型错误和未知版本继续拒绝并报告实际值与支持范围。
+- ROS 阶段服务仍为 `/ground_air/system/set_stage`，建图 caller 仍为 `/ccs_mapping_stage_<session>`；保留 caller/map_id 归属、幂等与阶段互斥。准备预检不调用阶段服务。
+- `AGV_001` 上电自启动保持禁用，需要时手动启动一键栈；本次修复不改变 `ccs-map-stream-v2`、消息字段、端口或帧契约。
+
+## 2026-09-04 Ground-Air AGV 重定位契约
+
+- `AGV_001` 使用 `ground_air_agv` profile；端侧命令仍为 `roslaunch car_bringup relocalization_system.launch`，但仅该子进程局部解析 `/home/bitcq/ccs_edge_ws/overrides/car_bringup`，并隐藏同名 underlay 包以避免 ROS1 重复资源错误。
+- 初始位姿适配器订阅 `/initialpose`，以 `use_initial_guess=true` 调用 `/ground_air/relocalize`；地图通过 `/ground_air/load_map` 加载。
+- 首个有效 `map <- odom` 立即返回成功，同一会话之后固定每秒发送一次 `relocalization_result(state=succeeded)`。仅首样本受 profile 超时约束；首样本后有新时间戳则更新，设备静止、时间戳未更新或查询暂时失败则沿用最后有效值。
+- 首个结果立即持久化，后续样本更新平台内存绑定并最多每 30 秒落盘；`ccs-relocalization-v1` 消息类型和字段保持不变。
 
 ## 2026-09-03 Ground-Air AGV 建图预览坐标系契约
 
@@ -29,7 +42,7 @@
 - UDP envelope 仍为 schema 1 / `ccs-udp-telemetry-v1`；地面站只额外接受配置中明确列出的 descriptor hash。
 - Scout 30 V 定义为满电，曲线未标定时百分比为 `null`；Go2 原生百分比不被估算覆盖。
 
-指控平台 v0.22.8 配套七个规范化端侧包：`epgeneral_device_config` v0.1.1、`epgeneral_mqtav` v0.4.1、`epgeneral_udp_telemetry` v0.3.1、`epgeneral_video_srt` v0.1.1、`epgeneral_map_stream` v0.13.1、`epgeneral_task_control` v0.4.4 和 `epgeneral_relocalization` v0.2.3。MQTT schema 1.0、SRT 与 UDP wire schema 保持兼容。
+指控平台 v0.22.8 配套七个公共端侧包：`epgeneral_device_config` v0.1.1、`epgeneral_mqtav` v0.4.1、`epgeneral_udp_telemetry` v0.3.1、`epgeneral_video_srt` v0.1.1、`epgeneral_map_stream` v0.13.2、`epgeneral_task_control` v0.4.4 和 `epgeneral_relocalization` v0.3.0。Ground-Air profile 另部署 `epgeneral_ground_air_control` v0.1.0。MQTT schema 1.0、SRT 与 UDP wire schema 保持兼容。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -42,7 +55,7 @@
 | SRT 视频 | 地面站 Caller -> 端侧 Listener | UDP 9000 | baseline H.264/MPEG-TS/SRT | epgeneral_video_srt v0.1.1 |
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | 保留后端 |
-| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.13.1 |
+| UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.13.2 |
 | UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v2` | epgeneral_task_control v0.4.4 |
 | UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v2` | epgeneral_task_control v0.4.4 |
 
@@ -176,7 +189,7 @@ IPv6 地址使用方括号。地面站先执行 `ffmpeg -hide_banner -protocols`
 
 ## UDP 14561/14562 单机与联合遥控建图 v2（指控平台 v0.22.6）
 
-v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.13.1` 按设备选择 backend：Scout 协调 FAST-LIO、pointcloud mapper、坐标转换链和地图转换工具，Go2 保持 map accumulator 流程，Ground-Air AGV 通过受管进程组调用原生 mapping/save service。联合模式在 prepare/start payload 中同时携带 `job_id`、`role` 和 `primary_device_id`，端侧在 artifact manifest 原样回传；这些字段在单机模式可省略。最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
+v2 使用独立 `schema_version=2` 和 `protocol_id=ccs-map-stream-v2`，不与 v1 自动回退。端侧 `epgeneral_map_stream v0.13.2` 按设备选择 backend：Scout 协调 FAST-LIO、pointcloud mapper、坐标转换链和地图转换工具，Go2 保持 map accumulator 流程，Ground-Air AGV 通过受管进程组调用原生 mapping/save service。联合模式在 prepare/start payload 中同时携带 `job_id`、`role` 和 `primary_device_id`，端侧在 artifact manifest 原样回传；这些字段在单机模式可省略。最终 PCD、PGM 和 YAML 均由端侧成果 ZIP 提供。
 
 v2 保留 v1 信封中的 `map_id/device_id/session_id/message_type/sequence/sent_at_ns/payload`。v0.18.3 使用 `cloud_fragment_ready` 和 `cloud_fragment_ack`：UDP 只承载控制、状态与轻量描述符，PCD 内容通过 TCP 14600 下载。端侧未收到 ACK 时最多重发描述符 3 次，未确认文件和后台队列均有硬上限。
 
@@ -226,7 +239,7 @@ FAST_LIO 点云和里程计按 header 时间戳在 50 ms 窗口内匹配。点�
 
 Scout 的 `scout_finalize` backend 在收到 `start_mapping` 时只生成一次 `YYYYMMDD_HHMMSS` 格式的 `map_name`，严格依次执行 `fastlio_mapping_scout.launch rviz:=false`、`pointcloud_mapper.launch map_name:=<map_name>`、`tf_manager.launch` 和 `pose_adapter.launch`，命令不包含 `source`。启动任一阶段失败时按相反顺序清理。收到 `stop_mapping` 后先 SIGINT mapper 并等待 `~/livox_fastlio/maps/<map_name>/filtered_camera_init.pcd` 刷盘，再停止 FAST-LIO、pose adapter 和 TF manager，最后执行 `rosrun scout_map_tools finalize_map.py "<map_name>" --replace-raw`。finalize 参数必须来自当前会话中固化且与 mapper 参数完全一致的 `map_name`，不得使用 `map_id`、`session_id`、停止时间或目录扫描结果重新构造。转换后验证 filtered/raw/public PCD、PGM、YAML 和 metadata；失败或旧文件校验失败时不发布成果。
 
-端侧必须将命令接收、request/session ID、状态转换、FAST_LIO 启停、源 PCD 基线与最终指纹、PCD 分片发布/确认/背压、子进程输出和错误同时写入 ROS 日志与 `~/.ros/ccs_edge_dev/log/map_stream.log`。指控端每个 session 保留最近 200 条 TX/RX/LOCAL 日志。
+端侧必须将命令接收、request/session ID、状态转换、FAST_LIO 启停、源 PCD 基线与最终指纹、PCD 分片发布/确认/背压、子进程输出和错误同时写入 ROS 日志与配置的 `map_stream.log`。通用部署默认目录为 `~/.ros/ccs_edge_dev/log/`；Ground-Air AGV 使用 `/home/bitcq/ccs_edge_ws/log/ground_air_agv/`，其 ROS 日志位于该目录的 `ros/latest/`。指控端每个 session 保留最近 200 条 TX/RX/LOCAL 日志。
 
 ## UDP 14561/14562 实时建图 v1（保留后端）
 
@@ -590,7 +603,7 @@ UDP 14560 全局位姿仍是地面站地图实时标记来源；14564 进度是�
 
 地面站 v0.22.7 在同一地图内对重定位流程按设备互斥，并将选点十字星与公共信封中的 `device_id` 绑定。`start_stack` 和 `initial_pose` 必须使用同一设备 ID；端侧接口不增加重复的 payload 设备字段。无 `session_id` 的默认状态或协商中状态不得发送 `map_offer`，只有端侧在有效会话中返回 `map_required` 后才能下发地图。上述约束不改变 `ccs-relocalization-v1` schema 1、消息类型或端口。
 
-地图缺失时端侧返回 `map_required`。地面站 TCP 14601 的 `/relocalization/map.zip?token=...` 支持 HEAD、GET 和单段 Range，禁止重定向；ZIP 只允许 `manifest.json/public_map.pcd/map.pgm/map.yaml`。端侧校验声明大小、SHA-256、PCD/PGM/YAML 内容后原子安装至 profile 的 `ccs_download/<map_id>`。
+地图缺失时端侧返回 `map_required`。地面站 TCP 14601 的 `/relocalization/map.zip?token=...` 支持 HEAD、GET 和单段 Range，禁止重定向；ZIP 只允许 `manifest.json/public_map.pcd/map.pgm/map.yaml`。端侧校验声明大小、SHA-256、PCD/PGM/YAML 内容后原子安装至 profile 的地图根。Ground-Air profile 在校验后将 PCD 改名为定位器要求的唯一 `cloud_map.pcd`；wire 清单和其他车型仍使用 `public_map.pcd`。
 
 `initial_pose` payload 使用 map 系米和弧度：
 
@@ -598,11 +611,11 @@ UDP 14560 全局位姿仍是地面站地图实时标记来源；14564 进度是�
 {"frame_id":"map","x":1.0,"y":2.0,"yaw":0.5,"covariance":{"x":0.25,"y":0.25,"yaw":0.0685389}}
 ```
 
-成功结果返回 `map_frame`、`odom_frame` 及 `map_from_odom` 的 `x/y/z/qx/qy/qz/qw`。Scout 默认要求连续 10 个 10 Hz TF 样本的平移跨度不超过 0.10 m、yaw 跨度不超过 2°；30 秒未稳定返回失败。Go2 v0.19.0 profile 返回 `UNSUPPORTED_BACKEND`。
+成功结果返回 `map_frame`、`odom_frame` 及 `map_from_odom` 的 `x/y/z/qx/qy/qz/qw`。Scout/Wheeltec 默认要求连续 10 个 10 Hz TF 样本的平移跨度不超过 0.10 m、yaw 跨度不超过 2°；30 秒未稳定返回失败。Ground-Air 在收到初始位姿后每 1 秒查询一次 `map <- odom`，首个有效样本立即返回成功，后续在同一会话内持续发送 `relocalization_result(state=succeeded)`；不执行稳定性等待，有新时间戳时更新值，设备静止或查询不到新值时重发最后有效值。平台允许 `SUCCEEDED -> succeeded/failed`，协议 schema 和消息类型不变。Go2 profile 返回 `UNSUPPORTED_BACKEND`。
 
 ## 配置对应关系补充
 
 | 地面站 | 端侧 | 对应内容 |
 | --- | --- | --- |
 | `config/task_system.json` | `epgeneral_device_config/config/task_control.yaml` | `ccs-task-control-v2`、14563/14564、包长、分片、任务限制与 UTC 调度 |
-| `config/relocalization.json` | `epgeneral_device_config/config/relocalization.yaml` | `ccs-relocalization-v1`、14565/14566、TCP 14601、profile、地图根目录与 TF 稳定阈值 |
+| `config/relocalization.json` | `epgeneral_device_config/config/relocalization.yaml` | `ccs-relocalization-v1`、14565/14566、TCP 14601、profile、地图根目录、TF 稳定或周期上报参数 |

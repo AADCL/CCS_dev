@@ -13,7 +13,8 @@ except ImportError:
 
 
 PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MAPPING = os.path.join(
+# Deployed packages can use an isolated copy of the repository sample fixture.
+MAPPING = os.environ.get("CCS_MAP_STREAM_TEST_MAPPING") or os.path.join(
     os.path.dirname(PACKAGE), "EPGeneral_device_config", "config", "map_stream.yaml")
 DEVICE = device_config_path(PACKAGE)
 
@@ -55,7 +56,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config["device_ip"], expected_device["ip"])
         self.assertEqual(config["protocol_id"], "ccs-map-stream-v2")
         self.assertEqual(config["schema_version"], 6)
-        self.assertEqual(config["capability_version"], "0.13.1")
+        self.assertEqual(config["capability_version"], "0.13.2")
         self.assertEqual(config["input_cloud_topic"], "/livox/lidar")
         self.assertEqual(config["input_imu_topic"], "/livox/imu")
         self.assertEqual(config["input_cloud_message_type"], "livox_ros_driver2/CustomMsg")

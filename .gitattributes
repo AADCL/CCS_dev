@@ -1,0 +1,2 @@
+edge_side_pkg/deploy/ground_air_agv/start_ccs_edge_dev.sh text eol=lf
+edge_side_pkg/deploy/ground_air_agv/deploy_relocalization_update.sh text eol=lf

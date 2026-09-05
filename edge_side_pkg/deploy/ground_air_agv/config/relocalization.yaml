@@ -1,10 +1,28 @@
-# Placeholder only. No relocalization process is started in this deployment.
-deployment: {state: placeholder}
+deployment: {state: deployed}
 schema_version: 1
 protocol_id: ccs-relocalization-v1
-enabled: false
-backend: go2_edu
+enabled: true
+backend: ground_air_agv
 network: {bind_host: 0.0.0.0, control_port: 14565, ground_station_ip: 192.168.50.101, status_port: 14566, max_datagram_bytes: 1400}
-storage: {map_root: /home/bitcq/ccs_edge_ws/maps/download, active_map_state_file: /home/bitcq/ccs_edge_ws/run/relocalization.json, max_artifact_bytes: 4294967296, download_timeout_seconds: 300.0}
-ros: {map_frame: map, odom_frame: odom, initial_pose_topic: /initialpose, map_topic: /map_2d, startup_timeout_seconds: 60.0, stages: []}
+storage: {map_root: /home/bitcq/ccs_edge_ws/maps/download, pcd_filename: cloud_map.pcd, active_map_state_file: /home/bitcq/ccs_edge_ws/run/relocalization.json, max_artifact_bytes: 4294967296, download_timeout_seconds: 300.0}
+ros:
+  map_frame: map
+  odom_frame: odom
+  initial_pose_topic: /initialpose
+  map_topic: /map
+  startup_timeout_seconds: 90.0
+  stages:
+    - name: ground_air_relocalization
+      package: car_bringup
+      launch: relocalization_system.launch
+      ros_package_path_prepend: /home/bitcq/ccs_edge_ws/overrides
+      ros_package_path_exclude:
+        - /home/bitcq/catkin_ws/src
+      cmake_prefix_path_exclude:
+        - /home/bitcq/catkin_ws/devel
+      args:
+        - "map_id:={map_id}"
+        - "service_wait_timeout:=90.0"
+        - "relocalize_timeout:=60.0"
 tf_stability: {timeout_seconds: 30.0, sample_hz: 10.0, sample_count: 10, translation_tolerance_m: 0.10, yaw_tolerance_deg: 2.0}
+tf_reporting: {continuous: true, interval_seconds: 1.0, persist_interval_seconds: 30.0}

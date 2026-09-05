@@ -1,7 +1,8 @@
 <launch>
   <arg name="config_file" default="$(find epgeneral_device_config)/config/relocalization.yaml" />
   <arg name="device_config_file" default="$(find epgeneral_device_config)/config/device.yaml" />
+  <arg name="log_dir" default="" />
   <node pkg="epgeneral_relocalization" type="epgeneral_relocalization_node.py"
         name="epgeneral_relocalization" output="screen"
-        args="--config-file $(arg config_file) --device-config-file $(arg device_config_file)" />
+        args="--config-file $(arg config_file) --device-config-file $(arg device_config_file) --log-dir=$(arg log_dir)" />
 </launch>

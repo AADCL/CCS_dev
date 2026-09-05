@@ -2,6 +2,22 @@
 
 本项目采用 `主版本.次版本.修订号` 三段式版本号。
 
+## Ground-Air AGV 建图会话保护兼容修复 - 2026-09-05
+
+- 修复重定位功能合并时遗留的设备配置 JSON 损坏与 profile 白名单重复覆盖；`AGV_001` 在指控平台重新识别为支持 `ground_air_agv` 重定位，并增加配置持久化和位姿源选择回归。
+- `epgeneral_map_stream` 升至 v0.13.2：建图客户端兼容 guard `1`、`2`，修复重定位升级后 manager 已发布 `2`、客户端仍要求 `1` 导致准备阶段拒绝的问题；缺失、类型错误和未知版本继续拒绝并给出明确诊断。
+- 保持原 caller/map_id 归属保护、建图/重定位互斥及外部 TF 生命周期；补充客户端真实入口与当前 manager 回归，增量部署增加建图 `--check` 门禁。
+- 同步当前 manager 与日志路径、手动启动说明及回滚要求，部署保持 `AGV_001` 已禁用的上电自启动设置；平台版本、wire schema 和端口不变。
+- 现场部署、静态建图闭环和最终服务状态以 `edge_side_pkg/documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT_LOG.md` 的实际验收记录为准。
+
+## Ground-Air AGV 重定位端侧优化 - 2026-09-04
+
+- 新增 `epgeneral_ground_air_control`，通过驻留阶段管理器互斥启动精简 FAST-LIO、定位层和初始位姿适配器；指控子进程仍执行 `roslaunch car_bringup relocalization_system.launch`，但仅在其局部环境解析工作区覆盖，原 underlay 文件不修改。
+- `AGV_001` 启用 `ground_air_agv` profile，加载地图后等待 `/initialpose`，并以 `use_initial_guess=true` 调用 Ground-Air 重定位。
+- `epgeneral_relocalization` 升至 v0.3.0：Ground-Air 每 1 秒直接上报有效 `map <- odom`，无稳定等待；首样本后若设备静止或 TF 暂停更新则重发最后有效值。平台接受成功后的连续结果，以内存实时更新并将持久化限制为首个、每 30 秒及正常退出。
+- Ground-Air 地图包仍按协议校验 `public_map.pcd`，端侧原子安装前改名为定位器强制要求的唯一 `cloud_map.pcd`，不影响其他车型。
+- 同一重定位会话重复开始时复用已运行的 FAST-LIO/localization 栈，只回到等待初始位姿，不创建第二套进程。
+- 新增严格的 `/home/bitcq/ccs_edge_ws` 部署边界校验、增量测试和回滚文档；车辆 underlay、原始建图/重定位 launch、自启动 unit 和 TF 所有权保持不变。
 ## v0.23.0 界面与设备电量优化 - 2026-09-04
 
 - 地图设备标记新增原点形态，缩小箭头和球体；长方体改为 0.80 × 0.50 × 0.35 m 正确三角面网格、底面贴合位姿高度并启用面着色和深度测试。旧 `cube` 配置继续兼容。

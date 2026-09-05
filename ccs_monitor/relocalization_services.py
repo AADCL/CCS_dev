@@ -65,6 +65,7 @@ ACTIVE_RELOCALIZATION_STATUSES = {
     RelocalizationStatus.AWAITING_POSE,
     RelocalizationStatus.RELOCALIZING,
 }
+_BINDING_PERSIST_INTERVAL_SECONDS = 30.0
 
 
 class RelocalizationService(QObject):
@@ -87,6 +88,9 @@ class RelocalizationService(QObject):
         self._pending: dict[str, _Pending] = {}
         self._received_sequences: dict[tuple[str, str], int] = {}
         self._tokens: dict[tuple[str, str], str] = {}
+        self._live_bindings: dict[tuple[str, str], DeviceMapBinding] = {}
+        self._binding_persisted_at: dict[tuple[str, str], float] = {}
+        self._dirty_binding_keys: set[tuple[str, str]] = set()
         self._timer = QTimer(self)
         self._timer.setInterval(50)
         self._timer.timeout.connect(self._tick)
@@ -120,6 +124,7 @@ class RelocalizationService(QObject):
 
     def stop(self) -> None:
         self._timer.stop()
+        self._flush_live_bindings()
         if self._socket is not None:
             self._socket.close()
         if self._http is not None:
@@ -143,6 +148,17 @@ class RelocalizationService(QObject):
             can_download=False,
             updated_at=datetime.now(timezone.utc),
         )
+
+    def binding(self, map_id: str, device_id: str) -> DeviceMapBinding | None:
+        key = (map_id, device_id.casefold())
+        live = self._live_bindings.get(key)
+        if live is not None:
+            return live
+        profile = self.source.profile(device_id)
+        return next((
+            item for item in getattr(profile, "map_bindings", ())
+            if item.map_id == map_id
+        ), None)
 
     def active_device_id(self, map_id: str) -> str | None:
         active = [
@@ -173,6 +189,11 @@ class RelocalizationService(QObject):
         if not profile_config.supported:
             return self._set(map_id, device_id, RelocalizationStatus.UNSUPPORTED, STATUS_TEXT[RelocalizationStatus.UNSUPPORTED])
         self._discard_pending(device_id)
+        for key in list(self._live_bindings):
+            if key[1] == device_id.casefold():
+                self._live_bindings.pop(key, None)
+                self._binding_persisted_at.pop(key, None)
+                self._dirty_binding_keys.discard(key)
         session_id = uuid.uuid4().hex
         snapshot = RelocalizationSnapshot(
             map_id, device.device_id, session_id, RelocalizationStatus.UNKNOWN_SPACE,
@@ -224,6 +245,10 @@ class RelocalizationService(QObject):
         )
         if replace_existing:
             self.source.remove_device_map_binding(device_id, map_id)
+            key = (map_id, device_id.casefold())
+            self._live_bindings.pop(key, None)
+            self._binding_persisted_at.pop(key, None)
+            self._dirty_binding_keys.discard(key)
         self._set(map_id, device_id, RelocalizationStatus.STACK_STARTING, "正在启动端侧重定位功能")
         self._queue(
             map_id, device_id, snapshot.session_id, "start_stack",
@@ -350,7 +375,20 @@ class RelocalizationService(QObject):
                 except (KeyError, TypeError, ValueError) as exc:
                     self._set(envelope.map_id, envelope.device_id, RelocalizationStatus.FAILED, f"返回变换无效：{exc}")
                 else:
-                    self._set(envelope.map_id, envelope.device_id, RelocalizationStatus.SUCCEEDED, STATUS_TEXT[RelocalizationStatus.SUCCEEDED])
+                    if snapshot.status == RelocalizationStatus.SUCCEEDED:
+                        refreshed = replace(
+                            snapshot, updated_at=datetime.now(timezone.utc)
+                        )
+                        self._snapshots[(
+                            snapshot.map_id, snapshot.device_id.casefold()
+                        )] = refreshed
+                        self.snapshot_updated.emit(refreshed)
+                    else:
+                        self._set(
+                            envelope.map_id, envelope.device_id,
+                            RelocalizationStatus.SUCCEEDED,
+                            STATUS_TEXT[RelocalizationStatus.SUCCEEDED],
+                        )
             else:
                 self._set(envelope.map_id, envelope.device_id, RelocalizationStatus.FAILED, reason or STATUS_TEXT[RelocalizationStatus.FAILED])
         elif envelope.message_type == "command_error":
@@ -417,8 +455,10 @@ class RelocalizationService(QObject):
                 "starting", "awaiting_pose", "error",
             }
         if message_type == "relocalization_result":
-            return current == RelocalizationStatus.RELOCALIZING and state in {
-                "relocalizing", "succeeded", "failed",
+            if current == RelocalizationStatus.RELOCALIZING:
+                return state in {"relocalizing", "succeeded", "failed"}
+            return current == RelocalizationStatus.SUCCEEDED and state in {
+                "succeeded", "failed",
             }
         if message_type == "negotiation_status":
             return current == RelocalizationStatus.UNKNOWN_SPACE and state in {
@@ -438,7 +478,28 @@ class RelocalizationService(QObject):
             str(envelope.payload.get("odom_frame", profile_config.odom_frame)), transform,
             datetime.now(timezone.utc), profile_config.pose_source,
         )
-        self.source.upsert_device_map_binding(envelope.device_id, binding)
+        key = (envelope.map_id, envelope.device_id.casefold())
+        self._live_bindings[key] = binding
+        now = self.clock()
+        last_persisted = self._binding_persisted_at.get(key)
+        if (
+            last_persisted is None
+            or now - last_persisted >= _BINDING_PERSIST_INTERVAL_SECONDS
+        ):
+            self.source.upsert_device_map_binding(envelope.device_id, binding)
+            self._binding_persisted_at[key] = now
+            self._dirty_binding_keys.discard(key)
+        else:
+            self._dirty_binding_keys.add(key)
+
+    def _flush_live_bindings(self) -> None:
+        for key in tuple(self._dirty_binding_keys):
+            binding = self._live_bindings.get(key)
+            if binding is None:
+                continue
+            self.source.upsert_device_map_binding(key[1], binding)
+            self._binding_persisted_at[key] = self.clock()
+        self._dirty_binding_keys.clear()
 
     def _discard_pending(self, device_id: str) -> None:
         folded = device_id.casefold()

@@ -1,5 +1,13 @@
 # 空地 AGV 部署日志
 
+## 2026-09-05 手动启动与建图兼容修复
+
+- 当前 `AGV_001` 已取消上电自启动，`ccs-edge-dev.service` 保持 `disabled`；已有运行栈不因禁用而停止，需要运行时手动启动。
+- 当前 manager 和日志均由 `ccs_edge_ws` 管理，manager 发布 guard `2`。旧建图客户端只接受 guard `1`，导致准备阶段报缺少会话保护。
+- `epgeneral_map_stream` v0.13.2 同步版本兼容、部署门禁和当前操作说明；逐文件修复未重启常驻服务，端侧聚焦测试最终 25/25，通过实际预检及一次无运动建图闭环。最终服务仍为 `disabled/inactive`，手动启动的基础栈继续运行，stage 已回到 BASE；完整备份、地图校验值和清理结果见 [建图部署日志](GROUND_AIR_AGV_MAPPING_DEPLOYMENT_LOG.md)。
+- 以下旧批次中的路径、启用状态和测试结果按历史保留，不作为当前上电启动或版本要求。
+
+
 ## 2026-08-31 A8 Mini SRT 视频部署
 
 - 目标：将已部署的 `a8_mini_camera` 与 `epgeneral_video_srt` 纳入 AGV

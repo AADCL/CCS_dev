@@ -146,10 +146,10 @@
       ],
       "srt_port": 9000,
       "srt_latency_ms": 120,
-      "relocalization_profile": "disabled",
-      "battery_profile": "disabled",
+      "relocalization_profile": "ground_air_agv",
       "active_map_id": "39a26473-2e65-481f-afbb-5fc9690c6038",
-      "map_bindings": []
+      "map_bindings": [],
+      "battery_profile": "disabled"
     },
     {
       "device_id": "FGV_001",

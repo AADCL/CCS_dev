@@ -61,6 +61,14 @@ class DeviceMapContextTests(unittest.TestCase):
             resolve_local_odom_pose(FakeSource(self.profile()), telemetry, "UGV_001"),
             vision,
         )
+        ground_air = DeviceProfile(
+            "AGV_001", "Ground-Air", "AGV", "127.0.0.3",
+            relocalization_profile="ground_air_agv",
+        )
+        self.assertIs(
+            resolve_local_odom_pose(FakeSource(ground_air), telemetry, "AGV_001"),
+            vision,
+        )
         go2 = DeviceProfile(
             "QRD_001", "Go2", "QRD", "127.0.0.2",
             relocalization_profile="go2_edu",

@@ -23,7 +23,8 @@ from ccs_monitor.version import __version__ as VERSION
 
 EDGE_PACKAGES = (
     "EPGeneral_device_config", "EPGeneral_map_stream", "epgeneral_mqtav",
-    "EPGeneral_relocalization", "EPGeneral_task_control",
+    "EPGeneral_relocalization", "EPGeneral_ground_air_control",
+    "EPGeneral_task_control",
     "EPGeneral_udp_telemetry", "EPGeneral_video_srt",
 )
 EXCLUDED_PARTS = {"__pycache__", ".git", ".venv", ".trash", ".pytest_cache", "build", "devel", "logs"}

@@ -57,14 +57,14 @@ def _pcd_valid(path):
         return False
 
 
-def validate_map_directory(path, map_id=None):
+def validate_map_directory(path, map_id=None, pcd_filename="public_map.pcd"):
     root = os.path.abspath(path)
-    expected = ("public_map.pcd", "map.pgm", "map.yaml")
+    expected = (pcd_filename, "map.pgm", "map.yaml")
     for name in expected:
         candidate = os.path.join(root, name)
         if os.path.islink(candidate) or not os.path.isfile(candidate) or os.path.getsize(candidate) <= 0:
             raise ArtifactError("map file is missing or invalid: %s" % name)
-    if not _pcd_valid(os.path.join(root, "public_map.pcd")):
+    if not _pcd_valid(os.path.join(root, pcd_filename)):
         raise ArtifactError("PCD header is invalid")
     with io.open(os.path.join(root, "map.pgm"), "rb") as stream:
         magic = stream.read(2)
@@ -124,7 +124,8 @@ def download(url, destination, ground_ip, expected_size, expected_sha256,
         raise ArtifactError("map ZIP size or SHA-256 mismatch")
 
 
-def install_archive(archive_path, map_root, map_id, max_bytes):
+def install_archive(archive_path, map_root, map_id, max_bytes,
+                    pcd_filename="public_map.pcd"):
     if not safe_map_id(map_id):
         raise ArtifactError("map_id cannot be used as a directory")
     root = os.path.abspath(os.path.expanduser(map_root))
@@ -164,11 +165,17 @@ def install_archive(archive_path, map_root, map_id, max_bytes):
                 raise ArtifactError("map manifest file check failed: %s" % role)
         os.unlink(os.path.join(incoming, "manifest.json"))
         validate_map_directory(incoming, map_id)
+        if pcd_filename != "public_map.pcd":
+            os.replace(
+                os.path.join(incoming, "public_map.pcd"),
+                os.path.join(incoming, pcd_filename),
+            )
+        validate_map_directory(incoming, map_id, pcd_filename)
         if os.path.lexists(backup):
             shutil.rmtree(backup)
         if os.path.lexists(target):
             try:
-                validate_map_directory(target, map_id)
+                validate_map_directory(target, map_id, pcd_filename)
             except ArtifactError:
                 shutil.rmtree(target)
             else:

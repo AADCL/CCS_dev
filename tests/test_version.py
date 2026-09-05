@@ -22,8 +22,8 @@ class VersionTests(unittest.TestCase):
         init_text = (root / "src" / "epgeneral_map_stream" / "__init__.py").read_text(
             encoding="utf-8"
         )
-        self.assertEqual(package_version, "0.13.1")
-        self.assertIn('__version__ = "0.13.1"', init_text)
+        self.assertEqual(package_version, "0.13.2")
+        self.assertIn('__version__ = "0.13.2"', init_text)
 
     def test_relocalization_package_versions_match(self):
         root = Path(__file__).resolve().parents[1] / "edge_side_pkg" / "EPGeneral_relocalization"
@@ -32,9 +32,9 @@ class VersionTests(unittest.TestCase):
             encoding="utf-8"
         )
         setup_text = (root / "setup.py").read_text(encoding="utf-8")
-        self.assertEqual(package_version, "0.2.3")
-        self.assertIn('__version__ = "0.2.3"', init_text)
-        self.assertIn('version="0.2.3"', setup_text)
+        self.assertEqual(package_version, "0.3.0")
+        self.assertIn('__version__ = "0.3.0"', init_text)
+        self.assertIn('version="0.3.0"', setup_text)
 
     def test_task_control_version_matches_manifest_and_source(self):
         root = Path(__file__).resolve().parents[1] / "edge_side_pkg" / "EPGeneral_task_control"
