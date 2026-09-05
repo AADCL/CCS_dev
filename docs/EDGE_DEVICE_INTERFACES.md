@@ -1,6 +1,8 @@
 # 端侧设备交互接口总册
 
-文档版本：`v0.23.0`，更新日期：2026-09-05。
+本册负责地面站网络协议；设备内部 ROS、工作空间和逐参数定义见[接口与配置参考](../edge_side_pkg/documents/INTERFACE_REFERENCE.md)，操作见[端侧手册](../edge_side_pkg/documents/USER_MANUAL.md)。日期段落保留兼容性历史，当前包版本和能力见[端侧 README](../edge_side_pkg/README.md)。
+
+文档版本：`v0.23.1`，更新日期：2026-09-05。
 
 ## 2026-09-05 Ground-Air AGV 建图 guard 兼容
 
@@ -42,7 +44,7 @@
 - UDP envelope 仍为 schema 1 / `ccs-udp-telemetry-v1`；地面站只额外接受配置中明确列出的 descriptor hash。
 - Scout 30 V 定义为满电，曲线未标定时百分比为 `null`；Go2 原生百分比不被估算覆盖。
 
-指控平台 v0.22.8 配套七个公共端侧包：`epgeneral_device_config` v0.1.1、`epgeneral_mqtav` v0.4.1、`epgeneral_udp_telemetry` v0.3.1、`epgeneral_video_srt` v0.1.1、`epgeneral_map_stream` v0.13.2、`epgeneral_task_control` v0.4.4 和 `epgeneral_relocalization` v0.3.0。Ground-Air profile 另部署 `epgeneral_ground_air_control` v0.1.0。MQTT schema 1.0、SRT 与 UDP wire schema 保持兼容。
+指控平台 v0.23.1 配套七个公共端侧包：`epgeneral_device_config` v0.1.1、`epgeneral_mqtav` v0.4.1、`epgeneral_udp_telemetry` v0.3.1、`epgeneral_video_srt` v0.1.1、`epgeneral_map_stream` v0.13.2、`epgeneral_task_control` v0.4.4 和 `epgeneral_relocalization` v0.3.0。Ground-Air profile 另部署 `epgeneral_ground_air_control` v0.1.0。MQTT schema 1.0、SRT 与 UDP wire schema 保持兼容。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -58,8 +60,9 @@
 | UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.13.2 |
 | UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v2` | epgeneral_task_control v0.4.4 |
 | UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v2` | epgeneral_task_control v0.4.4 |
+| 重定位控制与状态 | 双向 | UDP 14565/14566，地面站 TCP 14601 提供地图 | `ccs-relocalization-v1` | epgeneral_relocalization v0.3.0 |
 
-端侧身份和六类运行配置统一由 `edge_side_pkg/EPGeneral_device_config/config/` 提供，`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。设备 profile 原件保存在指控端 `edge_side_pkg/deploy/`；部署时覆盖同名配置文件，`deploy` 与 `documents` 目录本身不进入端侧。
+单包 launch 默认从 `edge_side_pkg/EPGeneral_device_config/config/` 读取身份和六类运行配置；设备一键脚本显式读取 `<工作空间>/config/<profile>/`。`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。设备 profile 原件保存在指控端 `edge_side_pkg/deploy/`；部署时覆盖同名配置文件，`deploy` 与 `documents` 目录本身不进入端侧。
 
 地面站允许编辑设备 ID，并级联本地当前地图和未归档任务引用，但不会修改端侧配置或历史执行记录。修改后必须同步更新端侧 `device.yaml` 并重启相关节点，否则旧 ID 的 MQTT/UDP 数据会被视为未登记设备。设备页面显示的“运行模式”仍来自 MQTT `health.flight_mode`；`armed` 和 `system_status` 字段继续接收并保持 wire contract，仅不再显示在设备完整信息区。
 
@@ -458,17 +461,17 @@ v2 在保留 1400 字节数据报、800 字节分片、zlib、CRC32、request ID
 
 ### 兼容性与网络
 
-- 指控平台版本：v0.17.0；端侧任务协调包：`epgeneral_task_control v0.1.0`。任务协议 schema 保持 1。
+- 当前产品 v0.23.1、任务包 v0.4.4 使用 MessagePack schema 2；历史 schema 1 不应作为当前网络信封发送。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
-- 可信内网明文 MessagePack，schema 1；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
+- 可信内网明文 MessagePack，schema 2；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。
-- 设备应使用 NTP 保持 UTC 时钟同步。共同执行的 `scheduled_at` 默认在当前时间后 5 秒；所有设备必须在启动前完成 ACK。
+- 设备应使用 NTP 保持 UTC 时钟同步。共同执行的 `scheduled_at` 默认在当前时间后 3 秒；所有设备必须在启动前完成 ACK。
 
 所有消息信封如下，`payload` 随消息类型变化：
 
 ```python
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "protocol_id": "ccs-task-control-v2",
   "task_id": "<稳定任务 ID>",
   "subtask_id": "<设备子任务 ID>",
@@ -522,7 +525,7 @@ v2 在保留 1400 字节数据报、800 字节分片、zlib、CRC32、request ID
 
 ```python
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "task_id": "...", "task_name": "园区巡检", "map_id": "...", "frame_id": "map",
   "subtask_id": "...", "device_id": "UAV_001", "revision": 3,
   "cruise_speed_mps": 1.5, "start_delay_seconds": 2.0,

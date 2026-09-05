@@ -65,6 +65,22 @@ class DeviceConfigRepositoryTests(unittest.TestCase):
         remaining = self.repository.delete({"ugv-099"})
         self.assertFalse(any(item.device_id == "UGV-099" for item in remaining))
 
+    def test_ground_air_relocalization_profile_is_accepted_and_persisted(self):
+        self.repository.load()
+        profiles = self.repository.create(DeviceProfile(
+            "UGV-900",
+            "Ground-Air vehicle",
+            "UGV",
+            "127.0.0.2",
+            relocalization_profile="ground_air_agv",
+            battery_profile="disabled",
+        ))
+        created = next(item for item in profiles if item.device_id == "UGV-900")
+        self.assertEqual(created.relocalization_profile, "ground_air_agv")
+        reloaded = DeviceConfigRepository(self.path).load()
+        saved = next(item for item in reloaded if item.device_id == "UGV-900")
+        self.assertEqual(saved.relocalization_profile, "ground_air_agv")
+
     def test_duplicate_id_is_case_insensitive(self):
         self.repository.load()
         with self.assertRaises(DuplicateDeviceIdError):

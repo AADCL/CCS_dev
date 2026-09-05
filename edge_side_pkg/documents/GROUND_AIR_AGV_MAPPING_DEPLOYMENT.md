@@ -1,5 +1,7 @@
 # Ground-Air AGV 建图部署说明
 
+CCS 0.23.1 当前入口：[使用手册](USER_MANUAL.md) · [接口与配置](INTERFACE_REFERENCE.md)。本页保留设备专项步骤；运行配置以脚本传入的工作空间 config/profile 为准，不能只修改包内默认 YAML。
+
 ## 适用范围
 
 适用于 `AGV_001`（`192.168.50.130`），复用 Scout 的指令应答、会话状态、产物校验、下载和日志组织方式。原始 `manual_mapping.launch` 与 `save_mapping.launch` 保持只读，部署前后必须校验 SHA-256，不修改、不覆盖。

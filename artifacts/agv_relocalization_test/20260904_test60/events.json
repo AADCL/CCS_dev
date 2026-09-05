@@ -1,0 +1,1580 @@
+[
+  {
+    "at": "2026-09-04T09:23:45.210462+00:00",
+    "status": "unknown_space",
+    "message": "正在协商端侧地图状态",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:45.272159+00:00",
+    "status": "unknown_space",
+    "message": "未知空间",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:45.366925+00:00",
+    "status": "map_transferring",
+    "message": "正在向端侧下发地图",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:45.449671+00:00",
+    "status": "map_transferring",
+    "message": "地图下发中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:45.511610+00:00",
+    "status": "map_transferring",
+    "message": "地图下发中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:46.083549+00:00",
+    "status": "map_transferring",
+    "message": "地图下发中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:46.083549+00:00",
+    "status": "map_verifying",
+    "message": "地图校验中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:46.083549+00:00",
+    "status": "map_ready",
+    "message": "已知地图未定位",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:46.104441+00:00",
+    "status": "stack_starting",
+    "message": "正在启动端侧重定位功能",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:46.145166+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:46.145674+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:46.597463+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:46.781857+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:47.332939+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:47.516816+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:47.965618+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:48.515607+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:48.577299+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:49.148000+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:49.517978+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:49.764567+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:50.336889+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:50.461148+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:50.909581+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:51.522759+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:51.522759+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:52.093655+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:52.522180+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:52.707106+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:53.340640+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:53.585067+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:54.094946+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:54.461521+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:54.766907+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:55.663597+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:55.663597+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:56.519229+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:56.762969+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:57.333559+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:57.516882+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:57.905113+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:58.518126+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:58.518126+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:59.088086+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:59.516478+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:23:59.700216+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:00.271128+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:00.536741+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:00.841906+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:01.454576+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:01.517022+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:02.026196+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:02.516395+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:02.638901+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:03.211042+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:03.516284+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:03.841379+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:04.452568+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:04.513588+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:05.024812+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:05.532631+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:05.594059+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:06.206785+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:06.513377+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:06.780721+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:07.411476+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:07.472998+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:07.962806+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:08.512842+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:08.574566+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:09.165217+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:09.512590+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:09.758571+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:10.329922+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:10.533716+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:10.901421+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:11.512805+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:11.512805+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:12.083737+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:12.512578+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:12.655743+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:13.267512+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:13.514091+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:13.840634+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:14.471534+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:14.471534+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:15.022419+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:15.472036+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:15.595750+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:16.145821+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:16.511233+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:16.714958+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:17.346417+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:17.529395+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:17.895647+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:18.469157+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:18.714134+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:19.328115+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:19.470069+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:20.224514+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:20.529730+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:20.855830+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:21.470746+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:21.532425+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:22.164519+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:22.530684+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:22.774742+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:23.345219+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:23.548381+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:23.915023+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:24.486258+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:24.547586+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:25.178211+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:25.483709+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:25.790956+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:26.362053+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:26.484011+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:26.971319+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:27.480743+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:27.542366+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:28.113851+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:28.480284+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:28.664371+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:29.278061+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:29.481936+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:29.848333+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:30.420043+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:30.482525+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:31.051971+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:31.480055+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:31.602904+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:32.173903+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:32.540250+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:32.723322+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:33.417681+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:33.539649+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:34.090070+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:34.540010+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:34.724262+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:35.276194+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:35.480299+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:35.846419+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:36.416315+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:36.477717+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:37.027645+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:37.474633+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:37.596183+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:38.168750+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:38.476236+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:38.784785+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:39.357894+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:39.479845+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:39.968230+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:40.478816+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:40.540040+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:41.108596+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:41.475732+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:41.719709+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:42.290988+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:42.474795+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:42.903150+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:43.472472+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:43.472472+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:44.043758+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:44.531690+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:44.653630+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:45.224462+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:45.489181+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:45.793969+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:46.547475+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:46.547475+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:47.159428+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:47.545845+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:47.729677+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:48.468159+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:48.652643+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:49.221854+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:49.527785+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:49.854065+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:50.464435+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:50.464435+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:51.036275+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:51.465388+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:51.588485+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:52.161772+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:52.469118+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:52.734252+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:53.346239+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:53.468497+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:53.916042+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:54.489455+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:54.489455+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:55.063062+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:55.490596+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:55.673863+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:56.226302+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:56.491849+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:56.817888+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:57.369583+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:57.492429+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:58.000371+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:58.489196+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:58.612750+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:59.184584+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:59.493598+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:24:59.740185+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:00.371937+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:00.496009+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:01.004372+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:01.492874+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:01.554016+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:02.190186+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:02.475544+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:02.743526+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:03.355269+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:03.477705+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:03.928861+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:04.479201+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:04.541163+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:05.130865+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:05.478704+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:05.743631+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:06.354212+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:06.476947+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:06.926647+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:07.477354+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:07.477354+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:08.052596+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:08.480629+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:08.624103+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:09.234893+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:09.500246+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:09.806672+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:10.420307+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:10.482000+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:10.991982+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:11.482348+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:11.624444+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:12.177373+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:12.483643+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:12.811479+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:13.423067+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:13.484536+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:13.994739+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:14.485772+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:14.608347+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:15.242531+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:15.486918+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:15.793097+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:16.366783+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:16.490161+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:16.980003+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:17.491427+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:17.552894+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:18.166156+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:18.491233+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:18.735659+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:19.307178+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:19.491477+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:19.921298+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:20.490752+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:20.490752+00:00",
+    "status": "stack_starting",
+    "message": "重定位功能启动中",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  },
+  {
+    "at": "2026-09-04T09:25:20.613479+00:00",
+    "status": "failed",
+    "message": "relocalization ROS topics or /initialpose subscriber did not become ready",
+    "session_id": "e7314fb1cf4941efaadd7475192247c8"
+  }
+]

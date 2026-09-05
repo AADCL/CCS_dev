@@ -1,5 +1,7 @@
 # Ground-Air AGV 重定位部署说明
 
+CCS 0.23.1 当前入口：[使用手册](USER_MANUAL.md) · [接口与配置](INTERFACE_REFERENCE.md)。本页保留设备专项步骤；运行配置以脚本传入的工作空间 config/profile 为准，不能只修改包内默认 YAML。
+
 ## 运行契约
 
 `AGV_001` 使用 `ground_air_agv` profile。指控依次协商地图、下发地图、启动栈并提交 `map` 坐标系初始位姿。端侧协调器实际创建的顶层命令为：

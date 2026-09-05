@@ -1,0 +1,105 @@
+[rospy.client][INFO] 2026-09-05 10:57:41,156: init_node, name[/epgeneral_map_stream], pid[8160]
+[xmlrpc][INFO] 2026-09-05 10:57:41,157: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-05 10:57:41,157: Started XML-RPC server [http://192.168.50.130:45725/]
+[rospy.init][INFO] 2026-09-05 10:57:41,158: ROS Slave URI: [http://192.168.50.130:45725/]
+[rospy.impl.masterslave][INFO] 2026-09-05 10:57:41,158: _ready: http://192.168.50.130:45725/
+[rospy.registration][INFO] 2026-09-05 10:57:41,159: Registering with master node http://192.168.50.130:11311
+[xmlrpc][INFO] 2026-09-05 10:57:41,159: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-05 10:57:41,258: registered with master
+[rospy.rosout][INFO] 2026-09-05 10:57:41,258: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-05 10:57:41,270: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-05 10:57:41,272: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rospy.internal][INFO] 2026-09-05 10:57:41,528: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-05 10:57:41,646: topic[/tf] adding connection to [http://192.168.50.130:41613/], count 0
+[rospy.internal][INFO] 2026-09-05 10:57:41,662: topic[/tf_static] adding connection to [http://192.168.50.130:41613/], count 0
+[rosout][INFO] 2026-09-05 10:57:41,695: epgeneral_map_stream v2 standby; UDP 0.0.0.0:14561 HTTP 0.0.0.0:14600
+[rospy.internal][INFO] 2026-09-05 10:58:19,674: topic[/tf_static] adding connection to [http://192.168.50.130:37105/], count 1
+[rospy.internal][INFO] 2026-09-05 10:58:19,680: topic[/tf_static] adding connection to [http://192.168.50.130:33491/], count 2
+[rosout][INFO] 2026-09-05 10:59:57,684: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=449f83ba restart_active=False
+[rosout][INFO] 2026-09-05 10:59:57,688: mapping prepare started session=ade99270 restarted=False previous_state=none
+[rospy.internal][INFO] 2026-09-05 10:59:57,707: topic[/livox/lidar] adding connection to [http://192.168.50.130:44951/], count 0
+[rospy.internal][INFO] 2026-09-05 10:59:57,932: topic impl's ref count is zero, deleting topic /livox/lidar...
+[rospy.internal][INFO] 2026-09-05 10:59:57,933: topic[/livox/lidar] removing connection to http://192.168.50.130:44951/
+[rosout][INFO] 2026-09-05 10:59:57,935: mapping topic probe passed topic=/livox/lidar type=livox_ros_driver2/CustomMsg frame=base_link
+[rosout][INFO] 2026-09-05 10:59:57,941: mapping readiness check=pointcloud available=True reason=none
+[rospy.internal][INFO] 2026-09-05 10:59:57,961: topic[/livox/imu] adding connection to [http://192.168.50.130:44951/], count 0
+[rospy.internal][INFO] 2026-09-05 10:59:57,969: topic impl's ref count is zero, deleting topic /livox/imu...
+[rospy.internal][INFO] 2026-09-05 10:59:57,970: topic[/livox/imu] removing connection to http://192.168.50.130:44951/
+[rosout][INFO] 2026-09-05 10:59:57,972: mapping topic probe passed topic=/livox/imu type=sensor_msgs/Imu frame=base_link
+[rosout][INFO] 2026-09-05 10:59:57,974: mapping readiness check=imu available=True reason=none
+[rosout][INFO] 2026-09-05 10:59:57,982: mapping readiness check=artifact_storage available=True reason=none
+[rosout][WARNING] 2026-09-05 11:00:01,382: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+[rosout][INFO] 2026-09-05 11:00:01,388: mapping TX type=prepare_result session=ade99270 sequence=0 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:01,391: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=449f83ba restart_active=False
+[rosout][INFO] 2026-09-05 11:00:01,393: mapping cache hit command=prepare_mapping session=ade99270 request=449f83ba
+[rosout][INFO] 2026-09-05 11:00:01,396: mapping TX type=prepare_result session=ade99270 sequence=1 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:01,398: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=449f83ba restart_active=False
+[rosout][INFO] 2026-09-05 11:00:01,400: mapping cache hit command=prepare_mapping session=ade99270 request=449f83ba
+[rosout][INFO] 2026-09-05 11:00:01,403: mapping TX type=prepare_result session=ade99270 sequence=2 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:01,405: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=449f83ba restart_active=False
+[rosout][INFO] 2026-09-05 11:00:01,408: mapping cache hit command=prepare_mapping session=ade99270 request=449f83ba
+[rosout][INFO] 2026-09-05 11:00:01,410: mapping TX type=prepare_result session=ade99270 sequence=3 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:01,412: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=449f83ba restart_active=False
+[rosout][INFO] 2026-09-05 11:00:01,415: mapping cache hit command=prepare_mapping session=ade99270 request=449f83ba
+[rosout][INFO] 2026-09-05 11:00:01,417: mapping TX type=prepare_result session=ade99270 sequence=4 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:12,904: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=bea69fe2 restart_active=True
+[rosout][INFO] 2026-09-05 11:00:12,908: mapping prepare started session=ade99270 restarted=False previous_state=none
+[rospy.internal][INFO] 2026-09-05 11:00:12,934: topic[/livox/lidar] adding connection to [http://192.168.50.130:44951/], count 0
+[rospy.internal][INFO] 2026-09-05 11:00:13,075: topic impl's ref count is zero, deleting topic /livox/lidar...
+[rospy.internal][INFO] 2026-09-05 11:00:13,075: topic[/livox/lidar] removing connection to http://192.168.50.130:44951/
+[rospy.internal][ERROR] 2026-09-05 11:00:13,077: Traceback (most recent call last):
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 739, in receive_once
+    sock.setblocking(1)
+OSError: [Errno 9] Bad file descriptor
+
+[rosout][INFO] 2026-09-05 11:00:13,078: mapping topic probe passed topic=/livox/lidar type=livox_ros_driver2/CustomMsg frame=base_link
+[rosout][INFO] 2026-09-05 11:00:13,085: mapping readiness check=pointcloud available=True reason=none
+[rospy.internal][INFO] 2026-09-05 11:00:13,094: topic[/livox/imu] adding connection to [http://192.168.50.130:44951/], count 0
+[rospy.internal][INFO] 2026-09-05 11:00:13,105: topic impl's ref count is zero, deleting topic /livox/imu...
+[rospy.internal][INFO] 2026-09-05 11:00:13,105: topic[/livox/imu] removing connection to http://192.168.50.130:44951/
+[rosout][INFO] 2026-09-05 11:00:13,109: mapping topic probe passed topic=/livox/imu type=sensor_msgs/Imu frame=base_link
+[rosout][INFO] 2026-09-05 11:00:13,111: mapping readiness check=imu available=True reason=none
+[rosout][INFO] 2026-09-05 11:00:13,120: mapping readiness check=artifact_storage available=True reason=none
+[rosout][WARNING] 2026-09-05 11:00:16,038: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+[rosout][INFO] 2026-09-05 11:00:16,042: mapping TX type=prepare_result session=ade99270 sequence=5 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:16,044: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=bea69fe2 restart_active=True
+[rosout][INFO] 2026-09-05 11:00:16,046: mapping cache hit command=prepare_mapping session=ade99270 request=bea69fe2
+[rosout][INFO] 2026-09-05 11:00:16,047: mapping TX type=prepare_result session=ade99270 sequence=6 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:16,049: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=bea69fe2 restart_active=True
+[rosout][INFO] 2026-09-05 11:00:16,051: mapping cache hit command=prepare_mapping session=ade99270 request=bea69fe2
+[rosout][INFO] 2026-09-05 11:00:16,053: mapping TX type=prepare_result session=ade99270 sequence=7 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:16,055: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=bea69fe2 restart_active=True
+[rosout][INFO] 2026-09-05 11:00:16,057: mapping cache hit command=prepare_mapping session=ade99270 request=bea69fe2
+[rosout][INFO] 2026-09-05 11:00:16,058: mapping TX type=prepare_result session=ade99270 sequence=8 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:16,060: mapping RX type=prepare_mapping map=a0ece4e3 session=ade99270 request=bea69fe2 restart_active=True
+[rosout][INFO] 2026-09-05 11:00:16,063: mapping cache hit command=prepare_mapping session=ade99270 request=bea69fe2
+[rosout][INFO] 2026-09-05 11:00:16,066: mapping TX type=prepare_result session=ade99270 sequence=9 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:25,374: mapping RX type=abort_mapping map=a0ece4e3 session=ade99270 request=00c0d920 restart_active=False
+[rosout][INFO] 2026-09-05 11:00:25,377: mapping TX type=command_ack session=ade99270 sequence=10 destination=192.168.50.101:14562 detail=abort_mapping accepted=False
+[rosout][INFO] 2026-09-05 11:00:45,300: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:45,303: mapping prepare started session=e4440fbe restarted=False previous_state=none
+[rospy.internal][INFO] 2026-09-05 11:00:45,329: topic[/livox/lidar] adding connection to [http://192.168.50.130:44951/], count 0
+[rospy.internal][INFO] 2026-09-05 11:00:45,482: topic impl's ref count is zero, deleting topic /livox/lidar...
+[rospy.internal][INFO] 2026-09-05 11:00:45,483: topic[/livox/lidar] removing connection to http://192.168.50.130:44951/
+[rosout][INFO] 2026-09-05 11:00:45,486: mapping topic probe passed topic=/livox/lidar type=livox_ros_driver2/CustomMsg frame=base_link
+[rosout][INFO] 2026-09-05 11:00:45,493: mapping readiness check=pointcloud available=True reason=none
+[rospy.internal][INFO] 2026-09-05 11:00:45,503: topic[/livox/imu] adding connection to [http://192.168.50.130:44951/], count 0
+[rospy.internal][INFO] 2026-09-05 11:00:45,512: topic impl's ref count is zero, deleting topic /livox/imu...
+[rospy.internal][INFO] 2026-09-05 11:00:45,512: topic[/livox/imu] removing connection to http://192.168.50.130:44951/
+[rosout][INFO] 2026-09-05 11:00:45,515: mapping topic probe passed topic=/livox/imu type=sensor_msgs/Imu frame=base_link
+[rosout][INFO] 2026-09-05 11:00:45,519: mapping readiness check=imu available=True reason=none
+[rosout][INFO] 2026-09-05 11:00:45,526: mapping readiness check=artifact_storage available=True reason=none
+[rosout][WARNING] 2026-09-05 11:00:49,820: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+[rosout][INFO] 2026-09-05 11:00:49,826: mapping TX type=prepare_result session=e4440fbe sequence=0 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:49,831: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:49,836: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+[rosout][INFO] 2026-09-05 11:00:49,841: mapping TX type=prepare_result session=e4440fbe sequence=1 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:49,844: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:49,848: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+[rosout][INFO] 2026-09-05 11:00:49,851: mapping TX type=prepare_result session=e4440fbe sequence=2 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:49,855: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:49,858: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+[rosout][INFO] 2026-09-05 11:00:49,863: mapping TX type=prepare_result session=e4440fbe sequence=3 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:49,871: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:49,878: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+[rosout][INFO] 2026-09-05 11:00:49,884: mapping TX type=prepare_result session=e4440fbe sequence=4 destination=192.168.50.101:14562 detail= accepted=False

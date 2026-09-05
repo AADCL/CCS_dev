@@ -1,0 +1,2 @@
+{"map_id": "agv-static-20260905-112926", "session_id": "b6d78c2d4b31422fab69574b6096b7e2", "listen": "192.168.50.101:14572"}
+{"result": "FAIL", "error": "timed out waiting for expected mapping response"}

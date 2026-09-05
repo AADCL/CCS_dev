@@ -3,9 +3,15 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from xml.etree import ElementTree
 
 import yaml
+
+from ccs_monitor.device_config import DeviceConfigRepository
+from ccs_monitor.models import RelocalizationStatus
+from ccs_monitor.relocalization_config import load_relocalization_config
+from ccs_monitor.relocalization_services import RelocalizationService
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -207,6 +213,27 @@ class GroundAirAgvProfileTests(unittest.TestCase):
         self.assertEqual(device, {"id": "AGV_001", "ip": "192.168.50.130"})
         self.assertEqual(record["ip_address"], device["ip"])
         self.assertEqual(record["relocalization_profile"], "ground_air_agv")
+
+    def test_ground_station_reports_relocalization_supported(self):
+        repository = DeviceConfigRepository(
+            ROOT / "config" / "devices.json",
+            valid_device_types=lambda: {"UGV", "UAV", "AMR", "USV", "QRD", "AGV", "FGV"},
+        )
+        profiles = repository.load()
+        self.assertFalse(repository.read_only, repository.error_message)
+        profile = next(item for item in profiles if item.device_id == "AGV_001")
+        source = SimpleNamespace(
+            device=lambda device_id: object() if device_id == "AGV_001" else None,
+            profile=lambda device_id: profile if device_id == "AGV_001" else None,
+        )
+        service = RelocalizationService(
+            load_relocalization_config(ROOT / "config" / "relocalization.json"),
+            map_repository=object(),
+            source=source,
+        )
+        snapshot = service.snapshot("map-1", "AGV_001")
+        self.assertEqual(snapshot.status, RelocalizationStatus.UNKNOWN_SPACE)
+        self.assertEqual(snapshot.message, "未知空间")
 
     def test_relocalization_profile_and_scoped_override_contract(self):
         relocalization = yaml.safe_load(

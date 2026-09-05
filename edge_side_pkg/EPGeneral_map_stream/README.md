@@ -1,5 +1,7 @@
 # epgeneral_map_stream
 
+配套 CCS 0.23.1：[完整使用手册](../documents/USER_MANUAL.md) · [设备内接口与参数](../documents/INTERFACE_REFERENCE.md)。包级 launch 默认读取共享配置包；一键脚本显式读取工作空间 `config/<profile>`，修改后需重启。
+
 <!-- epgeneral_map_stream_VERSION: 0.13.2 -->
 
 版本：`v0.13.2`。运行配置统一由 `epgeneral_device_config/config/map_stream.yaml` 提供。

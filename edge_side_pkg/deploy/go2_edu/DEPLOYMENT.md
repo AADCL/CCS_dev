@@ -1,5 +1,7 @@
 # Go2 EDU 端侧部署
 
+CCS 0.23.1 当前入口：[使用手册](../../documents/USER_MANUAL.md) · [接口与配置](../../documents/INTERFACE_REFERENCE.md)。本页保留设备专项步骤；运行配置以脚本传入的工作空间 config/profile 为准，不能只修改包内默认 YAML。
+
 本目录是指控端保存的 Go2 EDU profile 原件，不应整体复制到端侧。Go2 不再依赖 `EPQRD_go2_bridge`；在线、位姿、IMU 和点云分别使用 Livox/LIO 原生 ROS 话题。
 
 ## 发布内容
@@ -30,7 +32,7 @@ MQTT topic、`ccs-udp-telemetry-v1`、`ccs-map-stream-v2`、任务和重定位 w
 ## 安装
 
 ```bash
-sudo install -D -m 0644 timesyncd-ccs.conf \
+sudo install -D -m 0644 config/timesyncd-ccs.conf \
   /etc/systemd/timesyncd.conf.d/ccs.conf
 sudo systemctl restart systemd-timesyncd
 

@@ -7,7 +7,7 @@
 <p align="center">设备监测 · 联合建图 · 重定位 · 任务编排 · 指控大屏</p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-0.23.0-1677ff">
+  <img alt="版本" src="https://img.shields.io/badge/version-0.23.1-1677ff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%E2%80%933.13-3776AB">
   <img alt="Qt" src="https://img.shields.io/badge/PySide6-6.8.3-41CD52">
   <img alt="许可证" src="https://img.shields.io/badge/license-Apache--2.0-blue">
@@ -18,7 +18,8 @@ CCS 是面向可信局域网的 PySide6 地面站，连接无人车、无人机�
 本地设备编辑、地图仓储和其他可用页面仍可使用。
 
 **快速入口：** [安装与发布](docs/RELEASING.md) · [使用与部署](docs/USER_GUIDE.md) ·
-[端侧指南](edge_side_pkg/README.md) · [通信协议](docs/EDGE_DEVICE_INTERFACES.md) ·
+[端侧指南](edge_side_pkg/README.md) · [端侧使用手册](edge_side_pkg/documents/USER_MANUAL.md) ·
+[设备内接口与配置](edge_side_pkg/documents/INTERFACE_REFERENCE.md) · [通信协议](docs/EDGE_DEVICE_INTERFACES.md) ·
 [电池曲线校准](docs/BATTERY_CALIBRATION.md) · [版本记录](CHANGELOG.md)
 
 ## 核心能力
@@ -102,10 +103,11 @@ Input 部分应包含 srt。设备地址、端口、MQTT 和 NTP 参数位于 co
 Windows 需要 Inno Setup 6；Linux 使用 Ubuntu 20.04 构建基线。
 构建环境、Docker 命令和第三方组件来源详见 [发布指南](docs/RELEASING.md#本地构建)。
 
-## v0.23.0
+## v0.23.1
 
-新增 Windows/Ubuntu 安装包、地面站便携包与独立端侧配套包；统一安装目录数据路径、
-本地主题设置、冻结融合 worker 和随包 FFmpeg；重整发布与使用文档。
+重写端侧总览，新增八包使用手册和跨工作空间接口、35 份 YAML 参数参考；
+统一设备部署入口、配置生效说明及发行包离线文档。延续 Windows/Ubuntu 安装包、
+地面站便携包与独立端侧配套包，发布渠道为 pre-release-v0.23.1。
 
 端侧协议和各 ROS 包独立版本保持不变。完整变更见 [CHANGELOG](CHANGELOG.md)。
 

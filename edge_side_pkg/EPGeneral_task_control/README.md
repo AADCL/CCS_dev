@@ -1,5 +1,7 @@
 # epgeneral_task_control
 
+配套 CCS 0.23.1：[完整使用手册](../documents/USER_MANUAL.md) · [设备内接口与参数](../documents/INTERFACE_REFERENCE.md)。包级 launch 默认读取共享配置包；一键脚本显式读取工作空间 `config/<profile>`，修改后需重启。
+
 <!-- epgeneral_task_control_VERSION: 0.4.4 -->
 
 版本：`v0.4.4`。运行配置统一由 `epgeneral_device_config/config/task_control.yaml` 提供。Scout Mini 通过 `/fastlio_odom`、实时 `map<-odom` TF 和 `/move_base/goal` 执行有序地图航点；任务目录默认位于 `~/ccs_edge_ws/mission/`。导航适配器持有 `tf2_ros.TransformListener`，持续接收 `/tf` 和 `/tf_static`。

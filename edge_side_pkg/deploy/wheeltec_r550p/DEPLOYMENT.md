@@ -1,5 +1,7 @@
 # WheelTech R550P CCS 端侧部署
 
+CCS 0.23.1 当前入口：[使用手册](../../documents/USER_MANUAL.md) · [接口与配置](../../documents/INTERFACE_REFERENCE.md)。本页保留设备专项步骤；运行配置以脚本传入的工作空间 config/profile 为准，不能只修改包内默认 YAML。
+
 本 profile 对应 `UGV_003`（`192.168.50.122`），运行于 Ubuntu 20.04、ROS Noetic 和 Jetson NX。CCS 工作空间为 `/home/nrc19/ccs_edge_ws`，并以 Overlay 方式只读依赖 `/home/nrc19/livox_fastlio` 中已验证的 WheelTech、Livox 和 FAST-LIO 包。
 
 ## 工作空间

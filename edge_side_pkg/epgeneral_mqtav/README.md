@@ -1,5 +1,7 @@
 # epgeneral_mqtav
 
+配套 CCS 0.23.1：[完整使用手册](../documents/USER_MANUAL.md) · [设备内接口与参数](../documents/INTERFACE_REFERENCE.md)。包级 launch 默认读取共享配置包；一键脚本显式读取工作空间 `config/<profile>`，修改后需重启。
+
 <!-- epgeneral_mqtav_VERSION: 0.4.1 -->
 
 当前版本：`v0.4.1`
@@ -93,17 +95,18 @@ device:
 
 `ground_station_ip` 必须是地面站 MQTT Broker 的可达 IP。当前版本仅支持内网明文 MQTT，不提供账号密码、TLS、下行控制或飞行控制指令。主题模板只允许 `{device_id}` 占位符，且不得含 MQTT 通配符。
 
-## Ubuntu 18.04 / ROS Melodic + Python 3.6.9 部署
+## Ubuntu 20.04 / ROS Noetic + Python 3 部署
 
 确保 MAVROS 已能连接飞控，然后在机载计算机执行：
 
 ```bash
 sudo apt update
 sudo apt install python3-paho-mqtt python3-yaml python3-catkin-pkg python3-rospkg
-source /opt/ros/melodic/setup.bash
-python3 --version  # 应为 Python 3.6.9
+source /opt/ros/noetic/setup.bash
+python3 --version  # 使用 ROS Noetic 的系统 Python 3
 mkdir -p ~/catkin_ws/src
-cp -r /path/to/CCS_dev/edge_side_pkg ~/catkin_ws/src/edge_side_pkg
+cp -a /path/to/CCS_dev/edge_side_pkg/EPGeneral_device_config ~/catkin_ws/src/
+cp -a /path/to/CCS_dev/edge_side_pkg/epgeneral_mqtav ~/catkin_ws/src/
 cd ~/catkin_ws
 rosdep install --from-paths src --ignore-src -r -y
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
@@ -123,15 +126,16 @@ roslaunch epgeneral_mqtav epgeneral_mqtav.launch log_dir:=/var/log/epgeneral_mqt
 
 默认日志为 `~/.ros/log/epgeneral_mqtav/epgeneral_mqtav.log`，单个文件达到 10 MiB 后轮转，最多保留 5 份历史日志。每条日志均同步刷盘并输出到 `roslaunch` 控制台；启动、配置加载、订阅、连接、断联、重连失败、数据发送、每次心跳、关闭和未捕获异常均有记录。
 
-### Melodic Python 解释器报错
+### Python 解释器与历史兼容
 
 ROS Melodic 默认会使用 Python 2.7。`epgeneral_mqtav` v0.3.0 已兼容 Python 3.6.9，但必须让整个 catkin 工作空间使用 Python 3 构建。若启动日志出现 `devel/lib/python2.7`，说明仍在使用旧缓存。清理旧构建产物后重新编译：
 
 ```bash
 cd ~/catkin_ws
-source /opt/ros/melodic/setup.bash
-python3 --version  # 预期 Python 3.6.9
-rm -rf build devel
+source /opt/ros/noetic/setup.bash
+python3 --version  # 使用系统 Python 3
+mv build "build.backup-$(date +%Y%m%d-%H%M%S)"
+mv devel "devel.backup-$(date +%Y%m%d-%H%M%S)"
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 python3 -c "import epgeneral_mqtav; print(epgeneral_mqtav.get_version())"
@@ -145,7 +149,7 @@ roslaunch epgeneral_mqtav epgeneral_mqtav.launch
 使用 `catkin build` 而非 `catkin_make` 时，请在工作空间根目录执行：
 
 ```bash
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 catkin clean -y
 catkin config --cmake-args -DPYTHON_EXECUTABLE=/usr/bin/python3
 catkin build epgeneral_mqtav

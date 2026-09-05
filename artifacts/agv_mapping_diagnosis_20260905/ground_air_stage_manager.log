@@ -1,0 +1,285 @@
+[rospy.client][INFO] 2026-09-04 17:21:23,320: init_node, name[/ground_air_stage_manager], pid[437296]
+[xmlrpc][INFO] 2026-09-04 17:21:23,343: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-04 17:21:23,348: Started XML-RPC server [http://192.168.50.130:36201/]
+[rospy.impl.masterslave][INFO] 2026-09-04 17:21:23,351: _ready: http://192.168.50.130:36201/
+[rospy.init][INFO] 2026-09-04 17:21:23,348: ROS Slave URI: [http://192.168.50.130:36201/]
+[rospy.registration][INFO] 2026-09-04 17:21:23,371: Registering with master node http://localhost:11311
+[xmlrpc][INFO] 2026-09-04 17:21:23,371: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-04 17:21:23,453: registered with master
+[rospy.rosout][INFO] 2026-09-04 17:21:23,453: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-04 17:21:23,478: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-04 17:21:23,484: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rospy.internal][INFO] 2026-09-04 17:21:23,562: topic[/tf] adding connection to [http://192.168.50.130:33191/], count 0
+[rosout][INFO] 2026-09-04 17:21:23,571: ccs_edge_ws Ground-Air stage manager is ready
+[rospy.internal][INFO] 2026-09-04 17:21:23,578: topic[/tf_static] adding connection to [http://192.168.50.130:33191/], count 0
+[rospy.internal][INFO] 2026-09-04 17:21:23,698: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-04 17:21:40,616: topic[/tf_static] adding connection to [http://192.168.50.130:45321/], count 1
+[rospy.internal][INFO] 2026-09-04 17:21:40,627: topic[/tf_static] adding connection to [http://192.168.50.130:37955/], count 2
+[rosout][INFO] 2026-09-04 17:23:49,672: starting managed stage process: roslaunch epgeneral_ground_air_control relocalization_control.launch map_id:=a60133b8-9915-4f08-8139-3483f4cfbdb9 service_wait_timeout:=60.0 relocalize_timeout:=60.0
+[rospy.internal][INFO] 2026-09-04 17:23:54,351: topic[/tf] adding connection to [http://192.168.50.130:44057/], count 1
+[rospy.internal][INFO] 2026-09-04 17:23:56,333: topic[/tf] adding connection to [http://192.168.50.130:38429/], count 2
+[rosout][INFO] 2026-09-04 17:23:56,340: system stage request: stage active; relocalization quality is reported separately
+[rospy.internal][INFO] 2026-09-04 17:25:13,626: topic[/ground_air/system/stage] adding connection to [/rostopic_442808_1788513913348], count 0
+[rospy.internal][INFO] 2026-09-04 17:25:13,860: topic[/ground_air/system/stage] removing connection to /rostopic_442808_1788513913348
+[rospy.internal][INFO] 2026-09-04 17:25:17,933: topic[/tf] removing connection to http://192.168.50.130:38429/
+[rospy.internal][INFO] 2026-09-04 17:25:17,975: topic[/tf] removing connection to http://192.168.50.130:44057/
+[rospy.internal][INFO] 2026-09-04 17:25:18,013: topic[/tf] adding connection to [http://192.168.50.130:44057/], count 1
+[rospy.internal][ERROR] 2026-09-04 17:25:18,031: Unable to initiate TCP/IP socket to 192.168.50.130:39441 (http://192.168.50.130:44057/): Traceback (most recent call last):
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 569, in connect
+    self.read_header()
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 664, in read_header
+    self._validate_header(read_ros_handshake_header(sock, self.read_buff, self.protocol.buff_size))
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 607, in _validate_header
+    raise TransportInitError("remote error reported: %s"%header['error'])
+rospy.exceptions.TransportInitError: remote error reported: received a connection for a nonexistent topic [/tf] from [TCPROS connection on port 39441 to [192.168.50.130:57334 on socket 12]] [/ground_air_stage_manager].
+
+[rospy.internal][ERROR] 2026-09-04 17:25:18,032: unable to create subscriber transport: remote error reported: received a connection for a nonexistent topic [/tf] from [TCPROS connection on port 39441 to [192.168.50.130:57334 on socket 12]] [/ground_air_stage_manager]..  Will try again in 0.5s
+[rosout][INFO] 2026-09-04 17:25:19,408: system stage request: base stage active
+[rospy.internal][INFO] 2026-09-04 17:27:00,364: topic[/ground_air/system/stage] adding connection to [/rostopic_444949_1788514020169], count 0
+[rospy.internal][INFO] 2026-09-04 17:27:00,584: topic[/ground_air/system/stage] removing connection to /rostopic_444949_1788514020169
+[rospy.core][INFO] 2026-09-04 17:32:51,718: signal_shutdown [signal-15]
+[rospy.internal][INFO] 2026-09-04 17:32:51,728: topic[/rosout] removing connection to /rosout
+[rospy.internal][INFO] 2026-09-04 17:32:51,729: topic[/tf] removing connection to http://192.168.50.130:33191/
+[rospy.internal][INFO] 2026-09-04 17:32:51,730: topic[/tf_static] removing connection to http://192.168.50.130:33191/
+[rospy.internal][INFO] 2026-09-04 17:32:51,731: topic[/tf_static] removing connection to http://192.168.50.130:45321/
+[rospy.internal][INFO] 2026-09-04 17:32:51,732: topic[/tf_static] removing connection to http://192.168.50.130:37955/
+[rospy.impl.masterslave][INFO] 2026-09-04 17:32:51,733: signal-15
+[rospy.core][INFO] 2026-09-04 17:32:52,322: signal_shutdown [atexit]
+[rospy.client][INFO] 2026-09-04 17:34:18,652: init_node, name[/ground_air_stage_manager], pid[454112]
+[xmlrpc][INFO] 2026-09-04 17:34:18,679: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-04 17:34:18,683: Started XML-RPC server [http://192.168.50.130:45843/]
+[rospy.init][INFO] 2026-09-04 17:34:18,683: ROS Slave URI: [http://192.168.50.130:45843/]
+[rospy.impl.masterslave][INFO] 2026-09-04 17:34:18,686: _ready: http://192.168.50.130:45843/
+[rospy.registration][INFO] 2026-09-04 17:34:18,689: Registering with master node http://localhost:11311
+[xmlrpc][INFO] 2026-09-04 17:34:18,690: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-04 17:34:18,787: registered with master
+[rospy.rosout][INFO] 2026-09-04 17:34:18,788: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-04 17:34:18,812: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-04 17:34:18,814: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rospy.internal][INFO] 2026-09-04 17:34:18,883: topic[/tf] adding connection to [http://192.168.50.130:35159/], count 0
+[rospy.internal][INFO] 2026-09-04 17:34:18,899: topic[/tf_static] adding connection to [http://192.168.50.130:35159/], count 0
+[rosout][INFO] 2026-09-04 17:34:18,898: ccs_edge_ws Ground-Air stage manager is ready
+[rospy.internal][INFO] 2026-09-04 17:34:19,057: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-04 17:34:35,055: topic[/tf_static] adding connection to [http://192.168.50.130:37805/], count 1
+[rospy.internal][INFO] 2026-09-04 17:34:35,068: topic[/tf_static] adding connection to [http://192.168.50.130:46599/], count 2
+[rosout][INFO] 2026-09-04 17:35:30,735: starting managed stage process: roslaunch epgeneral_ground_air_control relocalization_control.launch map_id:=a60133b8-9915-4f08-8139-3483f4cfbdb9 service_wait_timeout:=60.0 relocalize_timeout:=60.0
+[rospy.internal][INFO] 2026-09-04 17:35:35,345: topic[/tf] adding connection to [http://192.168.50.130:35307/], count 1
+[rospy.internal][INFO] 2026-09-04 17:35:37,460: topic[/tf] adding connection to [http://192.168.50.130:39171/], count 2
+[rosout][INFO] 2026-09-04 17:35:37,473: system stage request: stage active; relocalization quality is reported separately
+[rospy.internal][INFO] 2026-09-04 17:36:27,679: topic[/ground_air/system/stage] adding connection to [/rostopic_456910_1788514587440], count 0
+[rospy.internal][INFO] 2026-09-04 17:36:27,986: topic[/ground_air/system/stage] removing connection to /rostopic_456910_1788514587440
+[rospy.internal][INFO] 2026-09-04 17:51:38,976: topic[/tf] removing connection to http://192.168.50.130:39171/
+[rospy.internal][INFO] 2026-09-04 17:51:38,988: topic[/tf] removing connection to http://192.168.50.130:35307/
+[rospy.internal][INFO] 2026-09-04 17:51:38,994: topic[/tf] adding connection to [http://192.168.50.130:35307/], count 1
+[rospy.internal][ERROR] 2026-09-04 17:51:38,997: Unable to initiate TCP/IP socket to 192.168.50.130:60199 (http://192.168.50.130:35307/): Traceback (most recent call last):
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 569, in connect
+    self.read_header()
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 664, in read_header
+    self._validate_header(read_ros_handshake_header(sock, self.read_buff, self.protocol.buff_size))
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 607, in _validate_header
+    raise TransportInitError("remote error reported: %s"%header['error'])
+rospy.exceptions.TransportInitError: remote error reported: received a connection for a nonexistent topic [/tf] from [TCPROS connection on port 60199 to [192.168.50.130:57826 on socket 10]] [/ground_air_stage_manager].
+
+[rospy.internal][ERROR] 2026-09-04 17:51:38,997: unable to create subscriber transport: remote error reported: received a connection for a nonexistent topic [/tf] from [TCPROS connection on port 60199 to [192.168.50.130:57826 on socket 10]] [/ground_air_stage_manager]..  Will try again in 0.5s
+[rosout][INFO] 2026-09-04 17:51:40,143: system stage request: base stage active
+[rospy.core][INFO] 2026-09-04 17:51:42,369: signal_shutdown [signal-15]
+[rospy.internal][INFO] 2026-09-04 17:51:42,376: topic[/rosout] removing connection to /rosout
+[rospy.internal][INFO] 2026-09-04 17:51:42,376: topic[/tf] removing connection to http://192.168.50.130:35159/
+[rospy.internal][INFO] 2026-09-04 17:51:42,377: topic[/tf_static] removing connection to http://192.168.50.130:35159/
+[rospy.internal][INFO] 2026-09-04 17:51:42,377: topic[/tf_static] removing connection to http://192.168.50.130:37805/
+[rospy.internal][INFO] 2026-09-04 17:51:42,378: topic[/tf_static] removing connection to http://192.168.50.130:46599/
+[rospy.impl.masterslave][INFO] 2026-09-04 17:51:42,378: signal-15
+[rospy.core][INFO] 2026-09-04 17:51:42,973: signal_shutdown [atexit]
+[rospy.client][INFO] 2026-09-04 17:52:58,736: init_node, name[/ground_air_stage_manager], pid[473013]
+[xmlrpc][INFO] 2026-09-04 17:52:58,763: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-04 17:52:58,766: Started XML-RPC server [http://192.168.50.130:40547/]
+[rospy.init][INFO] 2026-09-04 17:52:58,766: ROS Slave URI: [http://192.168.50.130:40547/]
+[rospy.impl.masterslave][INFO] 2026-09-04 17:52:58,767: _ready: http://192.168.50.130:40547/
+[rospy.registration][INFO] 2026-09-04 17:52:58,784: Registering with master node http://localhost:11311
+[xmlrpc][INFO] 2026-09-04 17:52:58,787: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-04 17:52:58,868: registered with master
+[rospy.rosout][INFO] 2026-09-04 17:52:58,868: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-04 17:52:58,889: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-04 17:52:58,891: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rospy.internal][INFO] 2026-09-04 17:52:58,940: topic[/tf] adding connection to [http://192.168.50.130:38289/], count 0
+[rosout][INFO] 2026-09-04 17:52:58,942: ccs_edge_ws Ground-Air stage manager is ready
+[rospy.internal][INFO] 2026-09-04 17:52:58,960: topic[/tf_static] adding connection to [http://192.168.50.130:38289/], count 0
+[rospy.internal][INFO] 2026-09-04 17:52:59,164: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-04 17:53:14,480: topic[/tf_static] adding connection to [http://192.168.50.130:45175/], count 1
+[rospy.internal][INFO] 2026-09-04 17:53:14,486: topic[/tf_static] adding connection to [http://192.168.50.130:35129/], count 2
+[rospy.core][INFO] 2026-09-04 17:55:28,248: signal_shutdown [signal-15]
+[rospy.internal][INFO] 2026-09-04 17:55:28,256: topic[/rosout] removing connection to /rosout
+[rospy.internal][INFO] 2026-09-04 17:55:28,257: topic[/tf] removing connection to http://192.168.50.130:38289/
+[rospy.internal][INFO] 2026-09-04 17:55:28,258: topic[/tf_static] removing connection to http://192.168.50.130:38289/
+[rospy.internal][INFO] 2026-09-04 17:55:28,259: topic[/tf_static] removing connection to http://192.168.50.130:45175/
+[rospy.internal][INFO] 2026-09-04 17:55:28,259: topic[/tf_static] removing connection to http://192.168.50.130:35129/
+[rospy.impl.masterslave][INFO] 2026-09-04 17:55:28,260: signal-15
+[rospy.core][INFO] 2026-09-04 17:55:28,852: signal_shutdown [atexit]
+[rospy.client][INFO] 2026-09-04 17:56:58,531: init_node, name[/ground_air_stage_manager], pid[478872]
+[xmlrpc][INFO] 2026-09-04 17:56:58,539: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-04 17:56:58,541: Started XML-RPC server [http://192.168.50.130:42969/]
+[rospy.impl.masterslave][INFO] 2026-09-04 17:56:58,542: _ready: http://192.168.50.130:42969/
+[rospy.init][INFO] 2026-09-04 17:56:58,541: ROS Slave URI: [http://192.168.50.130:42969/]
+[rospy.registration][INFO] 2026-09-04 17:56:58,559: Registering with master node http://localhost:11311
+[xmlrpc][INFO] 2026-09-04 17:56:58,559: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-04 17:56:58,644: registered with master
+[rospy.rosout][INFO] 2026-09-04 17:56:58,645: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-04 17:56:58,667: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-04 17:56:58,670: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rospy.internal][INFO] 2026-09-04 17:56:58,736: topic[/tf] adding connection to [http://192.168.50.130:40551/], count 0
+[rospy.internal][INFO] 2026-09-04 17:56:58,741: topic[/tf_static] adding connection to [http://192.168.50.130:40551/], count 0
+[rosout][INFO] 2026-09-04 17:56:58,741: ccs_edge_ws Ground-Air stage manager is ready
+[rospy.internal][INFO] 2026-09-04 17:56:58,919: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-04 17:57:15,746: topic[/tf_static] adding connection to [http://192.168.50.130:36041/], count 1
+[rospy.internal][INFO] 2026-09-04 17:57:15,753: topic[/tf_static] adding connection to [http://192.168.50.130:41441/], count 2
+[rosout][INFO] 2026-09-04 17:58:34,649: starting managed stage process: roslaunch epgeneral_ground_air_control relocalization_control.launch map_id:=a60133b8-9915-4f08-8139-3483f4cfbdb9 service_wait_timeout:=60.0 relocalize_timeout:=60.0
+[rospy.internal][INFO] 2026-09-04 17:58:38,579: topic[/tf] adding connection to [http://192.168.50.130:42695/], count 1
+[rospy.internal][INFO] 2026-09-04 17:58:41,045: topic[/tf] adding connection to [http://192.168.50.130:36509/], count 2
+[rosout][INFO] 2026-09-04 17:58:41,084: system stage request: stage active; relocalization quality is reported separately
+[rospy.internal][INFO] 2026-09-04 17:59:01,170: topic[/tf] removing connection to http://192.168.50.130:36509/
+[rospy.internal][INFO] 2026-09-04 17:59:01,187: topic[/tf] removing connection to http://192.168.50.130:42695/
+[rospy.internal][INFO] 2026-09-04 17:59:01,275: topic[/tf] adding connection to [http://192.168.50.130:42695/], count 1
+[rospy.internal][WARNING] 2026-09-04 17:59:01,294: Unknown error initiating TCP/IP socket to 192.168.50.130:48209 (http://192.168.50.130:42695/): Traceback (most recent call last):
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 569, in connect
+    self.read_header()
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 664, in read_header
+    self._validate_header(read_ros_handshake_header(sock, self.read_buff, self.protocol.buff_size))
+  File "/opt/ros/noetic/lib/python3/dist-packages/rosgraph/network.py", line 359, in read_ros_handshake_header
+    raise ROSHandshakeException("connection from sender terminated before handshake header received. %s bytes were received. Please check sender for additional details."%b.tell())
+rosgraph.network.ROSHandshakeException: connection from sender terminated before handshake header received. 0 bytes were received. Please check sender for additional details.
+
+[rospy.internal][INFO] 2026-09-04 17:59:01,295: topic[/tf] removing connection to http://192.168.50.130:42695/
+[rosout][INFO] 2026-09-04 17:59:02,542: system stage request: base stage active
+[rosout][INFO] 2026-09-04 17:59:07,592: starting managed stage process: roslaunch epgeneral_ground_air_control relocalization_control.launch map_id:=a60133b8-9915-4f08-8139-3483f4cfbdb9 service_wait_timeout:=60.0 relocalize_timeout:=60.0
+[rospy.internal][INFO] 2026-09-04 17:59:11,493: topic[/tf] adding connection to [http://192.168.50.130:40297/], count 1
+[rospy.internal][INFO] 2026-09-04 17:59:13,620: topic[/tf] adding connection to [http://192.168.50.130:36679/], count 2
+[rosout][INFO] 2026-09-04 17:59:13,786: system stage request: stage active; relocalization quality is reported separately
+[rospy.internal][INFO] 2026-09-04 18:00:41,389: topic[/tf] removing connection to http://192.168.50.130:36679/
+[rospy.internal][INFO] 2026-09-04 18:00:41,400: topic[/tf] removing connection to http://192.168.50.130:40297/
+[rospy.internal][INFO] 2026-09-04 18:00:41,439: topic[/tf] adding connection to [http://192.168.50.130:40297/], count 1
+[rospy.internal][ERROR] 2026-09-04 18:00:41,442: Unable to initiate TCP/IP socket to 192.168.50.130:45241 (http://192.168.50.130:40297/): Traceback (most recent call last):
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 569, in connect
+    self.read_header()
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 664, in read_header
+    self._validate_header(read_ros_handshake_header(sock, self.read_buff, self.protocol.buff_size))
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 607, in _validate_header
+    raise TransportInitError("remote error reported: %s"%header['error'])
+rospy.exceptions.TransportInitError: remote error reported: received a connection for a nonexistent topic [/tf] from [TCPROS connection on port 45241 to [192.168.50.130:33284 on socket 12]] [/ground_air_stage_manager].
+
+[rospy.internal][ERROR] 2026-09-04 18:00:41,443: unable to create subscriber transport: remote error reported: received a connection for a nonexistent topic [/tf] from [TCPROS connection on port 45241 to [192.168.50.130:33284 on socket 12]] [/ground_air_stage_manager]..  Will try again in 0.5s
+[rosout][INFO] 2026-09-04 18:00:42,661: system stage request: base stage active
+[rospy.core][INFO] 2026-09-04 18:00:44,760: signal_shutdown [signal-15]
+[rospy.internal][INFO] 2026-09-04 18:00:44,769: topic[/rosout] removing connection to /rosout
+[rospy.internal][INFO] 2026-09-04 18:00:44,770: topic[/tf] removing connection to http://192.168.50.130:40551/
+[rospy.internal][INFO] 2026-09-04 18:00:44,770: topic[/tf_static] removing connection to http://192.168.50.130:40551/
+[rospy.internal][INFO] 2026-09-04 18:00:44,771: topic[/tf_static] removing connection to http://192.168.50.130:36041/
+[rospy.internal][INFO] 2026-09-04 18:00:44,772: topic[/tf_static] removing connection to http://192.168.50.130:36041/
+[rospy.internal][INFO] 2026-09-04 18:00:44,772: topic[/tf_static] removing connection to http://192.168.50.130:41441/
+[rospy.impl.masterslave][INFO] 2026-09-04 18:00:44,773: signal-15
+[rospy.core][INFO] 2026-09-04 18:00:45,363: signal_shutdown [atexit]
+[rospy.client][INFO] 2026-09-04 18:02:12,345: init_node, name[/ground_air_stage_manager], pid[485939]
+[xmlrpc][INFO] 2026-09-04 18:02:12,378: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-04 18:02:12,383: Started XML-RPC server [http://192.168.50.130:38289/]
+[rospy.init][INFO] 2026-09-04 18:02:12,384: ROS Slave URI: [http://192.168.50.130:38289/]
+[rospy.impl.masterslave][INFO] 2026-09-04 18:02:12,387: _ready: http://192.168.50.130:38289/
+[rospy.registration][INFO] 2026-09-04 18:02:12,407: Registering with master node http://localhost:11311
+[xmlrpc][INFO] 2026-09-04 18:02:12,407: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-04 18:02:12,488: registered with master
+[rospy.rosout][INFO] 2026-09-04 18:02:12,488: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-04 18:02:12,519: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-04 18:02:12,523: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rospy.internal][INFO] 2026-09-04 18:02:12,633: topic[/tf] adding connection to [http://192.168.50.130:39489/], count 0
+[rosout][INFO] 2026-09-04 18:02:12,633: ccs_edge_ws Ground-Air stage manager is ready
+[rospy.internal][INFO] 2026-09-04 18:02:12,646: topic[/tf_static] adding connection to [http://192.168.50.130:39489/], count 0
+[rospy.internal][INFO] 2026-09-04 18:02:12,765: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-04 18:02:29,790: topic[/tf_static] adding connection to [http://192.168.50.130:46815/], count 1
+[rospy.internal][INFO] 2026-09-04 18:02:29,797: topic[/tf_static] adding connection to [http://192.168.50.130:46577/], count 2
+[rospy.core][INFO] 2026-09-04 18:13:19,770: signal_shutdown [signal-15]
+[rospy.internal][INFO] 2026-09-04 18:13:19,777: topic[/rosout] removing connection to /rosout
+[rospy.internal][INFO] 2026-09-04 18:13:19,777: topic[/tf] removing connection to http://192.168.50.130:39489/
+[rospy.internal][INFO] 2026-09-04 18:13:19,778: topic[/tf_static] removing connection to http://192.168.50.130:39489/
+[rospy.internal][INFO] 2026-09-04 18:13:19,778: topic[/tf_static] removing connection to http://192.168.50.130:46815/
+[rospy.internal][INFO] 2026-09-04 18:13:19,779: topic[/tf_static] removing connection to http://192.168.50.130:46577/
+[rospy.impl.masterslave][INFO] 2026-09-04 18:13:19,780: signal-15
+[rospy.core][INFO] 2026-09-04 18:13:20,373: signal_shutdown [atexit]
+[rospy.client][INFO] 2026-09-04 18:14:47,940: init_node, name[/ground_air_stage_manager], pid[500684]
+[xmlrpc][INFO] 2026-09-04 18:14:47,954: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-04 18:14:47,957: Started XML-RPC server [http://192.168.50.130:43465/]
+[rospy.init][INFO] 2026-09-04 18:14:47,958: ROS Slave URI: [http://192.168.50.130:43465/]
+[rospy.impl.masterslave][INFO] 2026-09-04 18:14:47,960: _ready: http://192.168.50.130:43465/
+[rospy.registration][INFO] 2026-09-04 18:14:47,982: Registering with master node http://localhost:11311
+[xmlrpc][INFO] 2026-09-04 18:14:47,986: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-04 18:14:48,061: registered with master
+[rospy.rosout][INFO] 2026-09-04 18:14:48,062: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-04 18:14:48,083: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-04 18:14:48,088: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rosout][INFO] 2026-09-04 18:14:48,123: ccs_edge_ws Ground-Air stage manager is ready
+[rospy.internal][INFO] 2026-09-04 18:14:48,135: topic[/tf] adding connection to [http://192.168.50.130:35369/], count 0
+[rospy.internal][INFO] 2026-09-04 18:14:48,149: topic[/tf_static] adding connection to [http://192.168.50.130:35369/], count 0
+[rospy.internal][INFO] 2026-09-04 18:14:48,340: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-04 18:15:05,082: topic[/tf_static] adding connection to [http://192.168.50.130:37525/], count 1
+[rospy.internal][INFO] 2026-09-04 18:15:05,091: topic[/tf_static] adding connection to [http://192.168.50.130:42727/], count 2
+[rosout][INFO] 2026-09-04 18:16:33,589: starting managed stage process: roslaunch epgeneral_ground_air_control relocalization_control.launch map_id:=a60133b8-9915-4f08-8139-3483f4cfbdb9 service_wait_timeout:=60.0 relocalize_timeout:=60.0
+[rospy.internal][INFO] 2026-09-04 18:16:37,563: topic[/tf] adding connection to [http://192.168.50.130:38883/], count 1
+[rosout][INFO] 2026-09-04 18:16:40,106: system stage request: stage active; relocalization quality is reported separately
+[rospy.internal][INFO] 2026-09-04 18:16:40,128: topic[/tf] adding connection to [http://192.168.50.130:42291/], count 2
+[rospy.internal][INFO] 2026-09-04 18:18:23,368: topic[/tf] removing connection to http://192.168.50.130:42291/
+[rospy.internal][INFO] 2026-09-04 18:18:23,374: topic[/tf] removing connection to http://192.168.50.130:38883/
+[rospy.internal][INFO] 2026-09-04 18:18:23,378: topic[/tf] adding connection to [http://192.168.50.130:38883/], count 1
+[rospy.internal][ERROR] 2026-09-04 18:18:23,380: Unable to initiate TCP/IP socket to 192.168.50.130:55747 (http://192.168.50.130:38883/): Traceback (most recent call last):
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 569, in connect
+    self.read_header()
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 664, in read_header
+    self._validate_header(read_ros_handshake_header(sock, self.read_buff, self.protocol.buff_size))
+  File "/opt/ros/noetic/lib/python3/dist-packages/rospy/impl/tcpros_base.py", line 607, in _validate_header
+    raise TransportInitError("remote error reported: %s"%header['error'])
+rospy.exceptions.TransportInitError: remote error reported: received a connection for a nonexistent topic [/tf] from [TCPROS connection on port 55747 to [192.168.50.130:35550 on socket 10]] [/ground_air_stage_manager].
+
+[rospy.internal][ERROR] 2026-09-04 18:18:23,380: unable to create subscriber transport: remote error reported: received a connection for a nonexistent topic [/tf] from [TCPROS connection on port 55747 to [192.168.50.130:35550 on socket 10]] [/ground_air_stage_manager]..  Will try again in 0.5s
+[rosout][INFO] 2026-09-04 18:18:24,647: system stage request: base stage active
+[rospy.core][INFO] 2026-09-04 18:18:26,872: signal_shutdown [signal-15]
+[rospy.internal][INFO] 2026-09-04 18:18:26,880: topic[/rosout] removing connection to /rosout
+[rospy.internal][INFO] 2026-09-04 18:18:26,881: topic[/tf] removing connection to http://192.168.50.130:35369/
+[rospy.internal][INFO] 2026-09-04 18:18:26,881: topic[/tf] removing connection to http://192.168.50.130:35369/
+[rospy.internal][INFO] 2026-09-04 18:18:26,882: topic[/tf_static] removing connection to http://192.168.50.130:35369/
+[rospy.internal][INFO] 2026-09-04 18:18:26,884: topic[/tf_static] removing connection to http://192.168.50.130:37525/
+[rospy.internal][INFO] 2026-09-04 18:18:26,885: topic[/tf_static] removing connection to http://192.168.50.130:42727/
+[rospy.internal][INFO] 2026-09-04 18:18:26,886: topic[/tf_static] removing connection to http://192.168.50.130:42727/
+[rospy.impl.masterslave][INFO] 2026-09-04 18:18:26,886: signal-15
+[rospy.core][INFO] 2026-09-04 18:18:27,475: signal_shutdown [atexit]
+[rospy.client][INFO] 2026-09-04 18:19:47,906: init_node, name[/ground_air_stage_manager], pid[507095]
+[xmlrpc][INFO] 2026-09-04 18:19:47,919: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-04 18:19:47,919: Started XML-RPC server [http://192.168.50.130:40193/]
+[rospy.impl.masterslave][INFO] 2026-09-04 18:19:47,919: _ready: http://192.168.50.130:40193/
+[rospy.init][INFO] 2026-09-04 18:19:47,920: ROS Slave URI: [http://192.168.50.130:40193/]
+[rospy.registration][INFO] 2026-09-04 18:19:47,937: Registering with master node http://localhost:11311
+[xmlrpc][INFO] 2026-09-04 18:19:47,937: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-04 18:19:48,020: registered with master
+[rospy.rosout][INFO] 2026-09-04 18:19:48,021: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-04 18:19:48,037: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-04 18:19:48,039: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rospy.internal][INFO] 2026-09-04 18:19:48,075: topic[/tf] adding connection to [http://192.168.50.130:37409/], count 0
+[rosout][INFO] 2026-09-04 18:19:48,088: ccs_edge_ws Ground-Air stage manager is ready
+[rospy.internal][INFO] 2026-09-04 18:19:48,092: topic[/tf_static] adding connection to [http://192.168.50.130:37409/], count 0
+[rospy.internal][INFO] 2026-09-04 18:19:48,277: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-04 18:20:05,326: topic[/tf_static] adding connection to [http://192.168.50.130:36527/], count 1
+[rospy.internal][INFO] 2026-09-04 18:20:05,445: topic[/tf_static] adding connection to [http://192.168.50.130:37017/], count 2
+[rospy.internal][INFO] 2026-09-04 18:38:15,296: topic[/ground_air/system/stage] adding connection to [/rostopic_525909_1788518295051], count 0
+[rospy.internal][INFO] 2026-09-04 18:38:15,512: topic[/ground_air/system/stage] removing connection to /rostopic_525909_1788518295051
+[rospy.client][INFO] 2026-09-05 10:58:05,003: init_node, name[/ground_air_stage_manager], pid[8803]
+[xmlrpc][INFO] 2026-09-05 10:58:05,009: XML-RPC server binding to 0.0.0.0:0
+[xmlrpc][INFO] 2026-09-05 10:58:05,010: Started XML-RPC server [http://192.168.50.130:34521/]
+[rospy.init][INFO] 2026-09-05 10:58:05,011: ROS Slave URI: [http://192.168.50.130:34521/]
+[rospy.impl.masterslave][INFO] 2026-09-05 10:58:05,012: _ready: http://192.168.50.130:34521/
+[rospy.registration][INFO] 2026-09-05 10:58:05,031: Registering with master node http://192.168.50.130:11311
+[xmlrpc][INFO] 2026-09-05 10:58:05,033: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-09-05 10:58:05,112: registered with master
+[rospy.rosout][INFO] 2026-09-05 10:58:05,113: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-09-05 10:58:05,126: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-09-05 10:58:05,136: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rospy.internal][INFO] 2026-09-05 10:58:05,197: topic[/tf] adding connection to [http://192.168.50.130:41613/], count 0
+[rosout][INFO] 2026-09-05 10:58:05,195: ccs_edge_ws Ground-Air stage manager is ready
+[rospy.internal][INFO] 2026-09-05 10:58:05,214: topic[/tf_static] adding connection to [http://192.168.50.130:41613/], count 0
+[rospy.internal][INFO] 2026-09-05 10:58:05,356: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-09-05 10:58:19,674: topic[/tf_static] adding connection to [http://192.168.50.130:37105/], count 1
+[rospy.internal][INFO] 2026-09-05 10:58:19,680: topic[/tf_static] adding connection to [http://192.168.50.130:33491/], count 2

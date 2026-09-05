@@ -1,0 +1,42 @@
+CHECKED_UTC=20260905T040051Z
+ENABLEMENT=disabled
+ACTIVE=inactive
+MainPID=0
+NRestarts=0
+ActiveState=inactive
+SubState=dead
+GUARD=2
+STAGE=data: 0 ---
+PRECHECK=ground-air stage service ready; session guard enabled
+TRANSIENT_NODES
+RESIDENT_NODES
+/a8_mini_camera
+/base_link_body_broadcaster
+/epgeneral_map_stream
+/epgeneral_mqtav
+/epgeneral_relocalization
+/epgeneral_udp_telemetry
+/epgeneral_video_srt
+/ground_air_stage_manager
+/livox_lidar_publisher2
+/mavros
+/odom_camera_init_broadcaster
+RESIDENT_PROCESSES
+   6424    5963 Sat Sep  5 10:56:50 2026 bash /home/bitcq/ccs_edge_ws/start_ccs_edge_dev.sh
+   6500    6424 Sat Sep  5 10:56:51 2026 /usr/bin/python3 /opt/ros/noetic/bin/roscore
+   8160    8031 Sat Sep  5 10:57:39 2026 /usr/bin/python3 /home/bitcq/ccs_edge_ws/devel/lib/epgeneral_map_stream/epgeneral_map_stream_node.py __name:=epgeneral_map_stream __log:=/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log
+   8803    6424 Sat Sep  5 10:58:00 2026 /usr/bin/python3 /home/bitcq/ccs_edge_ws/devel/lib/epgeneral_ground_air_control/ground_air_stage_manager_node.py
+PORTS
+UNCONN  0       0                 0.0.0.0:14561          0.0.0.0:*              
+UNCONN  0       0                 0.0.0.0:14565          0.0.0.0:*              
+DEPLOYED_HASHES
+d9ccec1f9c97ad39d66473b5c33b8a0486b82a2e1e67c77547b95802ef94c97d  /home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/scripts/ground_air_stage_client.py
+020ee57789cd3f1db15fd60d43a53dc4240c81863cc078b900c34f1031d22577  /home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/package.xml
+6e5bba99dd9cdcd9e3e600c18bc537eac60ede4f0770d0fcb3b5284018df9f78  /home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/__init__.py
+dbd63e8e141b89e7e889458e095b39f496589bad1fa4a2929abae6f894d82d39  /home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/config.py
+da5cb6692cf5f553a903b7908eab87211156f9c836fcc87870213be24eb53a3a  /home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py
+UNDERLAY_HASHES
+fbc332ac343f6c72f232de176db669738110f850ca77a3285d6dc789efc56326  /home/bitcq/catkin_ws/src/car_bringup/launch/manual_mapping.launch
+62cd3592256fd77b0c87001c69293c1034d088875e663d4e72a284b3eeea8f52  /home/bitcq/catkin_ws/src/car_bringup/launch/save_mapping.launch
+0df0e8480dc20ceea346f9c6b7d3b6a749b91639fc329f1d208ad346d8ea5909  /home/bitcq/catkin_ws/src/car_bringup/launch/relocalization_system.launch
+0b647a527fc4a7f9cc397ebe7d9cd3f56ae3e260139e06c74dd9368b414a6553  /home/bitcq/catkin_ws/src/car_bringup/launch/mapping_coordinate_transforms.launch

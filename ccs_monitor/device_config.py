@@ -24,7 +24,6 @@ RETIRED_STATUS_CARDS = {"octomap_mapping", "occupancy_grid_mapping"}
 RELOCALIZATION_PROFILES = {
     "scout_mini", "wheeltec_r550p", "ground_air_agv", "go2_edu", "disabled"
 }
-RELOCALIZATION_PROFILES = {"scout_mini", "wheeltec_r550p", "go2_edu", "disabled"}
 BATTERY_PROFILES = {"scout_mini", "wheeltec_r550p", "disabled"}
 
 
