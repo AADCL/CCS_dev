@@ -1,0 +1,169 @@
+REQUEST_LOG
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/rosout.log:240:1788577249.846640586 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/rosout.log:241:1788577249.850267171 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/rosout.log:243:1788577249.857269763 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/rosout.log:244:1788577249.861188888 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/rosout.log:246:1788577249.875106573 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/rosout.log:247:1788577249.881494283 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:31:[rosout][WARNING] 2026-09-05 11:00:01,382: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:63:[rosout][WARNING] 2026-09-05 11:00:16,038: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:79:[rosout][INFO] 2026-09-05 11:00:45,300: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:92:[rosout][WARNING] 2026-09-05 11:00:49,820: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:94:[rosout][INFO] 2026-09-05 11:00:49,831: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:95:[rosout][INFO] 2026-09-05 11:00:49,836: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:97:[rosout][INFO] 2026-09-05 11:00:49,844: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:98:[rosout][INFO] 2026-09-05 11:00:49,848: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:100:[rosout][INFO] 2026-09-05 11:00:49,855: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:101:[rosout][INFO] 2026-09-05 11:00:49,858: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:103:[rosout][INFO] 2026-09-05 11:00:49,871: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/latest/epgeneral_map_stream-1.log:104:[rosout][INFO] 2026-09-05 11:00:49,878: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ground_air_stage_manager.log:13:[rosout][INFO] 2026-09-04 17:21:23,571: ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ground_air_stage_manager.log:61:[rosout][INFO] 2026-09-04 17:34:18,898: ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ground_air_stage_manager.log:105:[rosout][INFO] 2026-09-04 17:52:58,942: ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ground_air_stage_manager.log:131:[rosout][INFO] 2026-09-04 17:56:58,741: ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ground_air_stage_manager.log:192:[rosout][INFO] 2026-09-04 18:02:12,633: ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ground_air_stage_manager.log:216:[rosout][INFO] 2026-09-04 18:14:48,123: ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ground_air_stage_manager.log:262:[rosout][INFO] 2026-09-04 18:19:48,088: ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ground_air_stage_manager.log:281:[rosout][INFO] 2026-09-05 10:58:05,195: ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/ff828806-a849-11f1-b3f3-3c6d66a31a01/rosout.log:156:1788517188.091472625 INFO /ground_air_stage_manager [ground_air_stage_manager_node.py:213(main)] [topics: /rosout, /tf, /tf_static, /ground_air/system/stage_detail, /ground_air/system/stage] ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/421c3378-a846-11f1-92ca-3c6d66a31a01/rosout.log:171:1788515578.945151567 INFO /ground_air_stage_manager [ground_air_stage_manager_node.py:213(main)] [topics: /ground_air/system/stage, /tf, /tf_static, /ground_air/system/stage_detail, /rosout] ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/cac094f8-a846-11f1-a90a-3c6d66a31a01/rosout.log:162:1788515818.752215385 INFO /ground_air_stage_manager [ground_air_stage_manager_node.py:213(main)] [topics: /ground_air/system/stage_detail, /tf, /ground_air/system/stage, /rosout, /tf_static] ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:158:1788577085.198137283 INFO /ground_air_stage_manager [ground_air_stage_manager_node.py:213(main)] [topics: /rosout, /tf_static, /ground_air/system/stage, /tf, /ground_air/system/stage_detail] ccs_edge_ws Ground-Air stage manager is ready
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:185:1788577201.386440515 WARN /epgeneral_map_stream [node.py:137(RosMapStreamNode._log_warn)] [topics: /rosout, /tf, /tf_static] mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:208:1788577216.041492938 WARN /epgeneral_map_stream [node.py:137(RosMapStreamNode._log_warn)] [topics: /rosout, /tf, /tf_static] mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:228:1788577245.302787780 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:235:1788577249.825020790 WARN /epgeneral_map_stream [node.py:137(RosMapStreamNode._log_warn)] [topics: /rosout, /tf, /tf_static] mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:237:1788577249.834525108 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:238:1788577249.839457511 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:240:1788577249.846640586 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:241:1788577249.850267171 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:243:1788577249.857269763 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:244:1788577249.861188888 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:246:1788577249.875106573 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/rosout.log:247:1788577249.881494283 INFO /epgeneral_map_stream [node.py:133(RosMapStreamNode._log_info)] [topics: /rosout, /tf, /tf_static] mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:31:[rosout][WARNING] 2026-09-05 11:00:01,382: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:63:[rosout][WARNING] 2026-09-05 11:00:16,038: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:79:[rosout][INFO] 2026-09-05 11:00:45,300: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:92:[rosout][WARNING] 2026-09-05 11:00:49,820: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:94:[rosout][INFO] 2026-09-05 11:00:49,831: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:95:[rosout][INFO] 2026-09-05 11:00:49,836: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:97:[rosout][INFO] 2026-09-05 11:00:49,844: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:98:[rosout][INFO] 2026-09-05 11:00:49,848: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:100:[rosout][INFO] 2026-09-05 11:00:49,855: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:101:[rosout][INFO] 2026-09-05 11:00:49,858: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:103:[rosout][INFO] 2026-09-05 11:00:49,871: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/727a3134-a8d5-11f1-967c-3c6d66a31a01/epgeneral_map_stream-1.log:104:[rosout][INFO] 2026-09-05 11:00:49,878: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+/home/bitcq/ccs_edge_ws/log/ground_air_agv/ros/4788ea10-a849-11f1-8392-3c6d66a31a01/rosout.log:143:1788516888.126206636 INFO /ground_air_stage_manager [ground_air_stage_manager_node.py:213(main)] [topics: /ground_air/system/stage_detail, /ground_air/system/stage, /tf, /rosout, /tf_static] ccs_edge_ws Ground-Air stage manager is ready
+
+CURRENT_CLIENT
+     1	#!/usr/bin/env python3
+     2	"""Short-lived CCS client for the boot-owned mapping stage service."""
+     3	import sys
+     4	import time
+     5	
+     6	SERVICE = "/ground_air/system/set_stage"
+     7	GUARD_PARAM = "/ground_air_stage_manager/ccs_session_guard_version"
+     8	EXTERNAL_TF_PARAM = "/ground_air_stage_manager/external_tf_required"
+     9	LEGACY_RESIDENT_TF_PARAM = "/ground_air_stage_manager/resident_tf_version"
+    10	STATIC_TF_NODES = {
+    11	    "/odom_camera_init_broadcaster",
+    12	    "/base_link_body_broadcaster",
+    13	}
+    14	
+    15	
+    16	def request_stage(call, stage, map_id, timeout):
+    17	    response = call(stage=stage, map_id=map_id, timeout=timeout)
+    18	    if not response.success or response.active_stage != stage:
+    19	        raise RuntimeError("set_stage rejected: {} (active_stage={})".format(
+    20	            response.message, response.active_stage))
+    21	    return response
+    22	
+    23	
+    24	def wait_nodes(get_nodes, expected, timeout, clock=time.monotonic, sleep=time.sleep):
+    25	    deadline = clock() + timeout
+    26	    while clock() < deadline:
+    27	        if set(expected).issubset(set(get_nodes())):
+    28	            return
+    29	        sleep(0.2)
+    30	    raise RuntimeError("mapping nodes did not become ready: {}".format(",".join(expected)))
+    31	
+    32	
+    33	def require_external_tf(get_param, get_nodes):
+    34	    if get_param(LEGACY_RESIDENT_TF_PARAM, 0) == 1:
+    35	        raise RuntimeError("legacy resident TF ownership is still enabled")
+    36	    if get_param(EXTERNAL_TF_PARAM, 0) != 1:
+    37	        raise RuntimeError("stage manager is not configured for external TF")
+    38	    missing = STATIC_TF_NODES.difference(get_nodes())
+    39	    if missing:
+    40	        raise RuntimeError(
+    41	            "startup coordinate transforms are not ready: {}".format(
+    42	                ",".join(sorted(missing))))
+    43	
+    44	
+    45	def action_requires_external_tf(mode):
+    46	    return mode in ("--check", "--start")
+    47	
+    48	
+    49	def main(args):
+    50	    import re
+    51	    import rospy
+    52	    import rosnode
+    53	    from ground_air_msgs.srv import SetSystemStage
+    54	
+    55	    mode = args[0]
+    56	    if mode not in ("--check", "--start", "--stop", "--abort"):
+    57	        raise ValueError("unsupported action")
+    58	    if mode == "--check":
+    59	        owner = "preflight"
+    60	    else:
+    61	        owner = args[1]
+    62	        if not re.fullmatch(r"[a-f0-9]{32}", owner):
+    63	            raise ValueError("invalid CCS session identity")
+    64	    rospy.init_node("ccs_mapping_stage_" + owner, disable_signals=True)
+    65	    rospy.wait_for_service(SERVICE, timeout=4.0)
+    66	    if rospy.get_param(GUARD_PARAM, 0) != 1:
+    67	        raise RuntimeError("stage manager lacks CCS session ownership guard")
+    68	    if action_requires_external_tf(mode):
+    69	        require_external_tf(rospy.get_param, rosnode.get_node_names)
+    70	    if mode == "--check":
+    71	        print("ground-air stage service ready; session guard enabled")
+    72	        return
+    73	
+    74	    map_id, timeout = args[2], float(args[3])
+    75	    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", map_id):
+    76	        raise ValueError("invalid map_id")
+    77	    if timeout <= 0:
+    78	        raise ValueError("invalid timeout")
+    79	    proxy = rospy.ServiceProxy(SERVICE, SetSystemStage)
+    80	    target = 1 if mode == "--start" else 0
+    81	    started = time.monotonic()
+    82	    response = request_stage(proxy, target, map_id, timeout)
+    83	    if target == 1:
+    84	        wait_nodes(rosnode.get_node_names, args[4].split(","),
+    85	                   max(0.1, timeout - (time.monotonic() - started)))
+    86	    print("stage=ground_air_mapping action={} map_id={} active_stage={} message={}".format(
+    87	        mode[2:], map_id, response.active_stage, response.message))
+    88	
+    89	
+    90	if __name__ == "__main__":
+    91	    try:
+    92	        main(sys.argv[1:])
+    93	    except Exception as error:
+    94	        print("ground_air_stage_client: {}".format(error), file=sys.stderr)
+    95	        sys.exit(1)
+
+MANAGER_GUARD
+74:        return subprocess.Popen(list(command), start_new_session=True)
+143:        rospy.set_param("~ccs_session_guard_version", 2)
+144:        rospy.set_param("~external_tf_required", 1)
+158:        caller = getattr(request, "_connection_header", {}).get("callerid", "")
+159:        return caller if caller.startswith(_CCS_OWNER_PREFIXES) else ""
+
+SOURCE_VERSION
+2026-09-04 18:12:57.780252873 +0800 /home/bitcq/ccs_edge_ws/src/EPGeneral_ground_air_control/scripts/ground_air_stage_manager_node.py
+2026-09-03 21:42:02.470113515 +0800 /home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/scripts/ground_air_stage_client.py
+2026-09-04 18:12:57.080211074 +0800 /home/bitcq/ccs_edge_ws/start_ccs_edge_dev.sh
+
+MAPPING_CONFIG
+
+STDERR

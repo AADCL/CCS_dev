@@ -1,0 +1,71 @@
+{
+  "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2",
+  "manifest": [
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/scripts/ground_air_stage_client.py",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/scripts/ground_air_stage_client.py",
+      "mode": "0o755",
+      "before_sha256": "ba88a5de26ff31c9f05849071764029e71455ca052817c9e4897b8b854bc9f57",
+      "after_sha256": "d9ccec1f9c97ad39d66473b5c33b8a0486b82a2e1e67c77547b95802ef94c97d"
+    },
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/package.xml",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/package.xml",
+      "mode": "0o664",
+      "before_sha256": "5854db836fbbffa811495b5066e3d4dcda7a349af3e73d19a16f3e98a129e588",
+      "after_sha256": "020ee57789cd3f1db15fd60d43a53dc4240c81863cc078b900c34f1031d22577"
+    },
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/__init__.py",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/src/epgeneral_map_stream/__init__.py",
+      "mode": "0o664",
+      "before_sha256": "0e0a4b35bbf47b52c810e39ee780dbf3fdfdd22f697a53041449ec06c366ca10",
+      "after_sha256": "6e5bba99dd9cdcd9e3e600c18bc537eac60ede4f0770d0fcb3b5284018df9f78"
+    },
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/config.py",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/src/epgeneral_map_stream/config.py",
+      "mode": "0o644",
+      "before_sha256": "30a846bc6a0f2a225b76a68e2f428699cf9c857d44ad879e2974470801177e0d",
+      "after_sha256": "dbd63e8e141b89e7e889458e095b39f496589bad1fa4a2929abae6f894d82d39"
+    },
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/README.md",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/README.md",
+      "mode": "0o664",
+      "before_sha256": "804ad0b15e05e4acc370959c57260f2b55dcff923ce6e90e00432e623906da46",
+      "after_sha256": "e171de364576986f1bb2561a9b42a94c4f00031461dba6972d7ed5c156e2e8fc"
+    },
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/CHANGELOG.md",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/CHANGELOG.md",
+      "mode": "0o664",
+      "before_sha256": "66b3ca355ac323e6a8d3a6af041b2ac36b50d3b2ea1b68a45e15209294cc22dc",
+      "after_sha256": "84be8e9ad7d6df1069a2444f507c599d77944e495410b50d7787e0863e1ef279"
+    },
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_ground_air_stage_client.py",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/test/test_ground_air_stage_client.py",
+      "mode": "0o644",
+      "before_sha256": "19c2196e1ccc1ca8d30399dee0a902ccb55cc0b3af4c7fa30701d53936b185fa",
+      "after_sha256": "ecc67e42ca0723e6e107b79a1d0966a88c2312a652b936ed27b29a8ce6f9c580"
+    },
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_version_and_entrypoint.py",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/test/test_version_and_entrypoint.py",
+      "mode": "0o664",
+      "before_sha256": "a15d99a55ef30c79ab4561c0a840efc2623b30cef5a121c04b0ce6f80315a7aa",
+      "after_sha256": "21cbe467d0278bf2bdc32e428f45c2a1be68185c127129ea6cafd15c53ab4928"
+    },
+    {
+      "path": "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py",
+      "backup": "/home/bitcq/ccs_edge_ws/.deployment_backups/20260905T032815Z_mapping_guard_v2/files/test/test_config.py",
+      "mode": "0o664",
+      "before_sha256": "08cd8fdf46a2a24570241d8089152599612fe5e0831fdd8a9b74a43e4fa38ac6",
+      "after_sha256": "b5e7336f583e2e9a08b0abd2af91057942c9e253df66e8655770b3d7fb8a2584"
+    }
+  ],
+  "enabled_before": "disabled",
+  "enabled_after": "disabled",
+  "checks": "epgeneral_map_stream version 0.13.2 is consistent\nground-air stage service ready; session guard enabled\n"
+}

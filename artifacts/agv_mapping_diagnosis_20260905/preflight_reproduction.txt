@@ -1,0 +1,147 @@
+PREFLIGHT_REPRODUCTION
+PREFLIGHT_EXIT=1
+
+CURRENT_MAPPING_LOG
+[rosout][INFO] 2026-09-05 11:00:16,066: mapping TX type=prepare_result session=ade99270 sequence=9 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:25,374: mapping RX type=abort_mapping map=a0ece4e3 session=ade99270 request=00c0d920 restart_active=False
+[rosout][INFO] 2026-09-05 11:00:25,377: mapping TX type=command_ack session=ade99270 sequence=10 destination=192.168.50.101:14562 detail=abort_mapping accepted=False
+[rosout][INFO] 2026-09-05 11:00:45,300: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:45,303: mapping prepare started session=e4440fbe restarted=False previous_state=none
+[rospy.internal][INFO] 2026-09-05 11:00:45,329: topic[/livox/lidar] adding connection to [http://192.168.50.130:44951/], count 0
+[rospy.internal][INFO] 2026-09-05 11:00:45,482: topic impl's ref count is zero, deleting topic /livox/lidar...
+[rospy.internal][INFO] 2026-09-05 11:00:45,483: topic[/livox/lidar] removing connection to http://192.168.50.130:44951/
+[rosout][INFO] 2026-09-05 11:00:45,486: mapping topic probe passed topic=/livox/lidar type=livox_ros_driver2/CustomMsg frame=base_link
+[rosout][INFO] 2026-09-05 11:00:45,493: mapping readiness check=pointcloud available=True reason=none
+[rospy.internal][INFO] 2026-09-05 11:00:45,503: topic[/livox/imu] adding connection to [http://192.168.50.130:44951/], count 0
+[rospy.internal][INFO] 2026-09-05 11:00:45,512: topic impl's ref count is zero, deleting topic /livox/imu...
+[rospy.internal][INFO] 2026-09-05 11:00:45,512: topic[/livox/imu] removing connection to http://192.168.50.130:44951/
+[rosout][INFO] 2026-09-05 11:00:45,515: mapping topic probe passed topic=/livox/imu type=sensor_msgs/Imu frame=base_link
+[rosout][INFO] 2026-09-05 11:00:45,519: mapping readiness check=imu available=True reason=none
+[rosout][INFO] 2026-09-05 11:00:45,526: mapping readiness check=artifact_storage available=True reason=none
+[rosout][WARNING] 2026-09-05 11:00:49,820: mapping readiness check=map_generation available=False reason=mapping command returned 1: ground_air_stage_client: stage manager lacks CCS session ownership guard
+[rosout][INFO] 2026-09-05 11:00:49,826: mapping TX type=prepare_result session=e4440fbe sequence=0 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:49,831: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:49,836: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+[rosout][INFO] 2026-09-05 11:00:49,841: mapping TX type=prepare_result session=e4440fbe sequence=1 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:49,844: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:49,848: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+[rosout][INFO] 2026-09-05 11:00:49,851: mapping TX type=prepare_result session=e4440fbe sequence=2 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:49,855: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:49,858: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+[rosout][INFO] 2026-09-05 11:00:49,863: mapping TX type=prepare_result session=e4440fbe sequence=3 destination=192.168.50.101:14562 detail= accepted=False
+[rosout][INFO] 2026-09-05 11:00:49,871: mapping RX type=prepare_mapping map=a0ece4e3 session=e4440fbe request=8d20c14b restart_active=False
+[rosout][INFO] 2026-09-05 11:00:49,878: mapping cache hit command=prepare_mapping session=e4440fbe request=8d20c14b
+[rosout][INFO] 2026-09-05 11:00:49,884: mapping TX type=prepare_result session=e4440fbe sequence=4 destination=192.168.50.101:14562 detail= accepted=False
+
+MANAGER_SESSION_CODE
+#!/usr/bin/env python3
+"""Own mapping/relocalization roslaunch process groups inside ccs_edge_ws."""
+
+import os
+import signal
+import subprocess
+import threading
+import time
+
+import rosnode
+import rospy
+import tf2_ros
+from ground_air_msgs.srv import SetSystemStage, SetSystemStageResponse
+from std_msgs.msg import String, UInt8
+
+from epgeneral_ground_air_control.system_stage_core import (
+    BASE,
+    MAPPING,
+    RELOCALIZATION,
+    StageError,
+    analyze_active_nodes,
+    build_stage_commands,
+    normalize_request,
+)
+from epgeneral_ground_air_control.system_stage_runtime import StageController
+
+
+_PRIMARY_NODES = {
+class StageManagerNode:
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._stage_pub = rospy.Publisher(
+            "/ground_air/system/stage", UInt8, queue_size=1, latch=True
+        )
+        self._detail_pub = rospy.Publisher(
+            "/ground_air/system/stage_detail", String, queue_size=1, latch=True
+        )
+        tf_buffer = tf2_ros.Buffer(cache_time=rospy.Duration(10.0))
+        self._tf_listener = tf2_ros.TransformListener(tf_buffer)
+        self._controller = StageController(RosProcessBackend(tf_buffer))
+        self._shutting_down = False
+        rospy.set_param("~ccs_session_guard_version", 2)
+        rospy.set_param("~external_tf_required", 1)
+        self._publish("base stage active; coordinate transforms are externally managed")
+        self._service = rospy.Service(
+            "/ground_air/system/set_stage", SetSystemStage, self._handle_stage
+        )
+        self._monitor = rospy.Timer(rospy.Duration(0.5), self._monitor_children)
+        rospy.on_shutdown(self.shutdown)
+
+    def _publish(self, detail):
+        self._stage_pub.publish(UInt8(data=self._controller.active_stage))
+        self._detail_pub.publish(String(data=detail))
+
+    @staticmethod
+    def _ccs_owner(request):
+        caller = getattr(request, "_connection_header", {}).get("callerid", "")
+        return caller if caller.startswith(_CCS_OWNER_PREFIXES) else ""
+
+    def _handle_stage(self, request):
+        with self._lock:
+            try:
+                normalized = normalize_request(
+                    request.stage, request.map_id, request.timeout
+                )
+            except (StageError, TypeError, ValueError) as error:
+                message = "stage request rejected: {}".format(error)
+                self._publish(message)
+                return SetSystemStageResponse(
+                    False, message, self._controller.active_stage
+                )
+            result = self._controller.transition(
+                normalized, build_stage_commands(normalized),
+                owner=self._ccs_owner(request),
+            )
+            self._publish(result.message)
+            log = rospy.loginfo if result.success else rospy.logerr
+            log("system stage request: %s", result.message)
+            return SetSystemStageResponse(
+                result.success, result.message, result.active_stage
+            )
+
+    def _monitor_children(self, _event):
+        with self._lock:
+            exited = [
+                child for child in self._controller.children
+                if child.poll() is not None
+            ]
+            if not exited:
+                return
+            codes = ", ".join(str(child.returncode) for child in exited)
+            self._controller.shutdown()
+            message = (
+                "managed stage exited unexpectedly (codes: {}); "
+                "base stage active".format(codes)
+            )
+            rospy.logerr(message)
+            self._publish(message)
+
+    def shutdown(self):
+        with self._lock:
+            if self._shutting_down:
+                return
+            self._shutting_down = True
+
+GUARD_REFERENCES
+/home/bitcq/ccs_edge_ws/src/EPGeneral_ground_air_control/scripts/ground_air_stage_manager_node.py:143:        rospy.set_param("~ccs_session_guard_version", 2)
+/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/scripts/ground_air_stage_client.py:7:GUARD_PARAM = "/ground_air_stage_manager/ccs_session_guard_version"
+
+STDERR
+ground_air_stage_client: stage manager lacks CCS session ownership guard

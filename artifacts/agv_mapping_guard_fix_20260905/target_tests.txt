@@ -1,0 +1,125 @@
+............EEEEEEEEEE...
+======================================================================
+ERROR: test_command_template_rejects_shell_style_unknown_fields (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 105, in test_command_template_rejects_shell_style_unknown_fields
+    path = self._mutated_mapping(
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 40, in _mutated_mapping
+    with open(MAPPING, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_decompressed_limit_must_cover_max_points (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 100, in test_decompressed_limit_must_cover_max_points
+    path = self._modified_mapping("max_decompressed_bytes: 2400000", "max_decompressed_bytes: 100")
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 23, in _modified_mapping
+    with open(MAPPING, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_integration_commands_are_argument_arrays (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/config.py", line 23, in _read_yaml
+    with io.open(path, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 112, in test_integration_commands_are_argument_arrays
+    config = load_config(MAPPING, DEVICE)
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/config.py", line 143, in load_config
+    mapping = _read_yaml(mapping_path)
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/config.py", line 26, in _read_yaml
+    raise ConfigError("cannot read config %s: %s" % (path, exc))
+epgeneral_map_stream.config.ConfigError: cannot read config /home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_map_accumulator_service_must_be_absolute (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 147, in test_map_accumulator_service_must_be_absolute
+    path = self._mutated_mapping(
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 40, in _mutated_mapping
+    with open(MAPPING, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_map_and_preview_frames_must_be_distinct (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 154, in test_map_and_preview_frames_must_be_distinct
+    path = self._mutated_mapping(
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 40, in _mutated_mapping
+    with open(MAPPING, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_prerequisite_config_is_required (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 160, in test_prerequisite_config_is_required
+    path = self._modified_mapping(
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 23, in _modified_mapping
+    with open(MAPPING, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_sample_config_loads_shared_identity (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/config.py", line 23, in _read_yaml
+    with io.open(path, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 51, in test_sample_config_loads_shared_identity
+    config = load_config(MAPPING, DEVICE)
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/config.py", line 143, in load_config
+    mapping = _read_yaml(mapping_path)
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/src/epgeneral_map_stream/config.py", line 26, in _read_yaml
+    raise ConfigError("cannot read config %s: %s" % (path, exc))
+epgeneral_map_stream.config.ConfigError: cannot read config /home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_schema_five_is_rejected (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 142, in test_schema_five_is_rejected
+    path = self._modified_mapping("schema_version: 6", "schema_version: 5")
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 23, in _modified_mapping
+    with open(MAPPING, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_unsupported_lidar_input_is_rejected (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 90, in test_unsupported_lidar_input_is_rejected
+    path = self._modified_mapping("livox_ros_driver2/CustomMsg", "std_msgs/String")
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 23, in _modified_mapping
+    with open(MAPPING, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+======================================================================
+ERROR: test_zero_extrinsic_quaternion_is_rejected (test_config.ConfigTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 95, in test_zero_extrinsic_quaternion_is_rejected
+    path = self._modified_mapping("qw: 1.0", "qw: 0.0")
+  File "/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream/test/test_config.py", line 23, in _modified_mapping
+    with open(MAPPING, "r", encoding="utf-8") as stream:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/bitcq/ccs_edge_ws/src/EPGeneral_device_config/config/map_stream.yaml'
+
+----------------------------------------------------------------------
+Ran 25 tests in 1.324s
+
+FAILED (errors=10)
+
+EXIT=1

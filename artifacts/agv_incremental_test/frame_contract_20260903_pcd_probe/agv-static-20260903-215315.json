@@ -1,0 +1,904 @@
+{
+  "map_id": "agv-static-20260903-215315",
+  "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+  "archive": "artifacts\\agv_incremental_test\\frame_contract_20260903_pcd_probe\\agv-static-20260903-215315.zip",
+  "byte_count": 278150,
+  "sha256": "274fa75f132f2655336f3eb363bfdd2d604b4710bab182b4d973ea8748de85ec",
+  "frame_contract": {
+    "prepare": "odom",
+    "preview": "odom",
+    "preview_source": "camera_init",
+    "artifact": "map"
+  },
+  "first_fragment": {
+    "byte_count": 583449,
+    "sha256": "228d6d9bd6fc206c1fd544b86b05b088e3d24b86e8a101bbfabe01c2deb445f4",
+    "point_count": 48609
+  },
+  "events": [
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "prepare_result",
+      "sequence": 0,
+      "sent_at_ns": 1788443600624734464,
+      "payload": {
+        "request_id": "prepare-23ab449461f049a3bb2d3f5c17cee303",
+        "accepted": true,
+        "checks": [
+          {
+            "name": "pointcloud",
+            "available": true,
+            "reason": ""
+          },
+          {
+            "name": "imu",
+            "available": true,
+            "reason": ""
+          },
+          {
+            "name": "artifact_storage",
+            "available": true,
+            "reason": ""
+          },
+          {
+            "name": "map_generation",
+            "available": true,
+            "reason": ""
+          }
+        ],
+        "sample_window_seconds": 1.0,
+        "frame_id": "odom",
+        "capability_version": "0.13.1",
+        "preview_transport": "pcd_fragment_http",
+        "fragment_interval_seconds": 1.0,
+        "error_code": "",
+        "reason": "",
+        "restarted": false
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_status",
+      "sequence": 1,
+      "sent_at_ns": 1788443600632188416,
+      "payload": {
+        "state": "starting",
+        "reason": "starting FAST_LIO and waiting for outputs",
+        "error_code": ""
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "command_ack",
+      "sequence": 2,
+      "sent_at_ns": 1788443608042725888,
+      "payload": {
+        "request_id": "start-23ab449461f049a3bb2d3f5c17cee303",
+        "command": "start_mapping",
+        "accepted": true,
+        "reason": "",
+        "error_code": ""
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_status",
+      "sequence": 3,
+      "sent_at_ns": 1788443608049509376,
+      "payload": {
+        "state": "mapping",
+        "reason": "",
+        "error_code": ""
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "command_ack",
+      "sequence": 4,
+      "sent_at_ns": 1788443608085751040,
+      "payload": {
+        "request_id": "start-23ab449461f049a3bb2d3f5c17cee303",
+        "command": "start_mapping",
+        "accepted": true,
+        "reason": "",
+        "error_code": ""
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 5,
+      "sent_at_ns": 1788443609052587008,
+      "payload": {
+        "state": "mapping"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 6,
+      "sent_at_ns": 1788443609545820416,
+      "payload": {
+        "fragment_id": 0,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000000.pcd?token=6efed202a5474deca77d6b87875fb6ae",
+        "byte_count": 583449,
+        "sha256": "228d6d9bd6fc206c1fd544b86b05b088e3d24b86e8a101bbfabe01c2deb445f4",
+        "point_count": 48609,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443608102437496,
+        "ended_at_ns": 1788443608802363157,
+        "expires_at": "2026-09-03T14:08:29.541210+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 7,
+      "sent_at_ns": 1788443610076663296,
+      "payload": {
+        "state": "mapping"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 8,
+      "sent_at_ns": 1788443610564834304,
+      "payload": {
+        "fragment_id": 0,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000000.pcd?token=6efed202a5474deca77d6b87875fb6ae",
+        "byte_count": 583449,
+        "sha256": "228d6d9bd6fc206c1fd544b86b05b088e3d24b86e8a101bbfabe01c2deb445f4",
+        "point_count": 48609,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443608102437496,
+        "ended_at_ns": 1788443608802363157,
+        "expires_at": "2026-09-03T14:08:29.541210+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 9,
+      "sent_at_ns": 1788443610811319552,
+      "payload": {
+        "fragment_id": 1,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000001.pcd?token=c304ec8d23354ed28d900d2f13179d0a",
+        "byte_count": 511797,
+        "sha256": "0180fce57df0ad6d9a318a8829b6651b2eb6122544c11cf8aa112b4fa47d2ad4",
+        "point_count": 42638,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443609002447844,
+        "ended_at_ns": 1788443609704200506,
+        "expires_at": "2026-09-03T14:08:30.807025+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 10,
+      "sent_at_ns": 1788443611144737280,
+      "payload": {
+        "state": "mapping"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 11,
+      "sent_at_ns": 1788443611227074560,
+      "payload": {
+        "fragment_id": 2,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000002.pcd?token=7d93ae2748984951912e0f018264660b",
+        "byte_count": 339621,
+        "sha256": "fc9089fc68a9330a05074d95124a8f0da22a39443f9365b0cf5df54a62b737f3",
+        "point_count": 28290,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443609802551270,
+        "ended_at_ns": 1788443610602425575,
+        "expires_at": "2026-09-03T14:08:31.204591+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 12,
+      "sent_at_ns": 1788443611613751040,
+      "payload": {
+        "fragment_id": 0,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000000.pcd?token=6efed202a5474deca77d6b87875fb6ae",
+        "byte_count": 583449,
+        "sha256": "228d6d9bd6fc206c1fd544b86b05b088e3d24b86e8a101bbfabe01c2deb445f4",
+        "point_count": 48609,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443608102437496,
+        "ended_at_ns": 1788443608802363157,
+        "expires_at": "2026-09-03T14:08:29.541210+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 13,
+      "sent_at_ns": 1788443611894352640,
+      "payload": {
+        "fragment_id": 1,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000001.pcd?token=c304ec8d23354ed28d900d2f13179d0a",
+        "byte_count": 511797,
+        "sha256": "0180fce57df0ad6d9a318a8829b6651b2eb6122544c11cf8aa112b4fa47d2ad4",
+        "point_count": 42638,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443609002447844,
+        "ended_at_ns": 1788443609704200506,
+        "expires_at": "2026-09-03T14:08:30.807025+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 14,
+      "sent_at_ns": 1788443612628130560,
+      "payload": {
+        "fragment_id": 2,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000002.pcd?token=7d93ae2748984951912e0f018264660b",
+        "byte_count": 339621,
+        "sha256": "fc9089fc68a9330a05074d95124a8f0da22a39443f9365b0cf5df54a62b737f3",
+        "point_count": 28290,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443609802551270,
+        "ended_at_ns": 1788443610602425575,
+        "expires_at": "2026-09-03T14:08:31.204591+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 15,
+      "sent_at_ns": 1788443612634860800,
+      "payload": {
+        "state": "mapping"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 16,
+      "sent_at_ns": 1788443612916218368,
+      "payload": {
+        "fragment_id": 1,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000001.pcd?token=c304ec8d23354ed28d900d2f13179d0a",
+        "byte_count": 511797,
+        "sha256": "0180fce57df0ad6d9a318a8829b6651b2eb6122544c11cf8aa112b4fa47d2ad4",
+        "point_count": 42638,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443609002447844,
+        "ended_at_ns": 1788443609704200506,
+        "expires_at": "2026-09-03T14:08:30.807025+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 17,
+      "sent_at_ns": 1788443612924908800,
+      "payload": {
+        "fragment_id": 3,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000003.pcd?token=c6b3e50220ff40bea47f3766b9773cb0",
+        "byte_count": 583929,
+        "sha256": "3c8bc44ac5538e83378a768a6ee4e04ec268b384aa763248477b0e3837e095d9",
+        "point_count": 48649,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443610802508354,
+        "ended_at_ns": 1788443611702467203,
+        "expires_at": "2026-09-03T14:08:32.922075+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 18,
+      "sent_at_ns": 1788443613114756608,
+      "payload": {
+        "fragment_id": 4,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000004.pcd?token=e2007f6c62ca425081e21be0c85ced56",
+        "byte_count": 262905,
+        "sha256": "6cb7bde47bbbe570123d9b03472d4967a04d1295a98db08a01972fd348b567ab",
+        "point_count": 21897,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443611802467585,
+        "ended_at_ns": 1788443612002501965,
+        "expires_at": "2026-09-03T14:08:33.102980+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 19,
+      "sent_at_ns": 1788443613635320832,
+      "payload": {
+        "fragment_id": 2,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000002.pcd?token=7d93ae2748984951912e0f018264660b",
+        "byte_count": 339621,
+        "sha256": "fc9089fc68a9330a05074d95124a8f0da22a39443f9365b0cf5df54a62b737f3",
+        "point_count": 28290,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443609802551270,
+        "ended_at_ns": 1788443610602425575,
+        "expires_at": "2026-09-03T14:08:31.204591+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 20,
+      "sent_at_ns": 1788443613638819584,
+      "payload": {
+        "state": "mapping"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 21,
+      "sent_at_ns": 1788443614363573248,
+      "payload": {
+        "fragment_id": 3,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000003.pcd?token=c6b3e50220ff40bea47f3766b9773cb0",
+        "byte_count": 583929,
+        "sha256": "3c8bc44ac5538e83378a768a6ee4e04ec268b384aa763248477b0e3837e095d9",
+        "point_count": 48649,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443610802508354,
+        "ended_at_ns": 1788443611702467203,
+        "expires_at": "2026-09-03T14:08:32.922075+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 22,
+      "sent_at_ns": 1788443614367162112,
+      "payload": {
+        "fragment_id": 4,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000004.pcd?token=e2007f6c62ca425081e21be0c85ced56",
+        "byte_count": 262905,
+        "sha256": "6cb7bde47bbbe570123d9b03472d4967a04d1295a98db08a01972fd348b567ab",
+        "point_count": 21897,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443611802467585,
+        "ended_at_ns": 1788443612002501965,
+        "expires_at": "2026-09-03T14:08:33.102980+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "cloud_fragment_ready",
+      "sequence": 23,
+      "sent_at_ns": 1788443614588031744,
+      "payload": {
+        "fragment_id": 5,
+        "url": "http://192.168.50.130:14600/mapping/preview/23ab449461f049a3bb2d3f5c17cee303/00000005.pcd?token=ca9e1636ed49475a825ecaf1ca9db7a9",
+        "byte_count": 582789,
+        "sha256": "4d8fa75e0d42caffc649481894570584c9ba50e9ce4ac8da71f46cdec178f8f6",
+        "point_count": 48554,
+        "frame_id": "odom",
+        "source_frame_id": "camera_init",
+        "display_from_source": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0,
+          "qx": 0.0,
+          "qy": 0.0,
+          "qz": 0.0,
+          "qw": 1.0
+        },
+        "started_at_ns": 1788443612603068590,
+        "ended_at_ns": 1788443613602527142,
+        "expires_at": "2026-09-03T14:08:34.583696+00:00"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 24,
+      "sent_at_ns": 1788443614696728832,
+      "payload": {
+        "state": "mapping"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "command_ack",
+      "sequence": 25,
+      "sent_at_ns": 1788443615209996032,
+      "payload": {
+        "request_id": "stop-1-23ab449461f049a3bb2d3f5c17cee303",
+        "command": "stop_mapping",
+        "accepted": true,
+        "reason": "",
+        "error_code": ""
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "artifact_status",
+      "sequence": 26,
+      "sent_at_ns": 1788443615213894144,
+      "payload": {
+        "state": "generating",
+        "message": "generating PCD, PGM and YAML",
+        "reason": ""
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "artifact_status",
+      "sequence": 27,
+      "sent_at_ns": 1788443615236958208,
+      "payload": {
+        "state": "generating",
+        "message": "saving ground-air map through save_mapping.launch",
+        "reason": ""
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 28,
+      "sent_at_ns": 1788443615779453696,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 29,
+      "sent_at_ns": 1788443616878856960,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 30,
+      "sent_at_ns": 1788443617978884608,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 31,
+      "sent_at_ns": 1788443619078813184,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 32,
+      "sent_at_ns": 1788443620078921984,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 33,
+      "sent_at_ns": 1788443621079098368,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "artifact_status",
+      "sequence": 34,
+      "sent_at_ns": 1788443621648414976,
+      "payload": {
+        "state": "generating",
+        "message": "stopping ground-air mapping process group",
+        "reason": ""
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 35,
+      "sent_at_ns": 1788443622178873856,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 36,
+      "sent_at_ns": 1788443623178855424,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 37,
+      "sent_at_ns": 1788443624178901760,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 38,
+      "sent_at_ns": 1788443625278842624,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "session_heartbeat",
+      "sequence": 39,
+      "sent_at_ns": 1788443626378918400,
+      "payload": {
+        "state": "generating"
+      },
+      "_peer": "192.168.50.130"
+    },
+    {
+      "schema_version": 2,
+      "protocol_id": "ccs-map-stream-v2",
+      "map_id": "agv-static-20260903-215315",
+      "device_id": "AGV_001",
+      "session_id": "23ab449461f049a3bb2d3f5c17cee303",
+      "message_type": "artifact_status",
+      "sequence": 40,
+      "sent_at_ns": 1788443626964026112,
+      "payload": {
+        "state": "ready",
+        "url": "http://192.168.50.130:14600/mapping/result.zip?token=7f2061193ef64d059f4bc918a5252b96",
+        "byte_count": 278150,
+        "sha256": "274fa75f132f2655336f3eb363bfdd2d604b4710bab182b4d973ea8748de85ec",
+        "expires_at": "2026-09-03T14:08:46.963920+00:00",
+        "reason": ""
+      },
+      "_peer": "192.168.50.130"
+    }
+  ]
+}

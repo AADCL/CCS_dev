@@ -12,7 +12,8 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "scout_mini",
-      "active_map_id": "a45abe49-6212-4eb6-b077-15ad8212d455",
+      "battery_profile": "scout_mini",
+      "active_map_id": "5676e890-a748-40fb-b64a-b578e0056a76",
       "map_bindings": [
         {
           "map_id": "d0ad7c7f-b391-48c5-8f24-c5059e9a1a01",
@@ -63,22 +64,6 @@
           }
         },
         {
-          "map_id": "3a65592b-841d-4d59-bfda-a53c9703613a",
-          "map_frame": "map",
-          "odom_frame": "odom",
-          "pose_source": "vision_pose",
-          "localized_at": "2026-08-28T10:05:37.249857+00:00",
-          "map_from_odom": {
-            "x": -0.04932865257622564,
-            "y": -0.007538368807702568,
-            "z": -0.009479285726647677,
-            "qx": -0.00032866165734976176,
-            "qy": 0.0034976351678016964,
-            "qz": 0.009374861149581642,
-            "qw": 0.9999498836798338
-          }
-        },
-        {
           "map_id": "76e41303-0974-4f40-9425-557a64841fec",
           "map_frame": "map",
           "odom_frame": "odom",
@@ -93,9 +78,24 @@
             "qz": 0.6666245730464252,
             "qw": 0.7451695816837548
           }
+        },
+        {
+          "map_id": "3a65592b-841d-4d59-bfda-a53c9703613a",
+          "map_frame": "map",
+          "odom_frame": "odom",
+          "pose_source": "vision_pose",
+          "localized_at": "2026-09-04T08:04:22.445179+00:00",
+          "map_from_odom": {
+            "x": -0.08089870892516202,
+            "y": 1.795072015217335,
+            "z": -0.025153475622690526,
+            "qx": 0.0001980858708690006,
+            "qy": 0.00501581628895928,
+            "qz": 0.00048222307672781225,
+            "qw": 0.9999872822515085
+          }
         }
-      ],
-      "battery_profile": "scout_mini"
+      ]
     },
     {
       "device_id": "QRD_001",
@@ -113,9 +113,9 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "go2_edu",
+      "battery_profile": "disabled",
       "active_map_id": "d0ad7c7f-b391-48c5-8f24-c5059e9a1a01",
-      "map_bindings": [],
-      "battery_profile": "disabled"
+      "map_bindings": []
     },
     {
       "device_id": "UAV_001",
@@ -128,9 +128,9 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "disabled",
+      "battery_profile": "disabled",
       "active_map_id": null,
-      "map_bindings": [],
-      "battery_profile": "disabled"
+      "map_bindings": []
     },
     {
       "device_id": "AGV_001",
@@ -147,9 +147,9 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "disabled",
-      "active_map_id": "29c55f28-56bd-4899-adde-665bd0494e1e",
-      "map_bindings": [],
-      "battery_profile": "disabled"
+      "battery_profile": "disabled",
+      "active_map_id": "39a26473-2e65-481f-afbb-5fc9690c6038",
+      "map_bindings": []
     },
     {
       "device_id": "FGV_001",
@@ -162,9 +162,9 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "disabled",
+      "battery_profile": "disabled",
       "active_map_id": null,
-      "map_bindings": [],
-      "battery_profile": "disabled"
+      "map_bindings": []
     },
     {
       "device_id": "UGV_003",
@@ -177,6 +177,7 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "wheeltec_r550p",
+      "battery_profile": "wheeltec_r550p",
       "active_map_id": "3a65592b-841d-4d59-bfda-a53c9703613a",
       "map_bindings": [
         {
@@ -243,8 +244,7 @@
             "qw": 0.9995393179840015
           }
         }
-      ],
-      "battery_profile": "wheeltec_r550p"
+      ]
     }
   ]
 }

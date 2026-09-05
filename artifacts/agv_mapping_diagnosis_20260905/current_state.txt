@@ -1,0 +1,179 @@
+CURRENT_LOGS
+total 288
+-rw-rw-r--  1 bitcq bitcq 130823 Sep  5 11:04 livox.log
+-rw-rw-r--  1 bitcq bitcq  97352 Sep  5 11:04 mqtav.log
+-rw-rw-r--  1 bitcq bitcq   7748 Sep  5 11:02 udp_telemetry.log
+-rw-rw-r--  1 bitcq bitcq  13094 Sep  5 11:01 mavros.log
+drwxrwxr-x 11 bitcq bitcq   4096 Sep  5 11:00 ros
+-rw-rw-r--  1 bitcq bitcq  23180 Sep  5 10:58 startup.log
+-rw-rw-r--  1 bitcq bitcq      0 Sep  5 10:58 mapping_tf.log
+-rw-rw-r--  1 bitcq bitcq     97 Sep  5 10:58 relocalization.log
+-rw-rw-r--  1 bitcq bitcq      0 Sep  5 10:58 stage_manager.log
+-rw-rw-r--  1 bitcq bitcq      0 Sep  5 10:57 video_srt.log
+-rw-rw-r--  1 bitcq bitcq      0 Sep  5 10:57 a8_camera.log
+-rw-rw-r--  1 bitcq bitcq      0 Sep  5 10:57 map_stream.log
+-rw-rw-r--  1 bitcq bitcq      0 Sep  5 10:56 roscore.log
+
+LOG=stage_manager.log
+
+LOG=map_stream.log
+
+LOG=startup.log
+1970-01-01 08:10:13 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:10:43 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:10:43 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:10:43 OK: AGV 端侧进程已清理
+1970-01-01 08:10:49 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:11:18 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:11:18 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:11:18 OK: AGV 端侧进程已清理
+1970-01-01 08:11:24 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:11:54 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:11:54 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:11:54 OK: AGV 端侧进程已清理
+1970-01-01 08:12:00 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:12:29 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:12:29 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:12:29 OK: AGV 端侧进程已清理
+1970-01-01 08:12:35 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:13:05 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:13:05 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:13:05 OK: AGV 端侧进程已清理
+1970-01-01 08:13:11 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:13:40 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:13:40 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:13:40 OK: AGV 端侧进程已清理
+1970-01-01 08:13:46 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:14:16 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:14:16 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:14:16 OK: AGV 端侧进程已清理
+1970-01-01 08:14:22 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:14:51 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:14:51 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:14:51 OK: AGV 端侧进程已清理
+1970-01-01 08:14:57 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:15:27 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:15:27 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:15:27 OK: AGV 端侧进程已清理
+1970-01-01 08:15:33 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:16:02 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:16:02 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:16:02 OK: AGV 端侧进程已清理
+1970-01-01 08:16:08 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:16:38 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:16:38 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:16:38 OK: AGV 端侧进程已清理
+1970-01-01 08:16:44 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:17:13 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:17:13 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:17:13 OK: AGV 端侧进程已清理
+1970-01-01 08:17:19 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:17:49 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:17:49 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:17:49 OK: AGV 端侧进程已清理
+1970-01-01 08:17:55 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:18:24 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:18:24 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:18:24 OK: AGV 端侧进程已清理
+1970-01-01 08:18:30 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:19:00 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:19:00 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:19:00 OK: AGV 端侧进程已清理
+1970-01-01 08:19:06 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:19:35 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:19:35 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:19:35 OK: AGV 端侧进程已清理
+1970-01-01 08:19:41 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+1970-01-01 08:20:11 ERROR: 无法确认与 192.168.50.101 的时间同步
+1970-01-01 08:20:11 INFO: 正在停止 AGV 端侧进程...
+1970-01-01 08:20:11 OK: AGV 端侧进程已清理
+2026-09-05 10:51:50 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+2026-09-05 10:51:50 OK: 时间已与 192.168.50.101 同步
+2026-09-05 10:52:00 OK: mavros 已启动（节点 /mavros）
+2026-09-05 10:52:13 INFO: 正在停止 AGV 端侧进程...
+2026-09-05 10:56:51 INFO: 启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=/home/bitcq/catkin_ws/src/livox_ros_driver2；A8 包=/home/bitcq/catkin_ws/src/a8_mini_camera
+2026-09-05 10:56:52 OK: 时间已与 192.168.50.101 同步
+2026-09-05 10:57:00 OK: mavros 已启动（节点 /mavros）
+2026-09-05 10:57:15 OK: livox 已启动（节点 /livox_lidar_publisher2）
+2026-09-05 10:57:26 OK: mqtav 已启动（节点 /epgeneral_mqtav）
+2026-09-05 10:57:35 OK: udp_telemetry 已启动（节点 /epgeneral_udp_telemetry）
+2026-09-05 10:57:42 OK: map_stream 已启动（节点 /epgeneral_map_stream）
+2026-09-05 10:57:52 OK: a8_camera 已启动（可降级节点 /a8_mini_camera）
+2026-09-05 10:57:54 OK: A8 Mini 图像已就绪（/a8_cam/image_raw）
+2026-09-05 10:57:59 OK: video_srt 已启动（可降级节点 /epgeneral_video_srt）
+2026-09-05 10:58:15 OK: relocalization 已启动（节点 /epgeneral_relocalization）
+2026-09-05 10:58:21 OK: mapping_tf 已启动（节点 /odom_camera_init_broadcaster）
+2026-09-05 10:58:22 OK: 所有功能启动完成，最后启动的坐标转换 launch 已就绪；按 Ctrl+C 停止
+
+ROS_PARAMS
+ccs_session_guard_version: 2
+external_tf_required: 1
+
+
+SERVICE
+Node: /ground_air_stage_manager
+URI: rosrpc://192.168.50.130:35167
+Type: ground_air_msgs/SetSystemStage
+Args: stage map_id timeout
+
+NODES
+/a8_mini_camera
+/base_link_body_broadcaster
+/epgeneral_map_stream
+/epgeneral_mqtav
+/epgeneral_relocalization
+/epgeneral_udp_telemetry
+/epgeneral_video_srt
+/ground_air_stage_manager
+/livox_lidar_publisher2
+/mavros
+/odom_camera_init_broadcaster
+/rosout
+
+MANAGER_WRAPPER
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# generated from catkin/cmake/template/script.py.in
+# creates a relay to a python script source file, acting as that file.
+# The purpose is that of a symlink
+python_script = '/home/bitcq/ccs_edge_ws/src/EPGeneral_ground_air_control/scripts/ground_air_stage_manager_node.py'
+with open(python_script, 'r') as fh:
+    context = {
+        '__builtins__': __builtins__,
+        '__doc__': None,
+        '__file__': python_script,
+        '__name__': __name__,
+        '__package__': None,
+    }
+    exec(compile(fh.read(), python_script, 'exec'), context)
+
+CURRENT_STARTUP_REFERENCES
+13:LOG_DIR="${CCS_EDGE_LOG_DIR:-${WORKSPACE}/log/ground_air_agv}"
+15:ROS_LOG_DIR="${CCS_ROS_LOG_DIR:-${LOG_DIR}/ros}"
+16:START_LOG="${LOG_DIR}/startup.log"
+20:LAUNCH_NAMES=(mavros livox mqtav udp_telemetry map_stream a8_camera video_srt stage_manager relocalization mapping_tf)
+21:NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_map_stream /a8_mini_camera /epgeneral_video_srt /ground_air_stage_manager /epgeneral_relocalization /odom_camera_init_broadcaster)
+25:mkdir -p "${PID_DIR}" "${LOG_DIR}" "${ROS_HOME}" "${ROS_LOG_DIR}"
+43:      [[ "${LAUNCH_NAMES[index]}" != stage_manager ]] || stop_attempts=120
+96:source /opt/ros/noetic/setup.bash
+97:source "${UNDERLAY_SETUP}" --extend
+98:source "${WORKSPACE}/devel/setup.bash" --extend
+101:export ROS_HOME ROS_LOG_DIR
+110:[[ -x "${control_path}/scripts/ground_air_stage_manager_node.py" ]] || fail "缺少 ccs_edge_ws stage manager"
+127:  roscore >"${LOG_DIR}/roscore.log" 2>&1 </dev/null &
+135:  local name="${LAUNCH_NAMES[index]}" pid_file="${PID_DIR}/${LAUNCH_NAMES[index]}.pid" log_file="${LOG_DIR}/${LAUNCH_NAMES[index]}.log"
+146:  local name="${LAUNCH_NAMES[index]}" pid_file="${PID_DIR}/${LAUNCH_NAMES[index]}.pid" log_file="${LOG_DIR}/${LAUNCH_NAMES[index]}.log"
+202:ros_node_exists /ground_air_stage_manager \
+204:rosrun epgeneral_ground_air_control ground_air_stage_manager_node.py >"${LOG_DIR}/stage_manager.log" 2>&1 </dev/null &
+205:printf '%s\n' "$!" >"${PID_DIR}/stage_manager.pid"
+207:wait_for_node /ground_air_stage_manager || fail "stage manager 启动失败"
+214:[[ "$(rosparam get /ground_air_stage_manager/ccs_session_guard_version 2>/dev/null || true)" == 2 ]] \
+216:[[ "$(rosparam get /ground_air_stage_manager/external_tf_required 2>/dev/null || true)" == 1 ]] \
+218:[[ "$(rosparam get /ground_air_stage_manager/resident_tf_version 2>/dev/null || true)" != 1 ]] \
+224:  log_dir:="${LOG_DIR}"
+
+PACKAGE_PATH
+/home/bitcq/ccs_edge_ws/src/EPGeneral_ground_air_control
+/home/bitcq/ccs_edge_ws/src/EPGeneral_map_stream
+
+STDERR
