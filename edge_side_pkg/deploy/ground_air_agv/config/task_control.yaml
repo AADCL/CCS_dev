@@ -1,5 +1,4 @@
-# Placeholder only. No task coordinator or motion adapter is started.
-deployment: {state: placeholder, enabled: false}
+deployment: {state: deployed, enabled: true}
 schema_version: 2
 protocol_id: "ccs-task-control-v2"
 network: {bind_host: "0.0.0.0", control_port: 14563, ground_station_ip: "192.168.50.101", status_port: 14564, max_datagram_bytes: 1400}
@@ -11,3 +10,25 @@ ros:
   map_frame: "map"
 timeouts: {ack_cache_seconds: 60.0, transfer_seconds: 10.0, adapter_feedback_seconds: 2.0, execution_feedback_seconds: 5.0, preparation_retry_seconds: 5.0, utc_tolerance_seconds: 2.0}
 limits: {max_waypoints: 500, max_compressed_bytes: 1048576, max_raw_bytes: 8388608, max_chunks: 2048}
+adapter:
+  type: ground_air
+  active_map_state_file: "/home/bitcq/ccs_edge_ws/run/relocalization.json"
+  navigation_map_root: "/home/bitcq/ccs_edge_ws/maps/download"
+  navigation_map_yaml: "map.yaml"
+  task_launch_package: "car_bringup"
+  task_launch_file: "task_system.launch"
+  localization_param: "/ground_air/localized"
+  vehicle_status_topic: "/ground_air/vehicle_status"
+  mission_status_topic: "/ground_air/mission/status"
+  prepare_ground_service: "/ground_air/prepare_ground"
+  mission_submit_service: "/ground_air/mission/submit"
+  mission_start_service: "/ground_air/mission/start"
+  mission_cancel_service: "/ground_air/mission/cancel"
+  emergency_stop_service: "/ground_air/emergency_stop"
+  emergency_lock_file: "/home/bitcq/ccs_edge_ws/run/task_emergency_stop.json"
+  navigation_startup_timeout_seconds: 30.0
+  service_timeout_seconds: 10.0
+  waypoint_timeout_seconds: 300.0
+  dwell_seconds: 2.0
+  max_linear_speed_mps: 0.1
+  max_angular_speed_rps: 0.2

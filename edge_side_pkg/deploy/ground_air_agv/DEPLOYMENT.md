@@ -6,7 +6,7 @@ CCS 0.23.1 当前入口：[使用手册](../../documents/USER_MANUAL.md) · [接
 
 This profile targets `AGV_001` at `192.168.50.130` on Ubuntu 20.04, ROS Noetic, and ARM64. The CCS overlay is `/home/bitcq/ccs_edge_ws`; vehicle packages remain in `/home/bitcq/catkin_ws`.
 
-`start_ccs_edge_dev.sh` starts MAVROS, Livox MID-360, MQTT, UDP telemetry, map-stream, optional A8/SRT, the workspace-owned Ground-Air stage manager, and `epgeneral_relocalization`. Its final startup item is exactly:
+`start_ccs_edge_dev.sh` starts MAVROS, Livox MID-360, MQTT, UDP telemetry, map-stream, optional A8/SRT, the workspace-owned Ground-Air stage manager, `epgeneral_relocalization`, resident ground control, and CCS task control. Navigation and the native mission executor start only after a stored ground task passes live localization and map validation. The resident coordinate transforms are started before task control:
 
 ```bash
 roslaunch car_bringup mapping_coordinate_transforms.launch
@@ -17,6 +17,8 @@ The transform launch owns only the resident `odom -> camera_init` and `body -> b
 The Ground-Air map-stream profile keeps `ros.frames.map=camera_init` and sets `ros.frames.preview=odom`. MapStream therefore looks up `odom <- camera_init` at the point-cloud timestamp and transforms the actual point coordinates before publishing a fragment; changing only the frame label is invalid. The wire contract is `prepare_result.frame_id=odom`, fragment `frame_id=odom`, fragment `source_frame_id=camera_init`, and artifact manifest `frame_id=map`.
 
 Boot autostart is disabled for `AGV_001`; keep `ccs-edge-dev.service` in the `disabled` state. Start the existing service manually with `systemctl --user start ccs-edge-dev.service` when needed. Disabling autostart does not stop an already running stack, and neither deployment nor rollback may re-enable it.
+
+Task control uses UDP 14563/14564 and `ccs-task-control-v2`. The profile accepts ground tasks only, caps linear speed at 0.1 m/s and angular speed at 0.2 rad/s, and requires manual arming plus OFFBOARD before execution. Emergency stop calls `/ground_air/emergency_stop`; successful confirmation is persisted at `/home/bitcq/ccs_edge_ws/run/task_emergency_stop.json`. See `edge_side_pkg/documents/GROUND_AIR_AGV_TASK_DEPLOYMENT.md` for incremental deployment and acceptance.
 
 The user service uses `KillMode=mixed`, allowing the supervisor to stop the coordinator and stage manager before stopping the static transforms. New application and ROS logs are under `/home/bitcq/ccs_edge_ws/log/ground_air_agv`, ROS home is `/home/bitcq/ccs_edge_ws/run/ros_home`, and the transform PID file is `/home/bitcq/ccs_edge_ws/run/mapping_tf.pid`.
 

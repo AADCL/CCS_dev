@@ -13,7 +13,7 @@
 | wheeltec_r550p | nrc19@192.168.50.122 | /home/nrc19/ccs_edge_ws | 前台一键脚本 |
 | ground_air_agv | bitcq@192.168.50.130 | /home/bitcq/ccs_edge_ws | 手动启动用户 systemd 服务 |
 
-这些是仓库 profile 示例，现场 ID/IP、用户和路径不同时先修改配置，不能仅改 SSH 目标。Go2 无可用重定位后端且脚本不启动任务；Ground-Air 脚本不启动任务；Wheeltec 无视频输入。Scout/Wheeltec 任务需要外部导航栈。
+这些是仓库 profile 示例，现场 ID/IP、用户和路径不同时先修改配置，不能仅改 SSH 目标。Go2 无可用重定位后端且脚本不启动任务；Ground-Air 启动地面任务协调器、适配器与急停桥接，导航和任务执行层按需启动；Wheeltec 无视频输入。Scout/Wheeltec 任务需要外部导航栈。
 
 ## 2. 准备源码、配置与依赖
 

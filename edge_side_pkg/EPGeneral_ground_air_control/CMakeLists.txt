@@ -3,9 +3,12 @@ project(epgeneral_ground_air_control)
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
+  dynamic_reconfigure
+  epgeneral_task_control
   ground_air_msgs
   rosnode
   rospy
+  std_srvs
   std_msgs
   tf2_ros
 )
@@ -13,9 +16,12 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_python_setup()
 catkin_package(CATKIN_DEPENDS
   geometry_msgs
+  dynamic_reconfigure
+  epgeneral_task_control
   ground_air_msgs
   rosnode
   rospy
+  std_srvs
   std_msgs
   tf2_ros
 )
@@ -24,6 +30,7 @@ catkin_install_python(PROGRAMS
   scripts/ground_air_initial_pose_adapter_node.py
   scripts/ground_air_relocalization_stage_node.py
   scripts/ground_air_stage_manager_node.py
+  scripts/ground_air_task_adapter_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

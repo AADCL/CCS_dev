@@ -413,7 +413,7 @@ network/storage/ros/tf_stability 结构必填。stages 仅接受程序可调用�
 
 ## 10. task_control.yaml
 
-adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 时表内字段全部必填。其数值不设置隐式默认，示例来自公共配置。网络 bind 可用 0.0.0.0，其余身份/地面站 IP 使用有效 IPv4。
+adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 时，公共字段和所选类型的字段必填。`adapter.type` 省略时按兼容模式使用 navigation；ground_air 必须显式声明。其数值不设置隐式默认，示例来自公共配置。网络 bind 可用 0.0.0.0，其余身份/地面站 IP 使用有效 IPv4。
 
 | 键 | 类型 / 默认或要求 | 定义与约束 |
 | --- | --- | --- |
@@ -439,11 +439,12 @@ adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 
 | `limits.max_compressed_bytes` | int；必填，示例 1048576 | >=1024 字节 |
 | `limits.max_raw_bytes` | int；必填，示例 8388608 | >=1024 且不小于 max_compressed_bytes |
 | `limits.max_chunks` | int；必填，示例 2048 | 1..4096 |
+| `adapter.type` | string；默认 navigation | navigation 或 ground_air；Ground-Air profile 必须显式填写 |
 | `adapter.active_map_state_file` | string；条件必填 | 与重定位活动地图状态一致 |
+| `adapter.navigation_map_root` | string；条件必填 | 与重定位下载根目录一致；两种适配器共用 |
+| `adapter.navigation_map_yaml` | string；条件必填，示例 map.yaml | 地图栅格描述文件名；两种适配器共用 |
 | `adapter.navigation_launch_package` | string；条件必填 | 导航 ROS 包 |
 | `adapter.navigation_launch_file` | string；条件必填 | 导航 launch |
-| `adapter.navigation_map_root` | string；条件必填 | 与重定位下载根目录一致 |
-| `adapter.navigation_map_yaml` | string；条件必填，示例 map.yaml | 地图栅格描述文件名 |
 | `adapter.navigation_action` | string；条件必填，示例 /move_base | MoveBaseAction 服务端命名空间 |
 | `adapter.odom_topic` | string；条件必填 | nav_msgs/Odometry 输入 |
 | `adapter.zero_velocity_topic` | string；条件必填，示例 /cmd_vel | geometry_msgs/Twist 停车话题 |
@@ -452,6 +453,21 @@ adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 
 | `adapter.pose_timeout_seconds` | number；条件必填，示例 2 | 正秒数，位姿新鲜度 |
 | `adapter.zero_velocity_hz` | number；条件必填，示例 20 | 正 Hz，停车消息频率 |
 | `adapter.zero_velocity_count` | int；条件必填，示例 10 | >=1，停车消息次数 |
+| `adapter.task_launch_package` | string；ground_air 必填 | 原生分层任务 launch 所属 ROS 包 |
+| `adapter.task_launch_file` | string；ground_air 必填，示例 task_system.launch | 原生分层任务 launch 文件 |
+| `adapter.localization_param` | string；ground_air 必填 | 实时定位 bool 参数，历史状态文件不能替代 |
+| `adapter.vehicle_status_topic` | string；ground_air 必填 | ground_air_msgs/VehicleStatus 输入 |
+| `adapter.mission_status_topic` | string；ground_air 必填 | ground_air_msgs/MissionStatus 输入 |
+| `adapter.prepare_ground_service` | string；ground_air 必填 | 地面模式准备 Trigger 服务 |
+| `adapter.mission_submit_service` | string；ground_air 必填 | 任务提交服务 |
+| `adapter.mission_start_service` | string；ground_air 必填 | 任务启动 Trigger 服务 |
+| `adapter.mission_cancel_service` | string；ground_air 必填 | 任务取消 Trigger 服务 |
+| `adapter.emergency_stop_service` | string；ground_air 必填 | 原生急停服务；必须确认闭锁成功 |
+| `adapter.emergency_lock_file` | string；ground_air 必填 | CCS 工作空间内持久化急停闭锁状态 |
+| `adapter.service_timeout_seconds` | number；ground_air 必填，示例 10 | 正秒数，服务等待和调用超时 |
+| `adapter.dwell_seconds` | number；ground_air 必填，示例 2 | 正秒数，航点停留时间 |
+| `adapter.max_linear_speed_mps` | number；ground_air 必填，示例 0.1 | 正 m/s；任务请求超过此值时拒绝 |
+| `adapter.max_angular_speed_rps` | number；ground_air 必填，示例 0.2 | 正 rad/s，传入原生导航运行参数 |
 | `deployment.state`、`deployment.enabled` | string / bool；可选 | 说明元数据，不启动任务节点 |
 
 使用 YAML 的 true/false 和真正的数字，不要写字符串 "false" 或 "2.0"。各包校验强度不同，不能依赖类型强制转换来修正配置。
@@ -478,7 +494,7 @@ adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 
 | epgeneral_relocalization.launch：config_file | 共享目录/relocalization.yaml | 重定位配置 |
 | epgeneral_relocalization.launch：log_dir | 空字符串 | 空时由节点选默认日志目录 |
 | relocalization_map_server.launch：map_yaml | 必填 | map_server 读取的栅格描述文件 |
-| epgeneral_task_control.launch / scout_task_control.launch / navigation_task_control.launch：task_config_file | 共享目录/task_control.yaml | 后两者同时包含导航适配器，只选择一个入口 |
+| epgeneral_task_control.launch / scout_task_control.launch / navigation_task_control.launch / ground_air_task_control.launch：task_config_file | 共享目录/task_control.yaml | 后三者同时包含设备适配器，只选择一个入口 |
 | ground_air_control 的 relocalization_control.launch：map_id | 必填 | 当前地图 ID |
 | 同上：maps_root | /home/bitcq/ccs_edge_ws/maps/download | 下载地图根目录 |
 | 同上：service_wait_timeout / relocalize_timeout | 90.0 / 60.0 | 正秒数，外部服务等待/重定位请求超时 |

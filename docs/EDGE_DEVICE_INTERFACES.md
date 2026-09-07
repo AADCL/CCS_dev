@@ -44,7 +44,7 @@
 - UDP envelope 仍为 schema 1 / `ccs-udp-telemetry-v1`；地面站只额外接受配置中明确列出的 descriptor hash。
 - Scout 30 V 定义为满电，曲线未标定时百分比为 `null`；Go2 原生百分比不被估算覆盖。
 
-指控平台 v0.23.1 配套七个公共端侧包：`epgeneral_device_config` v0.1.1、`epgeneral_mqtav` v0.4.1、`epgeneral_udp_telemetry` v0.3.1、`epgeneral_video_srt` v0.1.1、`epgeneral_map_stream` v0.13.2、`epgeneral_task_control` v0.4.4 和 `epgeneral_relocalization` v0.3.0。Ground-Air profile 另部署 `epgeneral_ground_air_control` v0.1.0。MQTT schema 1.0、SRT 与 UDP wire schema 保持兼容。
+指控平台 v0.23.1 配套七个公共端侧包：`epgeneral_device_config` v0.1.1、`epgeneral_mqtav` v0.4.1、`epgeneral_udp_telemetry` v0.3.1、`epgeneral_video_srt` v0.1.1、`epgeneral_map_stream` v0.13.2、`epgeneral_task_control` v0.5.0 和 `epgeneral_relocalization` v0.3.0。Ground-Air profile 另部署 `epgeneral_ground_air_control` v0.2.0。MQTT schema 1.0、SRT 与 UDP wire schema 保持兼容。
 
 本文件是地面站与端侧软件之间的接口基线。以后每次代码更新都必须核对并同步本文件。所有接口默认运行于可信局域网，不提供认证、加密、可靠重传或拥塞控制。
 
@@ -58,8 +58,8 @@
 | UDP 实时建图控制 | 地面站 -> 端侧 | UDP 14561 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 实时建图数据 | 端侧 -> 地面站 | UDP 14562 | `ccs-map-stream-v1` | 保留后端 |
 | UDP 遥控建图 v2 | 双向 | UDP 14561/14562 + 端侧 TCP 14600 | `ccs-map-stream-v2` | epgeneral_map_stream v0.13.2 |
-| UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v2` | epgeneral_task_control v0.4.4 |
-| UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v2` | epgeneral_task_control v0.4.4 |
+| UDP 任务控制 | 地面站 -> 端侧 | UDP 14563 | `ccs-task-control-v2` | epgeneral_task_control v0.5.0 |
+| UDP 任务状态 | 端侧 -> 地面站 | UDP 14564 | `ccs-task-control-v2` | epgeneral_task_control v0.5.0 |
 | 重定位控制与状态 | 双向 | UDP 14565/14566，地面站 TCP 14601 提供地图 | `ccs-relocalization-v1` | epgeneral_relocalization v0.3.0 |
 
 单包 launch 默认从 `edge_side_pkg/EPGeneral_device_config/config/` 读取身份和六类运行配置；设备一键脚本显式读取 `<工作空间>/config/<profile>/`。`device.id` 和 `device.ip` 必须与地面站 `config/devices.json` 完全一致。设备 profile 原件保存在指控端 `edge_side_pkg/deploy/`；部署时覆盖同名配置文件，`deploy` 与 `documents` 目录本身不进入端侧。
@@ -451,17 +451,19 @@ PGM 下载与实时建图共享 UDP 14561/14562，但两者互斥。公共信封
 
 ## UDP 地图任务控制接口（ccs-task-control-v2）
 
-v0.22.8 继续使用 `ccs-task-control-v2`、MessagePack schema 2 和 UDP 14563/14564。平台仅在当前 revision 已送达且端侧为 `ready` 时创建执行会话；统一启动提前量为 3 秒。Scout v0.4.4 持有 TF listener，并在准备阶段检查任务点对应的 PGM 栅格。不可通行点返回 `WAYPOINT_NOT_TRAVERSABLE`，运行期全局规划失败返回 `NAVIGATION_PLAN_FAILED`。
+当前实现继续使用 `ccs-task-control-v2`、MessagePack schema 2 和 UDP 14563/14564。平台仅在当前 revision 已送达且端侧为 `ready` 时创建执行会话；统一启动提前量为 3 秒。Scout 持有 TF listener，并在准备阶段检查任务点对应的 PGM 栅格。不可通行点返回 `WAYPOINT_NOT_TRAVERSABLE`，运行期全局规划失败返回 `NAVIGATION_PLAN_FAILED`。
+
+Ground-Air AGV 使用相同传输协议，完整任务增加 `task_type=ground`。适配器校验当前地图、实时 `/ground_air/localized`、`map<-odom` TF、PGM 可通行性和 0.1 m/s 速度上限后，按需启动 `car_bringup/task_system.launch` 的导航和任务执行器。调度阶段调用 `/ground_air/prepare_ground` 和 `/ground_air/mission/submit`；UTC 到点后再次检查定位、人工解锁、OFFBOARD 和急停状态，再调用 `/ground_air/mission/start`。任何显式空中任务均返回 `UNSUPPORTED_TASK_TYPE`。
 
 任务完整提交后启动 `roslaunch scout_navigation navigation_teb.launch map_name:=<map_id>` 并保持运行。执行命令复用已就绪的 action client，将 `map` frame、Z=0 的目标经 actionlib 发送到 `/move_base/goal`；首点航向由当前位置指向首点，后续航向由前一点指向当前点。完成、失败和常规终止取消目标并连续发布 `/cmd_vel` 零速度但保留导航；删除、急停和节点关闭才停止导航进程。本版本不动态设置 TEB 巡航速度。
 
 v2 在保留 1400 字节数据报、800 字节分片、zlib、CRC32、request ID 幂等和来源 IP 校验的基础上，新增 `negotiate_task`、`read_task`、`terminate_task`、`emergency_stop`、`delete_task` 及反向任务读取分片消息。端侧任务状态为 `no_task`、`task_exists`、`receiving`、`received`、`ready`、`running`、`completed`、`failed`、`emergency_stop`。
 
-常规终止等待端侧 ACK/终态；急停必须先停止适配器并发布零速度，再删除端侧任务内容，依次上报 `emergency_stop` 和 `no_task`。
+常规终止等待端侧 ACK/终态。急停使用新增的 ROS `EMERGENCY_STOP` 动作调用设备专属急停服务；只有机器人返回闭锁确认后才发送成功 ACK。任务内容随后卸载，但协议状态保持 `emergency_stop`，闭锁文件保存在 CCS 工作空间；删除任务和普通终止不会解除闭锁。
 
 ### 兼容性与网络
 
-- 当前产品 v0.23.1、任务包 v0.4.4 使用 MessagePack schema 2；历史 schema 1 不应作为当前网络信封发送。
+- 当前产品 v0.23.1、任务包 v0.5.0 使用 MessagePack schema 2；历史 schema 1 不应作为当前网络信封发送。
 - 地面站绑定 `0.0.0.0:14564/UDP` 接收上行，并从同一 socket 发往设备 `14563/UDP`。
 - 可信内网明文 MessagePack，schema 2；默认单包不超过 1400 字节，命令每 500 ms 重试、最多 5 次。
 - 任务数据是 zlib 压缩的 UTF-8 JSON，整包 CRC32；默认分片 payload 800 字节、最多 500 航点、压缩后最多 1 MiB。

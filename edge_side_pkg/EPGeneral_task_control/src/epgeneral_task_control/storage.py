@@ -56,6 +56,11 @@ def decode_trajectory(compressed, crc32, config, identity, expected_raw_bytes=No
         raise StorageError("trajectory frame_id does not match configured map frame")
     speed = _number(payload.get("cruise_speed_mps"), "cruise_speed_mps", 0.000001)
     delay = _number(payload.get("start_delay_seconds"), "start_delay_seconds", 0.0)
+    task_type = payload.get("task_type", "unspecified")
+    if not isinstance(task_type, str) or task_type not in (
+            "unspecified", "ground", "ground_nav", "air", "air_nav"):
+        raise StorageError("trajectory task_type is invalid")
+    payload["task_type"] = task_type
     waypoints = payload.get("waypoints")
     if not isinstance(waypoints, list) or not 2 <= len(waypoints) <= config["max_waypoints"]:
         raise StorageError("trajectory waypoint count is invalid")
@@ -126,6 +131,7 @@ class TrajectoryStore(object):
                 "crc32": int(root.get("crc32")),
                 "task_name": metadata_node.get("task_name"),
                 "map_id": metadata_node.get("map_id"), "frame_id": metadata_node.get("frame_id"),
+                "task_type": metadata_node.get("task_type", "unspecified"),
                 "cruise_speed_mps": float(metadata_node.get("cruise_speed_mps")),
                 "start_delay_seconds": float(metadata_node.get("start_delay_seconds")),
                 "waypoints": [], "xml_path": xml_path,
@@ -154,6 +160,7 @@ class TrajectoryStore(object):
         })
         ElementTree.SubElement(root, "metadata", {
             "task_name": payload["task_name"], "map_id": payload["map_id"], "frame_id": payload["frame_id"],
+            "task_type": payload.get("task_type", "unspecified"),
             "cruise_speed_mps": repr(payload["cruise_speed_mps"]),
             "start_delay_seconds": repr(payload["start_delay_seconds"]),
         })

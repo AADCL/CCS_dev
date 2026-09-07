@@ -119,7 +119,7 @@ uv run python run.py
 - Go2：重定位功能禁用，一键脚本不启动任务包。
 - Scout：启用导航适配器和 D435i/SRT，启动时等待硬件实际消息。
 - Wheeltec：启用导航适配器，无相机，不启动视频，停止流程发送零速度。
-- Ground-Air：按[专项指南](../edge_side_pkg/documents/GROUND_AIR_AGV_DEPLOYMENT.md)手动启动用户服务，保持开机自启动 disabled；静态 TF 与阶段进程分别管理，一键脚本不启动任务包。
+- Ground-Air：按[专项指南](../edge_side_pkg/documents/GROUND_AIR_AGV_DEPLOYMENT.md)手动启动用户服务，保持开机自启动 disabled；一键脚本常驻任务协调器、地面任务适配器和急停桥接，导航与任务执行层在 PREPARE 后按需启动。
 
 按需单包调试应停止重复的一键节点并显式传入配置，例如：
 
@@ -196,6 +196,7 @@ PYTHONPATH=src python3 -m unittest discover -s test -v
 - 下方控制台选择地图与任务，可共同开始或终止任务。
 
 Scout 在任务文件完整提交后校验当前进程产生的 `localized` 状态、实时 `/fastlio_odom` 和 `map<-odom` TF，并启动常驻导航栈；`/move_base` 就绪后端侧才报告任务 `ready`。执行、完成和常规停止复用该进程，删除、急停或节点关闭才卸载导航。定位暂时不可用时保留任务并自动重试准备。
+- Ground-Air AGV 新建子任务默认 0.1 m/s，只支持地面任务。端侧收到任务后校验实时定位、地图与可通行性；执行前操作者必须手动解锁并切入 OFFBOARD。急停由机器人服务确认并保持闭锁，任务删除或普通停止不会解除；急停后由操作者切回 POSCTL 并按现场规程手动复位。
 - 设备栏和控制台可收起；进入全屏后按 Esc 恢复。
 
 ## QA

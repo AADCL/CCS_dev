@@ -45,6 +45,9 @@ _STAGE_EDGES = (
     ("body", "base_link"),
 )
 _CCS_OWNER_PREFIXES = ("/ccs_mapping_stage_", "/ccs_relocalization_stage_")
+_TASK_BLOCKING_STATES = {
+    "receiving", "received", "ready", "scheduling", "scheduled", "running",
+}
 
 
 class RosProcessBackend:
@@ -139,6 +142,10 @@ class StageManagerNode:
         tf_buffer = tf2_ros.Buffer(cache_time=rospy.Duration(10.0))
         self._tf_listener = tf2_ros.TransformListener(tf_buffer)
         self._controller = StageController(RosProcessBackend(tf_buffer))
+        self._task_state = "no_task"
+        self._task_subscriber = rospy.Subscriber(
+            "/epgeneral_task_control/task_status", String,
+            self._task_status_callback, queue_size=1)
         self._shutting_down = False
         rospy.set_param("~ccs_session_guard_version", 2)
         rospy.set_param("~external_tf_required", 1)
@@ -158,6 +165,10 @@ class StageManagerNode:
         caller = getattr(request, "_connection_header", {}).get("callerid", "")
         return caller if caller.startswith(_CCS_OWNER_PREFIXES) else ""
 
+    def _task_status_callback(self, message):
+        with self._lock:
+            self._task_state = str(message.data).strip().lower()
+
     def _handle_stage(self, request):
         with self._lock:
             try:
@@ -166,6 +177,20 @@ class StageManagerNode:
                 )
             except (StageError, TypeError, ValueError) as error:
                 message = "stage request rejected: {}".format(error)
+                self._publish(message)
+                return SetSystemStageResponse(
+                    False, message, self._controller.active_stage
+                )
+            same_stage = (
+                normalized.stage == self._controller.active_stage and
+                (normalized.stage == BASE or
+                 normalized.map_id == self._controller.active_map_id)
+            )
+            if self._task_state in _TASK_BLOCKING_STATES and not same_stage:
+                message = (
+                    "stage request rejected: task state {} must be stopped and "
+                    "unloaded first".format(self._task_state)
+                )
                 self._publish(message)
                 return SetSystemStageResponse(
                     False, message, self._controller.active_stage

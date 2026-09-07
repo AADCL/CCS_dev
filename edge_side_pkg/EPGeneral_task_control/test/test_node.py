@@ -28,7 +28,7 @@ class FakeSocket(object):
 
 
 class FakeCommand(object):
-    SCHEDULE, CANCEL, STOP, PREPARE, UNLOAD = 1, 2, 3, 4, 5
+    SCHEDULE, CANCEL, STOP, PREPARE, UNLOAD, EMERGENCY_STOP = 1, 2, 3, 4, 5, 6
 
     def __init__(self):
         self.scheduled_at = None
@@ -286,6 +286,16 @@ class NodeTests(unittest.TestCase):
         self.node.handle_datagram(pack(
             self.config, "emergency_stop", "emergency", {"reason": "test"}
         ), self.config["ground_station_ip"])
+        self.assertEqual(
+            self.node.publisher.messages[-1].action, FakeCommand.EMERGENCY_STOP)
+        emergency = SimpleNamespace(
+            request_id="emergency", task_id="task-1", subtask_id="sub-1",
+            device_id=self.config["device_id"], execution_id="", revision=1,
+            state="emergency_stopped", waypoint_index=-1, waypoint_count=0,
+            progress=0.0, position=SimpleNamespace(x=0, y=0, z=0),
+            error_code="", message="robot latch confirmed",
+        )
+        self.node.feedback_callback(emergency)
         states = [item["payload"]["state"] for item in self.messages() if item["message_type"] == "task_status"]
         self.assertEqual(states[-1], "emergency_stop")
         self.assertIsNotNone(self.node.store.load("task-1", "sub-1"))
@@ -298,10 +308,31 @@ class NodeTests(unittest.TestCase):
         self.node.feedback_callback(unload)
         messages = self.messages()
         states = [item["payload"]["state"] for item in messages if item["message_type"] == "task_status"]
-        self.assertEqual(states[-2:], ["emergency_stop", "no_task"])
+        self.assertEqual(states[-2:], ["emergency_stop", "emergency_stop"])
         self.assertIsNone(self.node.store.load("task-1", "sub-1"))
         status = self.node.mission_store.status("task-1", self.config["device_id"])
         self.assertEqual(status["state"], "no_task")
+
+    def test_emergency_without_stored_task_still_waits_for_robot_confirmation(self):
+        before = len(self.node.socket.sent)
+        self.node.handle_datagram(pack(
+            self.config, "emergency_stop", "empty-emergency", {"reason": "test"}
+        ), self.config["ground_station_ip"])
+        self.assertEqual(len(self.node.socket.sent), before)
+        command = self.node.publisher.messages[-1]
+        self.assertEqual(command.action, FakeCommand.EMERGENCY_STOP)
+        self.assertEqual(command.revision, 0)
+        self.node.feedback_callback(SimpleNamespace(
+            request_id="empty-emergency", task_id="task-1", subtask_id="sub-1",
+            device_id=self.config["device_id"], execution_id="", revision=0,
+            state="failed", waypoint_index=-1, waypoint_count=0, progress=0.0,
+            position=SimpleNamespace(x=0, y=0, z=0),
+            error_code="EMERGENCY_STOP_FAILED", message="service rejected",
+        ))
+        ack = self.messages()[-2]
+        self.assertEqual(ack["message_type"], "command_ack")
+        self.assertFalse(ack["payload"]["accepted"])
+        self.assertEqual(self.node.state, "failed")
 
     def test_delete_waits_for_adapter_unload(self):
         crc32, count = self.deliver()

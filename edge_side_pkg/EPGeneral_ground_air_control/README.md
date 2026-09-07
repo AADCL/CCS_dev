@@ -1,6 +1,6 @@
 # epgeneral_ground_air_control
 
-当前独立版本 **0.1.0**，配套 CCS 0.23.1。仅 Ground-Air 设备安装此包；它依赖车辆 underlay 的 ground_air_msgs 及算法栈，不属于其他设备的公共七包。
+当前独立版本 **0.2.0**，配套 CCS 0.23.1。仅 Ground-Air 设备安装此包；它依赖车辆 underlay 的 ground_air_msgs 及算法栈，不属于其他设备的公共七包。
 
 [使用手册](../documents/USER_MANUAL.md) · [完整接口与参数](../documents/INTERFACE_REFERENCE.md) · [Ground-Air 部署](../documents/GROUND_AIR_AGV_DEPLOYMENT.md)
 
@@ -9,6 +9,7 @@
 - ground_air_stage_manager_node.py 提供 /ground_air/system/set_stage，管理基础(0)、建图(1)、重定位(2)的互斥阶段。
 - ground_air_relocalization_stage_node.py 以会话归属协调重定位阶段，关闭时只释放自身阶段。
 - ground_air_initial_pose_adapter_node.py 将 /initialpose 转为地图加载和 use_initial_guess=true 的重定位调用。
+- ground_air_task_adapter_node.py 桥接通用任务协议与原生 prepare/submit/start/cancel/emergency_stop 服务，限制为地面任务并核验实时定位、TF、地图可通行性、人工解锁、OFFBOARD 和速度上限。
 - 当前 manager 发布 guard 2 和 external_tf_required=1；静态 odom/camera_init、base_link/body 变换由一键脚本持有，不由 manager 重复启动。
 
 ## 安装与运行
@@ -22,6 +23,8 @@ rosrun epgeneral_ground_air_control ground_air_stage_manager_node.py
 ~~~
 
 这不会代替外部静态 TF、飞控、雷达及算法。完整定位通过 epgeneral_relocalization 自动启动局部 car_bringup override；手动测试 relocalization_control.launch 时必须提供 map_id，maps_root 默认 /home/bitcq/ccs_edge_ws/maps/download，两个超时默认 90/60 秒。
+
+任务入口为 `ground_air_task_control.launch`。一键脚本常驻控制层、协调器和适配器；适配器在 PREPARE 后以 `task_system.launch` 的分层开关启动导航与任务执行层。执行仍由操作者手动解锁并切入 OFFBOARD，急停闭锁只能按现场规程人工解除。
 
 ## 验证与停止
 

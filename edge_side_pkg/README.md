@@ -14,8 +14,8 @@
 | [EPGeneral_video_srt](EPGeneral_video_srt/README.md) / `epgeneral_video_srt` | 0.1.1 | ROS raw/compressed 图像编码为 SRT Listener |
 | [EPGeneral_map_stream](EPGeneral_map_stream/README.md) / `epgeneral_map_stream` | 0.13.2 | 遥控建图、联合会话、点云预览及成果下载 |
 | [EPGeneral_relocalization](EPGeneral_relocalization/README.md) / `epgeneral_relocalization` | 0.3.0 | 地图下载、定位栈协调、初始位姿及 TF 结果 |
-| [EPGeneral_task_control](EPGeneral_task_control/README.md) / `epgeneral_task_control` | 0.4.4 | 任务接收、UTC 调度、导航适配与反馈 |
-| [EPGeneral_ground_air_control](EPGeneral_ground_air_control/README.md) / `epgeneral_ground_air_control` | 0.1.0 | Ground-Air 阶段互斥、地图加载和初始位姿适配 |
+| [EPGeneral_task_control](EPGeneral_task_control/README.md) / `epgeneral_task_control` | 0.5.0 | 任务接收、UTC 调度、导航/原生任务适配与急停确认 |
+| [EPGeneral_ground_air_control](EPGeneral_ground_air_control/README.md) / `epgeneral_ground_air_control` | 0.2.0 | Ground-Air 阶段互斥、地图加载、初始位姿及地面任务桥接 |
 
 产品版本与 ROS 包版本独立。本次更新文档与发行方式，不改变网络协议或包的运行接口。
 
@@ -26,7 +26,7 @@
 | `go2_edu` | `/home/nvidia/ccs_edge_ws` | `go2_accumulator` | 配置禁用 | 任务不启动；视频启动 |
 | `scout_mini` | `/home/nvidia/ccs_edge_ws` | `scout_finalize` | Scout 定位栈 | 导航适配器；D435i 视频 |
 | `wheeltec_r550p` | `/home/nrc19/ccs_edge_ws` | `managed_finalize` | Wheeltec 定位栈 | 导航适配器；无相机，不启动视频 |
-| `ground_air_agv` | `/home/bitcq/ccs_edge_ws` | `ground_air_service` | 阶段管理及连续 TF 回报 | 任务不启动；视频允许降级 |
+| `ground_air_agv` | `/home/bitcq/ccs_edge_ws` | `ground_air_service` | 阶段管理及连续 TF 回报 | 地面任务与急停桥接；视频允许降级 |
 
 “目录包含功能包”不代表设备已经具备对应驱动或算法。外部工作空间必须提供 profile 约定的消息、话题、服务及 launch。Ground-Air 上电自启动保持禁用，仅按部署指南手动启动用户服务。
 

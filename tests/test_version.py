@@ -40,8 +40,8 @@ class VersionTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1] / "edge_side_pkg" / "EPGeneral_task_control"
         package_version = ET.parse(root / "package.xml").getroot().findtext("version")
         init_text = (root / "src" / "epgeneral_task_control" / "__init__.py").read_text(encoding="utf-8")
-        self.assertEqual(package_version, "0.4.4")
-        self.assertIn('__version__ = "0.4.4"', init_text)
+        self.assertEqual(package_version, "0.5.0")
+        self.assertIn('__version__ = "0.5.0"', init_text)
 
 
 if __name__ == "__main__":
