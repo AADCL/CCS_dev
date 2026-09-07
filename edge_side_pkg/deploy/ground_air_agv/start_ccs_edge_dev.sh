@@ -17,10 +17,10 @@ START_LOG="${LOG_DIR}/startup.log"
 SHUTDOWN_STARTED=false
 ROSCORE_MANAGED=false
 
-LAUNCH_NAMES=(mavros livox mqtav udp_telemetry map_stream a8_camera video_srt stage_manager relocalization mapping_tf)
-NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_map_stream /a8_mini_camera /epgeneral_video_srt /ground_air_stage_manager /epgeneral_relocalization /odom_camera_init_broadcaster)
-OPTIONAL=(false false false false false true true false false false)
-MANAGED=(false false false false false false false false false false)
+LAUNCH_NAMES=(mavros livox mqtav udp_telemetry map_stream a8_camera video_srt stage_manager relocalization mapping_tf ground_control task_control)
+NODE_NAMES=(/mavros /livox_lidar_publisher2 /epgeneral_mqtav /epgeneral_udp_telemetry /epgeneral_map_stream /a8_mini_camera /epgeneral_video_srt /ground_air_stage_manager /epgeneral_relocalization /odom_camera_init_broadcaster /ground_air_mode_manager /epgeneral_task_control)
+OPTIONAL=(false false false false false true true false false false false false)
+MANAGED=(false false false false false false false false false false false false)
 
 mkdir -p "${PID_DIR}" "${LOG_DIR}" "${ROS_HOME}" "${ROS_LOG_DIR}"
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"${START_LOG}"; }
@@ -54,7 +54,7 @@ stop_managed_processes() {
   set +e
   report INFO "正在停止 AGV 端侧进程..."
   # The coordinator releases its stage before the manager and shared TF exit.
-  for index in 8 7 9; do
+  for index in 11 10 8 7 9; do
     [[ "${MANAGED[index]}" == true ]] || continue
     stop_launch_process "${index}"
   done
@@ -112,6 +112,10 @@ relocalization_path="$(rospack find epgeneral_relocalization 2>/dev/null || true
 [[ -x "${relocalization_path}/scripts/epgeneral_relocalization_node.py" ]] || fail "缺少重定位协调器"
 [[ -r "${WORKSPACE}/overrides/car_bringup/launch/relocalization_system.launch" ]] \
   || fail "缺少工作区重定位 launch 覆盖"
+task_path="$(rospack find epgeneral_task_control 2>/dev/null || true)"
+[[ -x "${task_path}/scripts/epgeneral_task_control_node.py" ]] || fail "缺少任务协议协调器"
+[[ -r "${control_path}/launch/ground_air_task_control.launch" ]] || fail "缺少 Ground-Air 任务启动入口"
+[[ -r "${car_bringup_path}/launch/task_system.launch" ]] || fail "缺少原生 task_system.launch"
 report INFO "启动 AGV profile：MAVROS、Livox、MQTT、UDP 遥测、A8 Mini 与 SRT；Livox 包=${livox_path}；A8 包=${a8_path}"
 
 for attempt in $(seq 1 30); do
@@ -229,7 +233,25 @@ if ros_node_exists /odom_camera_init_broadcaster || ros_node_exists /base_link_b
 fi
 start_launch 9 /odom_camera_init_broadcaster car_bringup mapping_coordinate_transforms.launch
 wait_for_node /base_link_body_broadcaster || fail "自启动 TF 缺少 /base_link_body_broadcaster"
-report OK "所有功能启动完成，最后启动的坐标转换 launch 已就绪；按 Ctrl+C 停止"
+
+# Control is resident so emergency stop can latch the vehicle without a task.
+# Navigation and the mission executor remain on demand under the task adapter.
+start_launch 10 /ground_air_mode_manager car_bringup task_system.launch \
+  start_navigation:=false start_control:=true start_mission:=false \
+  start_ccs_task_adapter:=false
+for service in /ground_air/prepare_ground /ground_air/emergency_stop; do
+  for attempt in $(seq 1 30); do
+    rosservice type "${service}" >/dev/null 2>&1 && break
+    [[ "${attempt}" == 30 ]] && fail "任务控制服务未就绪：${service}"
+    sleep 1
+  done
+done
+
+start_launch 11 /epgeneral_task_control epgeneral_ground_air_control ground_air_task_control.launch \
+  task_config_file:="${PROFILE_CONFIG_DIR}/task_control.yaml" \
+  device_config_file:="${PROFILE_CONFIG_DIR}/device.yaml"
+wait_for_node /epgeneral_ground_air_task_adapter || fail "Ground-Air 任务适配器启动失败"
+report OK "所有功能启动完成；任务协议与急停桥接已就绪，导航在任务准备阶段按需启动"
 while true; do
   sleep 2
   for index in "${!NODE_NAMES[@]}"; do

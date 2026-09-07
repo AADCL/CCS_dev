@@ -94,7 +94,7 @@ class GroundAirAgvProfileTests(unittest.TestCase):
                          "0 0 0 0 0 0 $(arg body_frame) $(arg base_frame)")
         self.assertTrue(all(item["pkg"] == "tf2_ros" for item in nodes.values()))
 
-    def test_startup_runs_coordinate_transform_launch_last(self):
+    def test_startup_adds_task_control_after_coordinate_transforms(self):
         startup = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
         manager_start = (
             "rosrun epgeneral_ground_air_control ground_air_stage_manager_node.py"
@@ -106,9 +106,17 @@ class GroundAirAgvProfileTests(unittest.TestCase):
         transform_start = (
             "start_launch 9 /odom_camera_init_broadcaster "
             "car_bringup mapping_coordinate_transforms.launch")
+        ground_control_start = (
+            "start_launch 10 /ground_air_mode_manager car_bringup "
+            "task_system.launch")
+        task_control_start = (
+            "start_launch 11 /epgeneral_task_control epgeneral_ground_air_control "
+            "ground_air_task_control.launch")
         self.assertEqual(startup.count(manager_start), 1)
         self.assertEqual(startup.count(relocalization_start), 1)
         self.assertEqual(startup.count(transform_start), 1)
+        self.assertEqual(startup.count(ground_control_start), 1)
+        self.assertEqual(startup.count(task_control_start), 1)
         self.assertIn(
             'fail "stage manager 已由其他进程启动，拒绝重复接管"',
             startup)
@@ -116,8 +124,10 @@ class GroundAirAgvProfileTests(unittest.TestCase):
                         startup.index(manager_start))
         self.assertLess(startup.index(manager_start), startup.index(relocalization_start))
         self.assertLess(startup.index(relocalization_start), startup.index(transform_start))
+        self.assertLess(startup.index(transform_start), startup.index(ground_control_start))
+        self.assertLess(startup.index(ground_control_start), startup.index(task_control_start))
         self.assertLess(
-            startup.index("for index in 8 7 9; do"),
+            startup.index("for index in 11 10 8 7 9; do"),
             startup.index("for ((index=6; index>=0; index--)); do"))
         self.assertIn(
             'fail "mapping_tf 节点异常退出：/odom_camera_init_broadcaster"',
@@ -135,12 +145,27 @@ class GroundAirAgvProfileTests(unittest.TestCase):
         self.assertNotIn("mapping_coordinate_transforms.launch", manager)
         self.assertNotIn("_resident_transforms", manager)
         self.assertIn("external_tf_required", manager)
+        self.assertIn("_TASK_BLOCKING_STATES", manager)
         self.assertNotIn("mapping_coordinate_transforms.launch", core)
         mapping = yaml.safe_load((PROFILE / "config" / "map_stream.yaml").read_text(
             encoding="utf-8"))
         ground_air = mapping["integrations"]["ground_air"]
         self.assertNotIn("coordinate_transform_launch", ground_air)
         self.assertNotIn("fast_lio_ready_node", ground_air)
+
+    def test_task_profile_is_enabled_and_ground_only(self):
+        task = yaml.safe_load(
+            (PROFILE / "config" / "task_control.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(task["deployment"], {"state": "deployed", "enabled": True})
+        self.assertEqual(task["protocol_id"], "ccs-task-control-v2")
+        self.assertEqual(task["network"]["ground_station_ip"], "192.168.50.101")
+        adapter = task["adapter"]
+        self.assertEqual(adapter["type"], "ground_air")
+        self.assertEqual(adapter["task_launch_file"], "task_system.launch")
+        self.assertEqual(adapter["max_linear_speed_mps"], 0.1)
+        self.assertEqual(adapter["max_angular_speed_rps"], 0.2)
+        self.assertTrue(adapter["emergency_lock_file"].startswith(
+            "/home/bitcq/ccs_edge_ws/"))
 
     def test_systemd_service_owns_boot_startup(self):
         unit = (PROFILE / "ccs-edge-dev.service").read_text(encoding="utf-8")
