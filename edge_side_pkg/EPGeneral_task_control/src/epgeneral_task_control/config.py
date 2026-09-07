@@ -95,22 +95,44 @@ def load_config(task_path, device_path):
         "adapter": dict(adapter),
     }
     if adapter:
+        adapter_type = str(adapter.get("type", "navigation")).strip().lower()
+        if adapter_type not in ("navigation", "ground_air"):
+            raise ConfigError("adapter.type must be navigation or ground_air")
+        result["adapter"]["type"] = adapter_type
         adapter_text = (
-            "active_map_state_file", "navigation_launch_package", "navigation_launch_file",
-            "navigation_map_root", "navigation_map_yaml", "navigation_action",
-            "odom_topic", "zero_velocity_topic",
+            "active_map_state_file", "navigation_map_root", "navigation_map_yaml",
         )
+        if adapter_type == "navigation":
+            adapter_text += (
+                "navigation_launch_package", "navigation_launch_file", "navigation_action",
+                "odom_topic", "zero_velocity_topic",
+            )
+        else:
+            adapter_text += (
+                "task_launch_package", "task_launch_file", "localization_param",
+                "vehicle_status_topic", "mission_status_topic", "prepare_ground_service",
+                "mission_submit_service", "mission_start_service", "mission_cancel_service",
+                "emergency_stop_service", "emergency_lock_file",
+            )
         for key in adapter_text:
             if not isinstance(adapter.get(key), str) or not adapter[key].strip():
                 raise ConfigError("adapter.%s must be a non-empty string" % key)
-        for key in ("navigation_startup_timeout_seconds", "waypoint_timeout_seconds",
-                    "pose_timeout_seconds", "zero_velocity_hz"):
+        numeric_keys = ("navigation_startup_timeout_seconds", "waypoint_timeout_seconds")
+        if adapter_type == "navigation":
+            numeric_keys += ("pose_timeout_seconds", "zero_velocity_hz")
+        else:
+            numeric_keys += (
+                "service_timeout_seconds", "max_linear_speed_mps", "max_angular_speed_rps",
+                "dwell_seconds",
+            )
+        for key in numeric_keys:
             value = adapter.get(key)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or float(value) <= 0:
                 raise ConfigError("adapter.%s must be positive" % key)
-        count = adapter.get("zero_velocity_count")
-        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
-            raise ConfigError("adapter.zero_velocity_count must be a positive integer")
+        if adapter_type == "navigation":
+            count = adapter.get("zero_velocity_count")
+            if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+                raise ConfigError("adapter.zero_velocity_count must be a positive integer")
         result["adapter"] = dict(adapter)
     if result["max_raw_bytes"] < result["max_compressed_bytes"]:
         raise ConfigError("limits.max_raw_bytes must cover max_compressed_bytes")

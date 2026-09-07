@@ -64,6 +64,13 @@ class TaskSystemTests(unittest.TestCase):
             "running",
         )
 
+    def test_ground_air_agv_uses_safe_default_cruise_speed(self):
+        device = DeviceSnapshot(
+            "AGV_001", "空地车", "AGV", ip_address="192.168.50.130")
+        task = self.repository.create(
+            "AGV 巡检", self.map, [device], now=self.now)
+        self.assertEqual(task.subtasks[0].cruise_speed_mps, 0.1)
+
     def test_conflict_detector_respects_time_altitude_and_delay(self):
         first = DeviceSubtask("s1", "A", "A", "UAV", "127.0.0.1", waypoints=(
             TaskWaypoint("a1", -5, 0, 1), TaskWaypoint("a2", 5, 0, 1),

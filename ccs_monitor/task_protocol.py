@@ -89,6 +89,7 @@ class TaskProtocol:
         payload = {
             "schema_version": 2, "task_id": task.task_id, "task_name": task.name,
             "map_id": task.map_id, "frame_id": task.frame_id,
+            "task_type": "ground" if subtask.device_type == "AGV" else "unspecified",
             "subtask_id": subtask.subtask_id, "device_id": subtask.device_id,
             "revision": subtask.revision, "cruise_speed_mps": subtask.cruise_speed_mps,
             "start_delay_seconds": subtask.start_delay_seconds,

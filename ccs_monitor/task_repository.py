@@ -179,7 +179,8 @@ class TaskRepository(QObject):
         directory = self.root / str(uuid.uuid4().hex)
         directory.mkdir()
         subtasks = tuple(DeviceSubtask(
-            uuid.uuid4().hex, item.device_id, item.device_name, item.device_type, item.ip_address
+            uuid.uuid4().hex, item.device_id, item.device_name, item.device_type, item.ip_address,
+            cruise_speed_mps=0.1 if item.device_type == "AGV" else 1.0,
         ) for item in selected)
         task = TaskDefinition(
             uuid.uuid4().hex, display_name, map_definition.map_id, map_definition.name,

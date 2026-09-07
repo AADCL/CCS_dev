@@ -3,6 +3,7 @@ uint8 CANCEL=2
 uint8 STOP=3
 uint8 PREPARE=4
 uint8 UNLOAD=5
+uint8 EMERGENCY_STOP=6
 uint8 action
 string request_id
 string task_id

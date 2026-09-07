@@ -86,6 +86,7 @@ class RosTaskControlNode(object):
         self.execution = None
         self.preparation = None
         self.pending_cleanup = None
+        self.pending_emergency = None
         self.pending_execute = None
         self.ack_cache = {}
         self.sequence = 0
@@ -222,20 +223,19 @@ class RosTaskControlNode(object):
 
     def _emergency_stop(self, command):
         record = self.execution.persisted() if self.execution is not None else self._stored_record(command)
-        if self.execution is not None:
-            self.execution = None
-            self.store.clear_execution()
-            self.pending_execute = None
-        self._set_state("emergency_stop")
-        self._send(command, "task_status", {
-            "state": "emergency_stop", "message": "emergency stop accepted",
-            "error_code": None,
-        })
-        self._ack(command, True)
-        if record is not None:
-            self._begin_cleanup(command, record, "emergency")
-        else:
-            self._complete_cleanup(command, "emergency")
+        if record is None:
+            record = {
+                "task_id": command["task_id"], "subtask_id": command["subtask_id"],
+                "device_id": command["device_id"], "execution_id": command["execution_id"],
+                "revision": int(command.get("payload", {}).get("revision", 0)),
+                "xml_path": "", "frame_id": self.config["map_frame"], "map_id": "",
+                "scheduled_at": 0.0,
+            }
+        self.pending_emergency = {
+            "command": command, "record": dict(record), "last_publish_at": self.clock(),
+        }
+        self._cache(command, None)
+        self._publish_command("EMERGENCY_STOP", record, command["request_id"])
 
     def _repeat(self, command):
         cached = self.ack_cache.get(command["request_id"])
@@ -485,17 +485,68 @@ class RosTaskControlNode(object):
         self._complete_cleanup(command, cleanup["kind"])
         return True
 
+    def _handle_emergency_feedback(self, message):
+        pending = self.pending_emergency
+        if pending is None:
+            return False
+        command = pending["command"]
+        record = pending["record"]
+        try:
+            matches = (
+                str(message.request_id) == command["request_id"] and
+                str(message.task_id).casefold() == command["task_id"].casefold() and
+                str(message.subtask_id).casefold() == command["subtask_id"].casefold() and
+                str(message.device_id).casefold() == command["device_id"].casefold() and
+                int(message.revision) == int(record.get("revision", 0))
+            )
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if not matches:
+            return False
+        state = str(message.state).lower()
+        if state not in ("emergency_stopped", "failed"):
+            return False
+        self.pending_emergency = None
+        if state == "failed":
+            reason = str(message.message) or "robot emergency stop was not confirmed"
+            error_code = str(message.error_code) or "EMERGENCY_STOP_FAILED"
+            self._ack(command, False, reason, error_code)
+            self._set_state("failed")
+            self._send(command, "task_status", {
+                "state": "failed", "message": reason, "error_code": error_code,
+            })
+            return True
+        if self.execution is not None:
+            self.execution = None
+            self.store.clear_execution()
+            self.pending_execute = None
+        self._set_state("emergency_stop")
+        self._send(command, "task_status", {
+            "state": "emergency_stop",
+            "message": str(message.message) or "robot emergency stop confirmed",
+            "error_code": None,
+        })
+        self._ack(command, True)
+        stored = self._stored_record(command)
+        if stored is not None:
+            self._begin_cleanup(command, stored, "emergency")
+        else:
+            self._complete_cleanup(command, "emergency")
+        return True
+
     def _complete_cleanup(self, command, kind):
         self.pending_cleanup = None
         self.preparation = None
         self.mission_store.delete(command["task_id"], command["device_id"])
         self.store.delete(command["task_id"], command["subtask_id"])
-        self._set_state("no_task")
         if kind == "delete":
+            self._set_state("no_task")
             self._ack(command, True)
         else:
+            self._set_state("emergency_stop")
             self._send(command, "task_status", {
-                "state": "no_task", "message": "emergency cleanup completed",
+                "state": "emergency_stop",
+                "message": "emergency cleanup completed; robot latch remains active",
                 "error_code": None,
             })
 
@@ -548,6 +599,8 @@ class RosTaskControlNode(object):
 
     def feedback_callback(self, message):
         with self.lock:
+            if self._handle_emergency_feedback(message):
+                return
             if self._handle_cleanup_feedback(message):
                 return
             if self._handle_preparation_feedback(message):
@@ -624,6 +677,13 @@ class RosTaskControlNode(object):
         if cleanup is not None and now - cleanup["last_publish_at"] >= self.config["preparation_retry_seconds"]:
             cleanup["last_publish_at"] = now
             self._publish_command("UNLOAD", cleanup["record"], cleanup["command"]["request_id"])
+        emergency = self.pending_emergency
+        if (emergency is not None and
+                now - emergency["last_publish_at"] >= self.config["preparation_retry_seconds"]):
+            emergency["last_publish_at"] = now
+            self._publish_command(
+                "EMERGENCY_STOP", emergency["record"],
+                emergency["command"]["request_id"])
         transfer = self.transfer
         if transfer is not None and now - transfer.updated_at > self.config["transfer_seconds"]:
             self.rospy.logwarn("trajectory transfer timed out and was discarded")

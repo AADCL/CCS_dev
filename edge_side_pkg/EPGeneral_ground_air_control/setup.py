@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name="epgeneral_ground_air_control",
-    version="0.1.0",
+    version="0.2.0",
     packages=["epgeneral_ground_air_control"],
     package_dir={"": "src"},
 )
