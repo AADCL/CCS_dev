@@ -147,9 +147,26 @@
       "srt_port": 9000,
       "srt_latency_ms": 120,
       "relocalization_profile": "ground_air_agv",
+      "battery_profile": "disabled",
       "active_map_id": "39a26473-2e65-481f-afbb-5fc9690c6038",
-      "map_bindings": [],
-      "battery_profile": "disabled"
+      "map_bindings": [
+        {
+          "map_id": "39a26473-2e65-481f-afbb-5fc9690c6038",
+          "map_frame": "map",
+          "odom_frame": "odom",
+          "pose_source": "vision_pose",
+          "localized_at": "2026-09-05T06:50:04.774784+00:00",
+          "map_from_odom": {
+            "x": -0.12401937755150806,
+            "y": 0.0030089793358797617,
+            "z": -0.025345168474716382,
+            "qx": -0.004246924737528236,
+            "qy": 0.0176113877087338,
+            "qz": 0.13241413403324298,
+            "qw": 0.9910289096496998
+          }
+        }
+      ]
     },
     {
       "device_id": "FGV_001",
