@@ -1,5 +1,7 @@
 # epgeneral_video_srt
 
+配套 CCS 0.23.1：[完整使用手册](../documents/USER_MANUAL.md) · [设备内接口与参数](../documents/INTERFACE_REFERENCE.md)。包级 launch 默认读取共享配置包；一键脚本显式读取工作空间 `config/<profile>`，修改后需重启。
+
 当前版本：`v0.1.1`
 
 运行配置统一由 `epgeneral_device_config/config/video.yaml` 提供；设备专用视频参数保存在对应部署 profile。

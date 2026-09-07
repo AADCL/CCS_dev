@@ -1,5 +1,7 @@
 # epgeneral_task_control
 
+配套 CCS 0.23.1：[完整使用手册](../documents/USER_MANUAL.md) · [设备内接口与参数](../documents/INTERFACE_REFERENCE.md)。包级 launch 默认读取共享配置包；一键脚本显式读取工作空间 `config/<profile>`，修改后需重启。
+
 <!-- epgeneral_task_control_VERSION: 0.5.0 -->
 
 版本：`v0.5.0`。运行配置统一由 `epgeneral_device_config/config/task_control.yaml` 提供。Scout Mini 继续通过 `/move_base` 执行任务；Ground-Air AGV 通过原生任务服务执行仅地面航点，并要求实时定位、人工解锁和 OFFBOARD。

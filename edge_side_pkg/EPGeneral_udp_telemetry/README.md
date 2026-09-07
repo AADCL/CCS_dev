@@ -1,18 +1,20 @@
 # epgeneral_udp_telemetry
 
+配套 CCS 0.23.1：[完整使用手册](../documents/USER_MANUAL.md) · [设备内接口与参数](../documents/INTERFACE_REFERENCE.md)。包级 launch 默认读取共享配置包；一键脚本显式读取工作空间 `config/<profile>`，修改后需重启。
+
 版本：v0.3.1。运行配置统一由 `epgeneral_device_config/config/udp_telemetry.yaml` 提供。该 ROS Melodic/Noetic 包将 ROS 话题和受限地图文件状态转换为 CCS MessagePack UDP 遥测。
 
 ## 依赖与安装
 
-- Ubuntu 18.04、ROS Melodic、Python 3.6.9
+- 当前基线为 Ubuntu 20.04、ROS Noetic、Python 3；Melodic 为历史兼容信息
 - `rospy`、`roslib`、`geometry_msgs`、`nav_msgs`、`sensor_msgs`
 - `python3-yaml`、`python3-msgpack`
 - 同工作空间中的 `epgeneral_device_config`
 
 ```bash
 sudo apt update
-sudo apt install python3-yaml python3-msgpack ros-melodic-geometry-msgs \
-  ros-melodic-nav-msgs ros-melodic-sensor-msgs
+sudo apt install python3-yaml python3-msgpack ros-noetic-geometry-msgs \
+  ros-noetic-nav-msgs ros-noetic-sensor-msgs
 cd ~/catkin_ws
 rosdep install --from-paths src --ignore-src -r -y
 catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3
@@ -23,13 +25,13 @@ source devel/setup.bash
 
 ```bash
 cd ~/c3po_ctrl_ws
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 catkin_make --force-cmake -DPYTHON_EXECUTABLE=/usr/bin/python3
 source devel/setup.bash
 python3 -c "import epgeneral_udp_telemetry; print(epgeneral_udp_telemetry.__version__)"
 ```
 
-预期版本为 `0.3.0`。如果导入仍失败，检查当前终端的 `echo $ROS_PACKAGE_PATH` 和 `python3 -c 'import sys; print(sys.path)'` 是否包含该工作空间的 devel 路径。源码入口也提供同包 `src` 回退，但标准部署仍应完成 build 和 source。
+预期版本为 `0.3.1`。如果导入仍失败，检查当前终端的 `echo $ROS_PACKAGE_PATH` 和 `python3 -c 'import sys; print(sys.path)'` 是否包含该工作空间的 devel 路径。源码入口也提供同包 `src` 回退，但标准部署仍应完成 build 和 source。
 
 ## 配置
 

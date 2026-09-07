@@ -1,6 +1,6 @@
 [project]
 name = "ccs-monitor"
-version = "0.23.0"
+version = "0.23.1"
 description = "多异构智能体指挥与控制地面站"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -21,4 +21,4 @@ dependencies = [
 package = false
 
 [dependency-groups]
-release = ["pyinstaller==6.22.2", "tomli>=2,<3"]
+release = ["pyinstaller==6.22.2", "tomli>=2,<3", "markdown-it-py==4.2.0"]

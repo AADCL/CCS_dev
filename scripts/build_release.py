@@ -20,6 +20,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from ccs_monitor.version import __version__ as VERSION
+from scripts.release_documentation import stage_documentation
 
 EDGE_PACKAGES = (
     "EPGeneral_device_config", "EPGeneral_map_stream", "epgeneral_mqtav",
@@ -45,6 +46,11 @@ def write_json(path: Path, value) -> None:
 def copy_file(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
+    # Windows checkouts may use CRLF; POSIX shebangs and shell scripts require LF.
+    if source.suffix.lower() in {".sh", ".py"}:
+        content = destination.read_bytes()
+        if b"\r\n" in content:
+            destination.write_bytes(content.replace(b"\r\n", b"\n"))
 
 def copy_tree(source: Path, destination: Path, suffixes: set[str] | None = None) -> None:
     for path in sorted(source.rglob("*")):
@@ -68,14 +74,7 @@ def seed_defaults(destination: Path, source_root: Path = ROOT) -> None:
             raise ValueError(f"Missing or invalid default type icon: {relative}")
 
 def documentation(destination: Path) -> None:
-    for filename in DOCUMENTS:
-        copy_file(ROOT / filename, destination / filename)
-    readme = destination / "README.md"
-    text = readme.read_text(encoding="utf-8").replace("(edge_side_pkg/README.md)", "(docs/USER_GUIDE.md#2-从零部署端侧)")
-    if (destination / "_internal").is_dir():
-        text = text.replace('src="icons/', 'src="_internal/icons/')
-    readme.write_text(text, encoding="utf-8")
-    copy_tree(ROOT / "docs", destination / "docs", {".md"})
+    stage_documentation(ROOT, destination, VERSION)
     copy_file(ROOT / "release/THIRD_PARTY_NOTICES.md", destination / "THIRD_PARTY_NOTICES.md")
 
 def inventory(destination: Path, kind: str, extra: dict | None = None) -> None:
@@ -137,6 +136,7 @@ def edge(work: Path, output: Path) -> Path:
     copy_file(ROOT / "LICENSE", destination / "LICENSE")
     copy_file(ROOT / "release/THIRD_PARTY_NOTICES.md", destination / "THIRD_PARTY_NOTICES.md")
     copy_file(ROOT / "docs/EDGE_DEVICE_INTERFACES.md", destination / "docs/EDGE_DEVICE_INTERFACES.md")
+    stage_documentation(ROOT, destination, VERSION, edge=True)
     inventory(destination, "edge")
     return archive_zip(destination, output / f"CCS-{VERSION}-edge.zip")
 

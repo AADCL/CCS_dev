@@ -1,5 +1,12 @@
 # 开发笔记
 
+## v0.23.1 端侧文档与分发
+
+- 端侧 README、INTERFACE_REFERENCE 和 USER_MANUAL 分别负责总览、真实接口/配置契约和操作流程；包级及设备专项文档链接到统一入口。
+- profile 配置与单包默认配置是两种启动入口，不能写成通用 rosparam 覆盖；当前没有热重载。
+- 发布时将端侧 Markdown 分发到地面站 docs/edge，并按产物布局重定位链接；未分发源码链接到 pre-release-v0.23.1。
+- 验证范围限定为版本、文档覆盖/链接、配置、受影响设备修复和发布内容，历史验收记录保留原日期与结论。
+
 ## v0.23.0 地图界面与电池估算
 
 - `MapMarkerShape` 支持 `arrow/cube/sphere/origin`。`cube` 是兼容配置值，界面名称为“长方体”；VisPy `create_box()` 返回 `(structured_vertices, triangle_faces, outline_edges)`，必须使用 `structured_vertices["position"]` 和三角面，不能按 `MeshData` 调用。长方体与球体使用 opaque + depth test，箭头和 9 px 原点使用顶层半透明绘制。

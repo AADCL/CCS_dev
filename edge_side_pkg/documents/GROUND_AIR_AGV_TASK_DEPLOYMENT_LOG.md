@@ -23,7 +23,7 @@
 - 端侧隔离测试：任务协议包 30 项通过；Ground-Air 包 21 项通过。任务包中依赖平台源码的 `test_ground_contract` 只在本地运行，未向端侧复制平台包。
 - 端侧增量构建：`catkin_make --pkg epgeneral_task_control epgeneral_ground_air_control -DPYTHON_EXECUTABLE=/usr/bin/python3` 通过。首次构建因设备时间仍为 1970 年产生 clock-skew 警告；NTP 同步后再次构建通过且无该警告。
 - 部署后端侧测试：任务协议包 30 项、Ground-Air 包 21 项全部通过。
-- 本地增量回归：任务协议包 31 项、Ground-Air 包 21 项、平台任务/AGV profile 36 项，共 88 项通过。
+- 本地增量回归：任务协议包 31 项、Ground-Air 包 21 项、平台任务/AGV profile/设备地址/发行文档与版本 47 项，共 99 项通过。
 - `roslaunch --nodes epgeneral_ground_air_control ground_air_task_control.launch` 只解析出 `/epgeneral_task_control` 与 `/epgeneral_ground_air_task_adapter`。
 
 ## 静态验收

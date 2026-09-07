@@ -1,5 +1,7 @@
 # Alpha 版本总体开发计划
 
+CCS 0.23.1 已更新端侧文档体系和离线分发，当前入口为[端侧使用手册](../edge_side_pkg/documents/USER_MANUAL.md)。下述 Alpha 历史计划及未完成实机项目继续保留，最新增量结果见[验证记录](RELEASE_VALIDATION.md)。
+
 ## 当前发布工程状态（2026-09-03）
 
 v0.23.0 已新增本地发布工具、安装模板、便携版及端侧配套包构建。使用 Python 3.10.19 / PySide6 6.8.3 构建基线。W5/W7 的四系统实机验收按 [发布验证记录](RELEASE_VALIDATION.md) 跟踪，不能仅因构建脚本就绪标记完成。以下保留历史 Alpha 工作流。

@@ -5,7 +5,7 @@ export PATH=/usr/bin:/bin
 export QT_QPA_PLATFORM=offscreen
 mkdir -p "$HOME"
 app="$HOME/安装 CCS"
-installer=/release/CCS-0.23.0-linux-x64.run
+installer=/release/CCS-0.23.1-linux-x64.run
 for command in python python3 uv ffmpeg; do
     if command -v "$command"; then echo "Unexpected host runtime: $command" >&2; exit 1; fi
 done

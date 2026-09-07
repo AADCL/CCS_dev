@@ -1,5 +1,7 @@
 # 松灵 Scout Mini 端侧部署说明
 
+CCS 0.23.1 当前入口：[使用手册](USER_MANUAL.md) · [接口与配置](INTERFACE_REFERENCE.md)。本页保留设备专项步骤；运行配置以脚本传入的工作空间 config/profile 为准，不能只修改包内默认 YAML。
+
 ## 设备与目录
 
 - 设备：`UGV_001`，端侧 IP `192.168.50.120`，地面站 `192.168.50.101`
@@ -39,7 +41,7 @@ cd ~/ccs_edge_ws
 ./start_ccs_edge_dev.sh
 ```
 
-脚本依次启动 Scout 底盘、Mid-360 Livox 驱动、D435i、MQTT、UDP 遥测、SRT、常驻 `epgeneral_map_stream`、`epgeneral_relocalization` v0.2.2 和 v0.4.3 `epgeneral_task_control`。任务文件 commit 后启动 `scout_navigation/navigation_teb.launch` 并保持到任务删除、急停或节点关闭；执行和常规停止不会重复启停导航。任务适配器通过常驻 TF listener 接收 TF，并在 ready 前校验全部目标点属于 PGM 已知自由空间。按 `Ctrl+C` 会停止脚本自身管理的 ROS launch、节点和 ROS Master；不会自动恢复或发送运动目标。
+脚本依次启动 Scout 底盘、Mid-360 Livox 驱动、D435i、MQTT、UDP 遥测、SRT、常驻 `epgeneral_map_stream`、`epgeneral_relocalization` v0.3.0 和 v0.4.4 `epgeneral_task_control`。任务文件 commit 后启动 `scout_navigation/navigation_teb.launch` 并保持到任务删除、急停或节点关闭；执行和常规停止不会重复启停导航。任务适配器通过常驻 TF listener 接收 TF，并在 ready 前校验全部目标点属于 PGM 已知自由空间。按 `Ctrl+C` 会停止脚本自身管理的 ROS launch、节点和 ROS Master；不会自动恢复或发送运动目标。
 
 重定位地图保存到 `~/livox_fastlio/maps/ccs_download/<map_id>/`。确认防火墙允许端侧 UDP 14565、地面站 UDP 14566/TCP 14601；重定位日志位于 `~/.ros/ccs_edge_dev/log/relocalization.log`。真实发布前必须验证地图下载、六阶段启动、`/initialpose`、稳定 `map <- odom` TF、重复重定位和反序清理。
 
@@ -60,7 +62,7 @@ rosrun scout_map_tools finalize_map.py "$map_name" --replace-raw
 
 `map_name` 为开始时间 `YYYYMMDD_HHMMSS`，停止和转换阶段不得重新计算，也不得使用平台 `map_id` 或 `session_id` 代替。成果保存在 `~/livox_fastlio/maps/$map_name/`，包括 `filtered_camera_init.pcd`、`raw_camera_init.pcd`、`public_map.pcd`、PGM/YAML 和元数据；指控终端通过 UDP 14561/14562 和 TCP 14600 保持既有预览、ACK 与成果下载流程，filtered PCD 不加入下载 ZIP。
 
-如需只启动三个 CCS 功能包，可在 ROS Master 和传感器栈已运行时执行：
+如需只启动六个 CCS 业务包（不启动底盘和传感器驱动），可在 ROS Master 和传感器栈已运行时执行：
 
 ```bash
 roslaunch /home/nvidia/ccs_edge_ws/launch/scout_mini_bringup.launch
