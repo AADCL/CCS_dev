@@ -1,6 +1,12 @@
 # Changelog
 
-<!-- epgeneral_task_control_VERSION: 0.4.4 -->
+<!-- epgeneral_task_control_VERSION: 0.5.0 -->
+
+## [0.5.0] - 2026-09-07
+
+- 新增 Ground-Air AGV 地面任务适配器，桥接原生任务、状态和急停服务。
+- 新增经机器人确认的急停动作及持久闭锁，保留 Scout v2 协议兼容性。
+- AGV 准备阶段校验实时定位、地图栅格和 0.1 m/s 速度上限。
 
 ## [0.4.4] - 2026-09-02
 

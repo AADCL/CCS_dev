@@ -1,12 +1,14 @@
 # epgeneral_task_control
 
-<!-- epgeneral_task_control_VERSION: 0.4.4 -->
+<!-- epgeneral_task_control_VERSION: 0.5.0 -->
 
-版本：`v0.4.4`。运行配置统一由 `epgeneral_device_config/config/task_control.yaml` 提供。Scout Mini 通过 `/fastlio_odom`、实时 `map<-odom` TF 和 `/move_base/goal` 执行有序地图航点；任务目录默认位于 `~/ccs_edge_ws/mission/`。导航适配器持有 `tf2_ros.TransformListener`，持续接收 `/tf` 和 `/tf_static`。
+版本：`v0.5.0`。运行配置统一由 `epgeneral_device_config/config/task_control.yaml` 提供。Scout Mini 继续通过 `/move_base` 执行任务；Ground-Air AGV 通过原生任务服务执行仅地面航点，并要求实时定位、人工解锁和 OFFBOARD。
 
 任务准备阶段会使用导航 `map.yaml` 和 PGM 检查全部航点。地图外、障碍区或未知区航点返回 `WAYPOINT_NOT_TRAVERSABLE`，不会进入 `ready`。运行期 `move_base` 规划失败返回 `NAVIGATION_PLAN_FAILED` 并保留 action 状态文本。
 
 节点监听 UDP 14563，向地面站 UDP 14564 发送 ACK、1 Hz 心跳、任务状态和航点进度。任务文件完整提交后，Scout 适配器启动并保持 `scout_navigation navigation_teb.launch map_name:=<map_id>`；执行和常规停止只发送或取消目标，删除、急停和节点关闭才停止导航进程。
+
+Ground-Air AGV 使用 `ground_air_task_control.launch`。协调器常驻接收任务，适配器在 PREPARE 后按需启动原生 `car_bringup/task_system.launch` 的导航和任务层；控制层由一键脚本常驻，以便没有已存任务时仍可确认 `/ground_air/emergency_stop`。机器人未确认急停闭锁时，协议不会返回成功 ACK。
 
 ## 状态与数据
 
