@@ -41,6 +41,8 @@
 
 静态验收期间设备发生一次整机重启。由于用户服务保持禁用，重启后没有自动恢复任务或运动；人工重新启动一键流程后，NTP、任务服务和上述静态验收再次正常。
 
+最终交接核验发现此前验收 shell 仍持有一套交互式启动进程，而用户服务显示 inactive。已停止该交互栈并通过现有用户服务重新启动；随后用正常 `delete_task` 协议清理 `test_AG_` 验收任务。最终状态为服务 `disabled/active`、任务 `no_task`，仅任务协调器和 Ground-Air 适配器常驻，没有 `move_base`、任务执行器或 `/navigation/cmd_vel` 发布者，急停锁文件不存在。
+
 真实急停没有在无人值守静态验收中触发，以免给已解锁车辆写入安全闭锁。已确认 `/ground_air/emergency_stop` 类型为 `ground_air_msgs/SetEmergencyStop`，无任务急停、机器人确认失败和重启闭锁由隔离测试覆盖。
 
 ## 回滚
