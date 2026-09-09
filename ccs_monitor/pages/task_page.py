@@ -4,12 +4,12 @@ import uuid
 from dataclasses import replace
 from typing import Callable
 
-from PySide6.QtCore import QSettings, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QSettings, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
-    QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
+    QSizePolicy, QStackedWidget, QStyle, QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
 from ..data_source import DeviceDataSource
@@ -93,36 +93,106 @@ class TaskCard(QFrame):
     open_requested = Signal(str)
     delete_requested = Signal(str)
 
-    def __init__(self, task: TaskDefinition, active_map: bool = False, parent=None) -> None:
+    def __init__(self, task: TaskDefinition, active_map: bool = False, parent=None, *, map_exists: bool = True) -> None:
         super().__init__(parent)
-        self.setObjectName("deviceCard")
+        self.task = task
+        self.setObjectName("compactListCard")
+        self.setProperty("active", False)
+        self.setMinimumHeight(153)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(5)
         header = QHBoxLayout()
-        title = QLabel(task.name)
-        title.setObjectName("cardTitle")
-        status = QLabel("可执行" if task.is_ready else "草稿")
-        status.setObjectName("statusPill")
-        header.addWidget(title)
-        header.addStretch()
-        header.addWidget(status)
+        header.setSpacing(8)
+        self.title = self._label(task.name, "compactCardTitle")
+        self.title.setToolTip(task.name)
+        state = self.status_key(task)
+        self.status = self._label({"ready": "配置就绪", "draft": "草稿", "error": "加载异常"}[state], "compactCardStatus", wrap=False)
+        self.status.setProperty("state", state)
+        self.status.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        header.addWidget(self.title, 1)
+        header.addWidget(self.status, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
-        map_state = "当前激活地图" if active_map else "非激活地图"
-        layout.addWidget(QLabel(f"地图 {task.map_name}  ·  {map_state}  ·  设备 {len(task.subtasks)} 台"))
-        layout.addWidget(QLabel(
-            f"有效子任务 {sum(item.is_valid for item in task.subtasks)} / {len(task.subtasks)}  ·  "
-            f"更新 {task.updated_at.astimezone().strftime('%Y-%m-%d %H:%M')}"
-        ))
+
+        metadata = QGridLayout()
+        metadata.setHorizontalSpacing(8)
+        metadata.setVerticalSpacing(2)
+        metadata.addWidget(self._label("地图", "compactFieldLabel", wrap=False), 0, 0)
+        map_row = QHBoxLayout()
+        map_row.setSpacing(6)
+        map_name = self._label(task.map_name or "未知地图", "compactFieldValue")
+        map_name.setToolTip(task.map_name or "未知地图")
+        map_row.addWidget(map_name, 1)
+        map_state = "未读取" if state == "error" else "地图不存在" if not map_exists else "当前激活" if active_map else "非激活"
+        map_tag = self._label(map_state, "compactActiveTag" if active_map and map_exists else "compactCardError" if not map_exists else "compactFieldLabel", wrap=False)
+        map_tag.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        map_row.addWidget(map_tag, 0, Qt.AlignmentFlag.AlignTop)
+        metadata.addLayout(map_row, 0, 1)
+        metadata.addWidget(self._label("文件时间" if state == "error" else "更新", "compactFieldLabel", wrap=False), 1, 0)
+        metadata.addWidget(self._label(task.updated_at.astimezone().strftime("%Y-%m-%d %H:%M:%S"), "compactFieldValue"), 1, 1)
+        metadata.setColumnStretch(1, 1)
+        layout.addLayout(metadata)
+
+        metrics = QHBoxLayout()
+        metrics.setSpacing(10)
+        total = len(task.subtasks)
+        values = (
+            ("设备", "--" if state == "error" else f"{total} 台"),
+            ("有效子任务", "--" if state == "error" else f"{sum(item.is_valid for item in task.subtasks)}/{total}"),
+            ("任务点", "--" if state == "error" else f"{sum(len(item.waypoints) for item in task.subtasks):,}"),
+        )
+        for caption, value in values:
+            metric = self._label(f"{caption}  {value}", "compactCardMetric")
+            metrics.addWidget(metric, 1)
+        layout.addLayout(metrics)
+
         actions = QHBoxLayout()
-        actions.addStretch()
-        delete = QPushButton("删除")
-        delete.setObjectName("dangerButton")
-        open_button = QPushButton("打开")
-        open_button.setObjectName("primaryButton")
-        delete.clicked.connect(lambda: self.delete_requested.emit(task.task_id))
-        open_button.clicked.connect(lambda: self.open_requested.emit(task.task_id))
-        actions.addWidget(delete)
-        actions.addWidget(open_button)
+        actions.setSpacing(6)
+        if state == "error":
+            error = self._label(task.error_message or "任务文件无法读取", "compactCardError")
+            error.setToolTip(task.error_message or "任务文件无法读取")
+            actions.addWidget(error, 1)
+        else:
+            actions.addStretch()
+        self.open_button = QPushButton("查看原因" if state == "error" else "打开任务")
+        self.open_button.setObjectName("compactPrimaryButton")
+        self.open_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation if state == "error" else QStyle.StandardPixmap.SP_ArrowForward))
+        self.open_button.setMinimumHeight(28)
+        self.open_button.clicked.connect(lambda: self.open_requested.emit(task.task_id))
+        self.more_button = QToolButton()
+        self.more_button.setObjectName("compactToolButton")
+        self.more_button.setText("...")
+        self.more_button.setFixedSize(28, 28)
+        self.more_button.setToolTip("更多操作")
+        self.more_button.setAccessibleName("更多任务操作")
+        self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(self.more_button)
+        self.delete_action = menu.addAction(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon), "删除任务")
+        self.delete_action.setEnabled(state != "error")
+        self.delete_action.setToolTip("异常任务无法删除" if state == "error" else "删除任务及其执行日志")
+        self.delete_action.triggered.connect(lambda: self.delete_requested.emit(task.task_id))
+        self.more_button.setMenu(menu)
+        actions.addWidget(self.open_button, 0, Qt.AlignmentFlag.AlignBottom)
+        actions.addWidget(self.more_button, 0, Qt.AlignmentFlag.AlignBottom)
         layout.addLayout(actions)
+
+    @staticmethod
+    def status_key(task: TaskDefinition) -> str:
+        if task.status == TaskDefinitionStatus.ERROR:
+            return "error"
+        return "ready" if task.is_ready else "draft"
+
+    @staticmethod
+    def _label(text: str, name: str, *, wrap: bool = True) -> QLabel:
+        label = QLabel(text)
+        label.setTextFormat(Qt.TextFormat.PlainText)
+        label.setObjectName(name)
+        label.setWordWrap(wrap)
+        label.setMinimumWidth(0)
+        if wrap:
+            label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        return label
 
 
 class TaskDeviceCard(QFrame):
@@ -908,6 +978,11 @@ class TaskPage(QWidget):
         self.execution_service = execution_service
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.tasks = task_repository.tasks()
+        self.cards: list[TaskCard] = []
+        self._grid_columns = 0
+        self._render_pending = False
+        self._render_generation = 0
+        self._restore_scroll_value: int | None = None
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         self.stack = QStackedWidget()
@@ -919,28 +994,58 @@ class TaskPage(QWidget):
         title = QLabel("任务系统")
         title.setObjectName("pageTitle")
         self.search = QLineEdit()
-        self.search.setPlaceholderText("按任务名称搜索")
-        self.search.textChanged.connect(self._render)
+        self.search.setObjectName("compactListSearch")
+        self.search.setPlaceholderText("搜索任务、地图或设备")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._filter_changed)
         new_button = QPushButton("新建任务")
         new_button.setObjectName("primaryButton")
         new_button.clicked.connect(self._create)
         header.addWidget(title)
         header.addStretch()
-        header.addWidget(self.search)
-        self.compact_button = QPushButton("紧凑列表")
+        header.addWidget(new_button)
+        layout.addLayout(header)
+        filters = QHBoxLayout()
+        filters.setSpacing(8)
+        filters.addWidget(self.search, 1)
+        self.status_filter = QComboBox()
+        self.status_filter.setObjectName("compactListFilter")
+        self.status_filter.setAccessibleName("任务状态筛选")
+        for label, value in (("全部状态", "all"), ("草稿", "draft"), ("配置就绪", "ready"), ("加载异常", "error")):
+            self.status_filter.addItem(label, value)
+        self.status_filter.currentIndexChanged.connect(self._filter_changed)
+        filters.addWidget(self.status_filter)
+        self.sort_combo = QComboBox()
+        self.sort_combo.setObjectName("compactListSort")
+        self.sort_combo.setAccessibleName("任务排序")
+        for label, value in (("最近更新", "updated_desc"), ("最早更新", "updated_asc"), ("名称排序", "name")):
+            self.sort_combo.addItem(label, value)
+        self.sort_combo.currentIndexChanged.connect(self._filter_changed)
+        filters.addWidget(self.sort_combo)
+        self.compact_button = QToolButton()
+        self.compact_button.setObjectName("compactToolButton")
+        self.compact_button.setFixedSize(32, 32)
         self.compact_button.setCheckable(True)
         self.compact_button.setChecked(QSettings("CCS", "CCS").value("tasks/compact", False, type=bool))
         self.compact_button.toggled.connect(self._compact_toggled)
-        header.addWidget(self.compact_button)
-        header.addWidget(new_button)
-        layout.addLayout(header)
+        self._update_view_button()
+        filters.addWidget(self.compact_button)
+        self.count_label = QLabel()
+        self.count_label.setObjectName("compactFieldLabel")
+        self.count_label.setMinimumWidth(92)
+        self.count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        filters.addWidget(self.count_label)
+        layout.addLayout(filters)
         self.scroll = QScrollArea()
         self.scroll.setObjectName("taskListScroll")
         self.scroll.viewport().setObjectName("taskListViewport")
         self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.container = QWidget()
         self.container.setObjectName("taskListContainer")
         self.grid = QGridLayout(self.container)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(10)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll.setWidget(self.container)
         layout.addWidget(self.scroll, 1)
@@ -952,8 +1057,10 @@ class TaskPage(QWidget):
         self.stack.addWidget(self.editor)
         self.repository.tasks_updated.connect(self._tasks_updated)
         self.map_repository.active_map_changed.connect(self._active_map_changed)
+        self.map_repository.maps_updated.connect(self._render)
         if execution_service is not None:
             execution_service.availability_changed.connect(self.set_execution_available)
+        self.scroll.viewport().installEventFilter(self)
         self._render()
 
     def set_execution_available(self, available: bool, message: str = "") -> None:
@@ -966,6 +1073,8 @@ class TaskPage(QWidget):
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
         self.editor.set_theme(palette)
+        self._update_view_button()
+        self._render()
         self.update()
 
     def set_active(self, active: bool) -> None:
@@ -973,26 +1082,84 @@ class TaskPage(QWidget):
             self.editor.viewer.set_interaction_mode("browse")
 
     def _render(self) -> None:
+        self._render_pending = False
+        self._render_generation += 1
+        generation = self._render_generation
+        scrollbar = self.scroll.verticalScrollBar()
+        scroll_value = scrollbar.value() if self._restore_scroll_value is None else self._restore_scroll_value
+        self._restore_scroll_value = scroll_value
+        self.container.setUpdatesEnabled(False)
         while self.grid.count():
             item = self.grid.takeAt(0)
             if item.widget():
+                item.widget().hide()
                 item.widget().deleteLater()
+        self.cards = []
         query = self.search.text().strip().casefold()
-        filtered = [item for item in self.tasks if not query or query in item.name.casefold()]
-        columns = 1 if self.compact_button.isChecked() else (3 if self.width() >= 1180 else 2 if self.width() >= 760 else 1)
+        state = self.status_filter.currentData()
+        filtered = [
+            item for item in self.tasks
+            if (state == "all" or TaskCard.status_key(item) == state)
+            and (not query or query in " ".join((
+                item.name, item.map_name,
+                *(value for subtask in item.subtasks for value in (subtask.device_name, subtask.device_id)),
+            )).casefold())
+        ]
+        sort = self.sort_combo.currentData()
+        if sort == "name":
+            filtered.sort(key=lambda item: (item.name.casefold(), item.task_id))
+        else:
+            filtered.sort(key=lambda item: (item.updated_at, item.task_id), reverse=sort != "updated_asc")
+        columns = self._column_count()
+        self._grid_columns = columns
+        for column in range(4):
+            self.grid.setColumnStretch(column, 1 if column < columns else 0)
+            self.grid.setColumnMinimumWidth(column, 0)
+        self.count_label.setText(f"显示 {len(filtered)} / {len(self.tasks)} 项")
         for index, task in enumerate(filtered):
-            card = TaskCard(task, task.map_id == self.map_repository.active_map_id())
+            card = TaskCard(
+                task, task.map_id == self.map_repository.active_map_id(),
+                map_exists=task.status == TaskDefinitionStatus.ERROR or self.map_repository.map_by_id(task.map_id) is not None,
+            )
             card.open_requested.connect(self.show_task)
             card.delete_requested.connect(self._delete)
+            self.cards.append(card)
             self.grid.addWidget(card, index // columns, index % columns)
         if not filtered:
             empty = QLabel("尚未创建任务" if not self.tasks else "没有匹配的任务")
             empty.setObjectName("emptyState")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.grid.addWidget(empty, 0, 0, 1, columns)
+        self.container.setUpdatesEnabled(True)
+        self.grid.activate()
+
+        def restore_scroll() -> None:
+            if generation == self._render_generation:
+                scrollbar.setValue(scroll_value)
+                self._restore_scroll_value = None
+
+        QTimer.singleShot(0, restore_scroll)
+
+    def _column_count(self) -> int:
+        if self.compact_button.isChecked():
+            return 1
+        return max(1, min(4, (self.scroll.viewport().width() + 10) // 330))
+
+    def _filter_changed(self) -> None:
+        self._restore_scroll_value = 0
+        self._render()
+
+    def _update_view_button(self) -> None:
+        single_column = self.compact_button.isChecked()
+        self.compact_button.setIcon(self.style().standardIcon(
+            QStyle.StandardPixmap.SP_FileDialogDetailedView if single_column else QStyle.StandardPixmap.SP_FileDialogListView
+        ))
+        self.compact_button.setToolTip("切换为卡片网格" if single_column else "切换为单列列表")
+        self.compact_button.setAccessibleName("单列列表视图")
 
     def _compact_toggled(self, enabled: bool) -> None:
         QSettings("CCS", "CCS").setValue("tasks/compact", bool(enabled))
+        self._update_view_button()
         self._render()
 
     def _create(self) -> None:
@@ -1012,7 +1179,10 @@ class TaskPage(QWidget):
 
     def show_task(self, task_id: str) -> None:
         task = self.repository.task_by_id(task_id)
-        if task is None or task.status == TaskDefinitionStatus.ERROR:
+        if task is None:
+            return
+        if task.status == TaskDefinitionStatus.ERROR:
+            QMessageBox.warning(self, "任务加载异常", task.error_message or "任务文件无法读取")
             return
         current_map = self.map_repository.map_by_id(task.map_id)
         reviewed = True
@@ -1030,6 +1200,7 @@ class TaskPage(QWidget):
     def show_list(self) -> None:
         self.editor.viewer.set_interaction_mode("browse")
         self.stack.setCurrentWidget(self.list_page)
+        self._render()
 
     def _delete(self, task_id: str) -> None:
         answer = QMessageBox.question(
@@ -1049,5 +1220,16 @@ class TaskPage(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        if self.stack.currentWidget() == self.list_page:
-            self._render()
+        if self.stack.currentWidget() == self.list_page and self._column_count() != self._grid_columns:
+            self._queue_render()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if watched is self.scroll.viewport() and event.type() == QEvent.Type.Resize:
+            if self._column_count() != self._grid_columns:
+                self._queue_render()
+        return super().eventFilter(watched, event)
+
+    def _queue_render(self) -> None:
+        if not self._render_pending:
+            self._render_pending = True
+            QTimer.singleShot(0, self._render)

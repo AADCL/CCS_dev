@@ -63,11 +63,12 @@ class MissionConfig(object):
 
 
 class RosConfig(object):
-    def __init__(self, node_name, state, battery, mission):
+    def __init__(self, node_name, state, battery, mission, connection=None):
         self.node_name = node_name
         self.state = state
         self.battery = battery
         self.mission = mission
+        self.connection = connection
 
 
 class AppConfig(object):
@@ -116,6 +117,12 @@ def _ip(value, path):
         raise ConfigError("{0} must be a valid IPv4 or IPv6 address".format(path)) from exc
 
 
+def _timeout_seconds(value, path):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.1 <= float(value) <= 3600:
+        raise ConfigError("{0} must be between 0.1 and 3600 seconds".format(path))
+    return float(value)
+
+
 def _topic_config(value, path, mapping_fields=None, freshness=False):
     data = _mapping(value, path)
     topic = _string(data.get("topic"), "{0}.topic".format(path))
@@ -141,10 +148,7 @@ def _topic_config(value, path, mapping_fields=None, freshness=False):
         if not isinstance(connected_on_message, bool):
             raise ConfigError("{0}.connected_on_message must be true or false".format(path))
         if connected_on_message:
-            raw_timeout = data.get("timeout_seconds", 3.0)
-            if isinstance(raw_timeout, bool) or not isinstance(raw_timeout, (int, float)) or not 0.1 <= float(raw_timeout) <= 3600:
-                raise ConfigError("{0}.timeout_seconds must be between 0.1 and 3600 seconds".format(path))
-            timeout_seconds = float(raw_timeout)
+            timeout_seconds = _timeout_seconds(data.get("timeout_seconds", 3.0), "{0}.timeout_seconds".format(path))
     return RosTopicConfig(topic, message_type, mapping, connected_on_message, timeout_seconds)
 
 
@@ -232,6 +236,14 @@ def load_config(path, device_config_path):
             {"percentage": None, "voltage": None, "current": None},
             enabled=False,
         )
+    connection = None
+    if ros_data.get("connection") is not None:
+        connection_data = _mapping(ros_data["connection"], "ros.connection")
+        connection = _topic_config(connection_data, "ros.connection")
+        connection.connected_on_message = True
+        connection.timeout_seconds = _timeout_seconds(
+            connection_data.get("timeout_seconds", 3.0), "ros.connection.timeout_seconds"
+        )
     ros = RosConfig(
         _string(ros_data.get("node_name"), "ros.node_name"),
         _topic_config(
@@ -242,5 +254,6 @@ def load_config(path, device_config_path):
         ),
         battery,
         mission,
+        connection,
     )
     return AppConfig(device, mqtt, ros)

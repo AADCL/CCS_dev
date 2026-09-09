@@ -1,0 +1,10 @@
+<launch>
+  <arg name="lock_file" default="/home/unitree/ccs_edge_ws/run/go2_stack.lock"/>
+  <node pkg="epgeneral_go2_integration" type="go2_stack_guard.py"
+        name="ccs_go2_mapping_guard" output="screen" required="true">
+    <param name="mode" value="mapping"/>
+    <param name="lock_file" value="$(arg lock_file)"/>
+    <rosparam param="owned_sibling_nodes">[/laserMapping]</rosparam>
+  </node>
+  <include file="$(find go2_bringup)/launch/fast_lio.launch"/>
+</launch>

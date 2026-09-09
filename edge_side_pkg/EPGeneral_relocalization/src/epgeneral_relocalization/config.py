@@ -44,6 +44,11 @@ def load_config(path, device_path):
             "map_frame": str(ros["map_frame"]), "odom_frame": str(ros["odom_frame"]),
             "initial_pose_topic": str(ros["initial_pose_topic"]),
             "map_topic": str(ros["map_topic"]),
+            "localization_health_topic": str(
+                ros.get("localization_health_topic", "")).strip(),
+            "localization_health_timeout_seconds": float(
+                ros.get("localization_health_timeout_seconds",
+                        stability["timeout_seconds"])),
             "startup_timeout_seconds": float(ros["startup_timeout_seconds"]),
             "stages": list(ros["stages"]),
             "tf_timeout_seconds": float(stability["timeout_seconds"]),
@@ -66,8 +71,9 @@ def load_config(path, device_path):
         raise ConfigError("network port is invalid")
     if not 512 <= result["max_datagram_bytes"] <= 65507:
         raise ConfigError("max_datagram_bytes is invalid")
-    if result["backend"] in (
-            "scout_mini", "wheeltec_r550p", "ground_air_agv") and not result["stages"]:
+    if (result["enabled"] and result["backend"] in (
+            "scout_mini", "wheeltec_r550p", "ground_air_agv", "go2_edu")
+            and not result["stages"]):
         raise ConfigError("relocalization stages are empty")
     if result["max_artifact_bytes"] <= 0 or result["download_timeout_seconds"] <= 0:
         raise ConfigError("storage limits are invalid")
@@ -77,6 +83,7 @@ def load_config(path, device_path):
             or result["tf_sample_hz"] <= 0 or result["tf_sample_count"] < 2
             or result["translation_tolerance_m"] <= 0
             or result["yaw_tolerance_deg"] <= 0
+            or result["localization_health_timeout_seconds"] <= 0
             or result["tf_report_interval_seconds"] <= 0
             or result["tf_persist_interval_seconds"] <= 0):
         raise ConfigError("ROS readiness or TF stability limits are invalid")

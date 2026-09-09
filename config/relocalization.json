@@ -21,6 +21,7 @@
     "wheeltec_r550p": {"supported": true, "pose_source": "vision_pose", "odom_frame": "odom"},
     "ground_air_agv": {"supported": true, "pose_source": "vision_pose", "odom_frame": "odom"},
     "go2_edu": {"supported": false, "pose_source": "global_pose", "odom_frame": "odom"},
+    "go2_native": {"supported": true, "pose_source": "global_pose", "odom_frame": "odom"},
     "disabled": {"supported": false, "pose_source": "global_pose", "odom_frame": "odom"}
   }
 }

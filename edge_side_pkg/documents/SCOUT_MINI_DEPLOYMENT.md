@@ -77,7 +77,7 @@ roslaunch /home/nvidia/ccs_edge_ws/launch/scout_mini_bringup.launch
 - 重复启动前端侧 schema 2 和地面站设备绑定同时清除旧 TF；失败后不得回退旧变换。
 - Scout 新栈必须依次进入 starting、awaiting_pose、relocalizing、localized，新 TF 先写端侧状态文件再返回地面站。
 - 2026-08-25 已用活动地图和当前原点位姿完成一次真实重复重定位，新 `map <- odom` 在端侧和地面站均为单位变换且更新时间一致。
-- Go2 部署同一状态清理代码，但真实协商和启动请求均必须返回 `UNSUPPORTED_BACKEND`。
+- 未配置定位 stage 的 Go2 profile 仍必须禁用并返回 `UNSUPPORTED_BACKEND`；已显式启用的设备专项 profile 需同时校验定位健康话题和 `map <- odom`。
 
 ### v0.19.0 遥测修复验收
 

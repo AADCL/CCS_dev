@@ -47,6 +47,30 @@ class _FakeSource:
             "UGV_003", "WheelTech", "UGV", "192.168.50.122",
             relocalization_profile="wheeltec_r550p",
         )
+        self.go2_device = DeviceSnapshot(
+            "QRD_002", "Go2", "QRD", ip_address="192.168.50.111",
+            connection_status=ConnectionStatus.ONLINE,
+        )
+        self.go2_profile = DeviceProfile(
+            "QRD_002", "Go2", "QRD", "192.168.50.111",
+            relocalization_profile="go2_native",
+        )
+        self.invalid_go2_device = DeviceSnapshot(
+            "UGV_004", "Misconfigured", "UGV", ip_address="192.168.50.124",
+            connection_status=ConnectionStatus.ONLINE,
+        )
+        self.invalid_go2_profile = DeviceProfile(
+            "UGV_004", "Misconfigured", "UGV", "192.168.50.124",
+            relocalization_profile="go2_native",
+        )
+        self.disabled_device = DeviceSnapshot(
+            "QRD_003", "Disabled Go2", "QRD", ip_address="192.168.50.113",
+            connection_status=ConnectionStatus.ONLINE,
+        )
+        self.disabled_profile = DeviceProfile(
+            "QRD_003", "Disabled Go2", "QRD", "192.168.50.113",
+            relocalization_profile="disabled",
+        )
         self.logs = []
         self.removed_bindings = []
         self.saved_bindings = []
@@ -55,12 +79,18 @@ class _FakeSource:
         return {
             "ugv_001": self.device_item,
             "ugv_003": self.secondary_device,
+            "qrd_002": self.go2_device,
+            "ugv_004": self.invalid_go2_device,
+            "qrd_003": self.disabled_device,
         }.get(device_id.casefold())
 
     def profile(self, device_id):
         return {
             "ugv_001": self.profile_item,
             "ugv_003": self.secondary_profile,
+            "qrd_002": self.go2_profile,
+            "ugv_004": self.invalid_go2_profile,
+            "qrd_003": self.disabled_profile,
         }.get(device_id.casefold())
 
     def append_external_log(self, *args):
@@ -278,6 +308,80 @@ class RelocalizationServiceTests(unittest.TestCase):
             "端侧需要下发地图",
         )
         self.assertTrue(ready_to_download.can_download)
+
+    def test_go2_profile_is_enabled_only_for_qrd_devices(self):
+        self.assertFalse(self.service.config.profile("go2_edu").supported)
+        self.assertTrue(self.service.config.profile("go2_native").supported)
+        legacy_device = DeviceSnapshot(
+            "QRD_001", "Legacy Go2", "QRD", ip_address="192.168.50.100",
+            connection_status=ConnectionStatus.ONLINE,
+        )
+        legacy_profile = DeviceProfile(
+            "QRD_001", "Legacy Go2", "QRD", "192.168.50.100",
+            relocalization_profile="go2_edu",
+        )
+        self.assertFalse(
+            self.service._is_supported_device(legacy_device, legacy_profile))
+        initial = self.service.snapshot("map-1", "QRD_002")
+        self.assertEqual(initial.status, RelocalizationStatus.UNKNOWN_SPACE)
+
+        negotiating = self.service.negotiate("map-1", "QRD_002")
+        self.assertTrue(negotiating.session_id)
+        sent = self.service.protocol.decode(self.service._socket.sent[-1][0])
+        self.assertEqual(sent.device_id, "QRD_002")
+        self.assertEqual(sent.message_type, "negotiate")
+        self.assertEqual(sent.payload["profile"], "go2_native")
+        self.assertEqual(
+            self.service._socket.sent[-1][1],
+            ("192.168.50.111", self.service.config.device_control_port),
+        )
+        response = RelocalizationEnvelope(
+            "map-1", "QRD_002", negotiating.session_id, sent.request_id,
+            "negotiation_status", 1, 1, {
+                "request_id": sent.request_id, "state": "map_required",
+            },
+        )
+        self.service.process_datagram(
+            self.service.protocol.encode(response), "192.168.50.111")
+        self.assertTrue(
+            self.service.snapshot("map-1", "QRD_002").can_download)
+
+        sent_count = len(self.service._socket.sent)
+        for device_id in ("UGV_004", "QRD_003"):
+            self.assertEqual(
+                self.service.snapshot("map-1", device_id).status,
+                RelocalizationStatus.UNSUPPORTED,
+            )
+            rejected = self.service.negotiate("map-1", device_id)
+            self.assertEqual(rejected.status, RelocalizationStatus.UNSUPPORTED)
+            self.assertEqual(len(self.service._socket.sent), sent_count)
+            for action in (
+                lambda: self.service.download_map("map-1", device_id),
+                lambda: self.service.start_stack("map-1", device_id),
+                lambda: self.service.submit_initial_pose(
+                    "map-1", device_id, 0.0, 0.0, 0.0),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "不支持重定位"):
+                    action()
+
+    def test_go2_native_profile_is_scoped_to_deployed_devices_and_release(self):
+        root = Path(__file__).resolve().parents[1]
+        release = json.loads(
+            (root / "release" / "defaults" / "config" /
+             "relocalization.json").read_text(encoding="utf-8")
+        )
+        self.assertFalse(release["profiles"]["go2_edu"]["supported"])
+        self.assertTrue(release["profiles"]["go2_native"]["supported"])
+        self.assertFalse(release["profiles"]["disabled"]["supported"])
+        current = json.loads(
+            (root / "config" / "devices.json").read_text(encoding="utf-8"))
+        profiles = {
+            item["device_id"]: item["relocalization_profile"]
+            for item in current["devices"]
+        }
+        self.assertEqual(profiles["QRD_001"], "go2_edu")
+        self.assertEqual(profiles["QRD_002"], "go2_native")
+        self.assertEqual(profiles["QRD_003"], "go2_native")
 
     def test_relocalization_is_mutually_exclusive_per_map(self):
         for device_id in ("UGV_001", "UGV_003"):

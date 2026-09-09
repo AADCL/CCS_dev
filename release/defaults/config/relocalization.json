@@ -37,6 +37,11 @@
       "pose_source": "global_pose",
       "odom_frame": "odom"
     },
+    "go2_native": {
+      "supported": true,
+      "pose_source": "global_pose",
+      "odom_frame": "odom"
+    },
     "disabled": {
       "supported": false,
       "pose_source": "global_pose",

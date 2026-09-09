@@ -1,6 +1,10 @@
 import os
 import tempfile
 import unittest
+import time
+import threading
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from epgeneral_ground_air_control.task_adapter import (
     GroundAirAdapterError,
@@ -25,6 +29,87 @@ def payload(speed=0.1, task_type="ground"):
 
 
 class GroundAirAdapterCoreTests(unittest.TestCase):
+    def test_wait_for_next_pose_does_not_hold_callback_lock(self):
+        adapter = self.make_adapter()
+        pose = SimpleNamespace(header=SimpleNamespace(stamp=SimpleNamespace(to_sec=lambda: 100.0)))
+        timer = threading.Timer(0.03, lambda: adapter._local_pose_callback(pose))
+        timer.start()
+        try:
+            adapter._wait_fresh_pose(timeout=0.3)
+        finally:
+            timer.join()
+        adapter.local_pose = None
+        with self.assertRaises(GroundAirAdapterError):
+            adapter._wait_fresh_pose(timeout=0.03)
+        adapter.stop_event.set()
+        with self.assertRaises(GroundAirAdapterError):
+            adapter._wait_fresh_pose(timeout=0.3)
+
+    def make_adapter(self):
+        ros = SimpleNamespace(Time=SimpleNamespace(now=lambda: SimpleNamespace(to_sec=lambda: 100.0)))
+        adapter = GroundAirTaskAdapter(ros, {
+            "prepare_ground_service": "/ground_air/prepare_ground",
+            "pose_timeout_seconds": 2.0,
+        }, object, object)
+        adapter._feedback = Mock()
+        return adapter
+
+    def test_local_pose_requires_arrival_and_source_timestamp_freshness(self):
+        adapter = self.make_adapter()
+        with self.assertRaises(GroundAirAdapterError):
+            adapter._require_fresh_pose()
+        pose = SimpleNamespace(header=SimpleNamespace(stamp=SimpleNamespace(to_sec=lambda: 99.5)))
+        adapter._local_pose_callback(pose)
+        adapter._require_fresh_pose()
+        adapter.local_pose_received_at = time.monotonic() - 3
+        with self.assertRaises(GroundAirAdapterError):
+            adapter._require_fresh_pose()
+        for stamp in (0.0, 97.0, 101.0, float("nan")):
+            pose.header.stamp.to_sec = lambda stamp=stamp: stamp
+            adapter._local_pose_callback(pose)
+            with self.assertRaises(GroundAirAdapterError):
+                adapter._require_fresh_pose()
+
+    def test_native_rejections_are_preserved_without_retry_or_mode_change(self):
+        adapter = self.make_adapter()
+        for message, code in (
+                ("ground navigation requires ground configuration", "GROUND_CONFIGURATION_REQUIRED"),
+                ("local pose is stale", "LOCALIZATION_UNAVAILABLE")):
+            service = Mock(return_value=SimpleNamespace(success=False, message=message))
+            adapter._proxy = Mock(return_value=service)
+            with self.assertRaises(GroundAirAdapterError) as error:
+                adapter._call_trigger("/ground_air/prepare_ground")
+            self.assertEqual(error.exception.error_code, code)
+            self.assertIn(message, str(error.exception))
+            service.assert_called_once_with()
+
+    def test_terminal_feedback_resets_previous_waypoint_clock(self):
+        adapter = self.make_adapter()
+        for state in (4, 5, 6):
+            adapter.execution = {"mission_id": "second", "command": object(), "waypoint_index": 1}
+            adapter.waypoint_started_at = 1.0
+            adapter._mission_status_callback(SimpleNamespace(
+                mission_id="first", state=state, current_index=1, total_goals=2, detail="old"))
+            self.assertIsNotNone(adapter.execution)
+            adapter._mission_status_callback(SimpleNamespace(
+                mission_id="second", state=state, current_index=1, total_goals=2, detail="done"))
+            self.assertIsNone(adapter.execution)
+            self.assertEqual(adapter.waypoint_started_at, 0.0)
+
+    def test_native_fault_is_rejected_before_prepare_service(self):
+        adapter = self.make_adapter()
+        adapter._require_fresh_pose = Mock()
+        adapter._lock_is_persisted = lambda: False
+        adapter.vehicle_status_received_at = time.monotonic()
+        adapter.vehicle_status = SimpleNamespace(emergency_stop=False, localized=True,
+            connected=True, armed=True, flight_mode="OFFBOARD", mode=1, detail="ready")
+        adapter._require_vehicle_ready()
+        for mode in (0, 2, 3, 4, 5, 6):
+            adapter.vehicle_status.mode = mode
+            with self.assertRaises(GroundAirAdapterError) as error:
+                adapter._require_vehicle_ready()
+            self.assertEqual(error.exception.error_code, "GROUND_CONFIGURATION_REQUIRED")
+
     def test_accepts_ground_speed_at_limit(self):
         result = validate_ground_trajectory(
             payload(), "task-1", "sub-1", "AGV_001", "map", 0.1)

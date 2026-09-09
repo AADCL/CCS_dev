@@ -137,12 +137,24 @@ class RelocalizationService(QObject):
     def snapshot(self, map_id: str, device_id: str) -> RelocalizationSnapshot:
         key = (map_id, device_id.casefold())
         existing = self._snapshots.get(key)
-        if existing is not None:
-            return existing
         device = self.source.device(device_id)
         profile = self.source.profile(device_id) if device is not None else None
-        profile_config = self.config.profile(profile.relocalization_profile if profile else "disabled")
-        status = RelocalizationStatus.UNKNOWN_SPACE if profile_config.supported else RelocalizationStatus.UNSUPPORTED
+        if existing is not None:
+            if self._is_supported_device(device, profile):
+                return existing
+            return replace(
+                existing,
+                status=RelocalizationStatus.UNSUPPORTED,
+                message=STATUS_TEXT[RelocalizationStatus.UNSUPPORTED],
+                can_download=False,
+                can_start=False,
+                can_submit_pose=False,
+            )
+        status = (
+            RelocalizationStatus.UNKNOWN_SPACE
+            if self._is_supported_device(device, profile)
+            else RelocalizationStatus.UNSUPPORTED
+        )
         return RelocalizationSnapshot(
             map_id, device_id, "", status, STATUS_TEXT[status],
             can_download=False,
@@ -179,15 +191,16 @@ class RelocalizationService(QObject):
 
     def negotiate(self, map_id: str, device_id: str) -> RelocalizationSnapshot:
         device = self._require_device(device_id)
+        profile = self.source.profile(device_id)
+        if not self._is_supported_device(device, profile):
+            return self._set(
+                map_id, device_id, RelocalizationStatus.UNSUPPORTED,
+                STATUS_TEXT[RelocalizationStatus.UNSUPPORTED])
         existing = self._snapshots.get((map_id, device_id.casefold()))
         if existing is not None and existing.status in ACTIVE_RELOCALIZATION_STATUSES:
             return existing
-        profile = self.source.profile(device_id)
         if hasattr(self.source, "set_device_active_map"):
             self.source.set_device_active_map(device_id, map_id)
-        profile_config = self.config.profile(profile.relocalization_profile if profile else "disabled")
-        if not profile_config.supported:
-            return self._set(map_id, device_id, RelocalizationStatus.UNSUPPORTED, STATUS_TEXT[RelocalizationStatus.UNSUPPORTED])
         self._discard_pending(device_id)
         for key in list(self._live_bindings):
             if key[1] == device_id.casefold():
@@ -207,7 +220,7 @@ class RelocalizationService(QObject):
         return self.snapshot(map_id, device_id)
 
     def download_map(self, map_id: str, device_id: str) -> None:
-        device = self._require_device(device_id)
+        device, _profile = self._require_supported_device(device_id)
         snapshot = self.snapshot(map_id, device_id)
         if not snapshot.session_id:
             raise RuntimeError("尚未与端侧建立重定位会话")
@@ -231,7 +244,7 @@ class RelocalizationService(QObject):
         }, device.ip_address)
 
     def start_stack(self, map_id: str, device_id: str) -> None:
-        device = self._require_device(device_id)
+        device, profile = self._require_supported_device(device_id)
         active_device_id = self.active_device_id(map_id)
         if active_device_id and active_device_id.casefold() != device_id.casefold():
             raise RuntimeError(f"设备 {active_device_id} 正在重定位，其他设备暂不可启动")
@@ -239,7 +252,6 @@ class RelocalizationService(QObject):
         if snapshot.status not in {RelocalizationStatus.MAP_READY, RelocalizationStatus.FAILED,
                                    RelocalizationStatus.SUCCEEDED}:
             raise RuntimeError("端侧地图尚未通过校验")
-        profile = self.source.profile(device_id)
         replace_existing = snapshot.status == RelocalizationStatus.SUCCEEDED or any(
             binding.map_id == map_id for binding in getattr(profile, "map_bindings", ())
         )
@@ -258,7 +270,7 @@ class RelocalizationService(QObject):
     def submit_initial_pose(self, map_id: str, device_id: str, x: float, y: float, yaw: float) -> None:
         if not all(math.isfinite(value) for value in (x, y, yaw)):
             raise ValueError("初始位姿包含无效数值")
-        device = self._require_device(device_id)
+        device, _profile = self._require_supported_device(device_id)
         active_device_id = self.active_device_id(map_id)
         if active_device_id and active_device_id.casefold() != device_id.casefold():
             raise RuntimeError(f"初始位姿与活动重定位设备 {active_device_id} 不匹配")
@@ -552,6 +564,25 @@ class RelocalizationService(QObject):
         if device is None or not device.ip_address:
             raise ValueError(f"设备 {device_id} 不存在或缺少有效地址")
         return device
+
+    def _require_supported_device(self, device_id: str):
+        device = self._require_device(device_id)
+        profile = self.source.profile(device_id)
+        if not self._is_supported_device(device, profile):
+            raise RuntimeError(STATUS_TEXT[RelocalizationStatus.UNSUPPORTED])
+        return device, profile
+
+    def _is_supported_device(self, device, profile) -> bool:
+        if device is None or profile is None:
+            return False
+        profile_name = str(profile.relocalization_profile).strip().casefold()
+        profile_config = self.config.profile(profile_name)
+        if not profile_config.supported:
+            return False
+        return (
+            profile_name != "go2_native"
+            or str(device.device_type).strip().upper() == "QRD"
+        )
 
     @staticmethod
     def _local_address_for(peer_ip: str) -> str:

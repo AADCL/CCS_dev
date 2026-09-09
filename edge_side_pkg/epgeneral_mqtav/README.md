@@ -17,6 +17,7 @@
 - 状态来自 `/mavros/state` 的 `connected`、`armed`、`system_status`、`mode`，以及 `/mavros/battery` 的 `percentage`、`voltage`、`current`。电量百分比统一为 0 到 100 的数值。
 - `ros.state.mapping` 可将上述四个健康字段映射到任意 ROS 消息字段；值为 `null` 时上报不可用。未配置 mapping 时继续使用 MAVROS 同名字段。
 - `ros.state.connected_on_message` 可用消息新鲜度表示自定义底盘在线状态，配合 `timeout_seconds` 超时置为离线。
+- 可选的 `ros.connection` 独立订阅周期消息决定 `fcu_connected`，默认超时为 3 秒。首次消息前和超时后上报 `false`，消息恢复后上报 `true`；此时 `ros.state` 仅更新 `armed`、模式和系统状态，不再决定连接状态或使用自身的新鲜度计时器。省略或设为 `null` 时保持原有行为。
 - `ros.battery.mapping` 支持从任意 ROS 消息字段读取 `percentage`、`voltage`、`current`；值为 `null` 时该项上报不可用。
 - 默认未启用任务状态。启用后可从任意 ROS 消息的安全点分字段路径提取任务字段；未收到、读取失败或未配置时为 `unknown`。
 
@@ -83,6 +84,18 @@ ros:
     message_type: "std_msgs/String"
     field_path: "data"
 ```
+
+对于 `/go2/control/enabled` 等仅在变化时发布的锁存状态话题，应另选周期发布的话题作为连接依据。在现有 `ros` 下增加以下配置，`topic` 和 `message_type` 须与实际发布者一致；本例使用通用心跳消息，超时支持 0.1 至 3600 秒：
+
+```yaml
+ros:
+  connection:
+    topic: "/robot/heartbeat"
+    message_type: "std_msgs/Empty"
+    timeout_seconds: 3.0
+```
+
+`ros.connection` 只检查消息是否持续到达，不读取消息字段；`armed` 仍由 `ros.state.mapping.armed` 提供，连接超时不会清除最近的使能状态。
 
 设备身份文件内容为：
 

@@ -19,6 +19,11 @@ from .protocol import Protocol, ProtocolError
 from .ros_bridge import RosBridge, RosIntegrationError, StackManager
 
 
+SUPPORTED_RELOCALIZATION_BACKENDS = frozenset((
+    "scout_mini", "wheeltec_r550p", "ground_air_agv", "go2_edu",
+))
+
+
 def build_logger(log_dir=None):
     directory = os.path.expanduser(log_dir or "~/.ros/ccs_edge_dev/log")
     os.makedirs(directory, mode=0o750, exist_ok=True)
@@ -152,8 +157,8 @@ class RelocalizationNode(object):
                     self.state = "standby"
             self.identity = new_identity
             self.map_dir = os.path.join(os.path.expanduser(self.config["map_root"]), message["map_id"])
-            if not self.config["enabled"] or self.config["backend"] not in (
-                    "scout_mini", "wheeltec_r550p", "ground_air_agv"):
+            if (not self.config["enabled"]
+                    or self.config["backend"] not in SUPPORTED_RELOCALIZATION_BACKENDS):
                 self.state = "standby"
                 self._write_active_state(message["map_id"], "unsupported")
                 self._reply(message, "negotiation_status", {
@@ -285,15 +290,22 @@ class RelocalizationNode(object):
             self._reply(message, "download_status", {"state": "error", "reason": str(exc)})
 
     def _start_stack(self, message):
-        if not self.config["enabled"] or self.config["backend"] not in (
-                "scout_mini", "wheeltec_r550p", "ground_air_agv"):
+        if (not self.config["enabled"]
+                or self.config["backend"] not in SUPPORTED_RELOCALIZATION_BACKENDS):
             self._write_active_state(message["map_id"], "unsupported")
             self._reply(message, "command_error", {
                 "state": "error", "reason": "UNSUPPORTED_BACKEND"})
             return
+        replace_existing = bool(
+            message.get("payload", {}).get("replace_existing", False))
+        restart_go2 = (
+            self.config["backend"] == "go2_edu"
+            and (replace_existing or self.state == "localized")
+        )
         if (
             self.state in ("awaiting_pose", "localized")
             and self.stack.is_running()
+            and not restart_go2
         ):
             if self.state == "localized" and self.ros is not None:
                 self.ros.cancel_monitor()
@@ -312,7 +324,6 @@ class RelocalizationNode(object):
             self._write_active_state(message["map_id"], "map_required")
             self._reply(message, "stack_status", {"state": "error", "reason": str(exc)})
             return
-        replace_existing = bool(message.get("payload", {}).get("replace_existing", False))
         if replace_existing or self.state == "localized":
             if self.ros is not None:
                 self.ros.cancel_monitor()
@@ -343,13 +354,18 @@ class RelocalizationNode(object):
             self._reply(message, "stack_status", {"state": "error", "reason": str(exc)})
 
     def _initial_pose(self, message):
-        if not self.config["enabled"] or self.config["backend"] not in (
-                "scout_mini", "wheeltec_r550p", "ground_air_agv"):
+        if (not self.config["enabled"]
+                or self.config["backend"] not in SUPPORTED_RELOCALIZATION_BACKENDS):
             self._write_active_state(message["map_id"], "unsupported")
             self._reply(message, "command_error", {
                 "state": "error", "reason": "UNSUPPORTED_BACKEND"})
             return
-        if self.state not in ("awaiting_pose", "localized", "error") or self.ros is None:
+        allowed_states = (
+            ("awaiting_pose", "error")
+            if self.config["backend"] == "go2_edu"
+            else ("awaiting_pose", "localized", "error")
+        )
+        if self.state not in allowed_states or self.ros is None:
             self._reply(message, "command_error", {"state": "error", "reason": "STACK_NOT_READY"})
             return
         payload = message["payload"]

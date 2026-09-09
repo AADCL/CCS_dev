@@ -49,6 +49,10 @@ def feedback_error_code(error):
     if explicit:
         return explicit
     message = str(error).lower()
+    if "local pose" in message or "vehicle status is stale" in message:
+        return "LOCALIZATION_UNAVAILABLE"
+    if "ground configuration" in message:
+        return "GROUND_CONFIGURATION_REQUIRED"
     if "localiz" in message or "map<-odom" in message or "tf " in message:
         return "LOCALIZATION_UNAVAILABLE"
     if "map" in message:
@@ -86,6 +90,9 @@ class GroundAirTaskAdapter(object):
         self.tf_buffer = None
         self.tf_listener = None
         self.vehicle_status = None
+        self.vehicle_status_received_at = None
+        self.local_pose = None
+        self.local_pose_received_at = None
         self.mission_status = None
         self.prepared = None
         self.execution = None
@@ -102,6 +109,7 @@ class GroundAirTaskAdapter(object):
         from ground_air_msgs.msg import MissionStatus, VehicleStatus
         from ground_air_msgs.srv import SetEmergencyStop, SubmitMission
         from std_srvs.srv import Trigger
+        from geometry_msgs.msg import PoseStamped
 
         self._service_types = {
             "prepare": Trigger, "submit": SubmitMission, "start": Trigger,
@@ -112,6 +120,9 @@ class GroundAirTaskAdapter(object):
             self.config["feedback_topic"], self.feedback_class, queue_size=20)
         self.tf_buffer = tf2_ros.Buffer(cache_time=self.rospy.Duration(10.0))
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+        self.rospy.Subscriber(
+            self.config.get("local_pose_topic", "/ground_air/localization/pose"),
+            PoseStamped, self._local_pose_callback, queue_size=1)
         self.rospy.Subscriber(
             self.config["vehicle_status_topic"], VehicleStatus,
             self._vehicle_status_callback, queue_size=10)
@@ -134,10 +145,29 @@ class GroundAirTaskAdapter(object):
     def _vehicle_status_callback(self, message):
         with self.lock:
             self.vehicle_status = message
+            self.vehicle_status_received_at = time.monotonic()
             if (not self._restoring_lock
                     and not bool(getattr(message, "emergency_stop", False))
                     and self._lock_is_persisted()):
                 self._persist_lock(False)
+
+    def _local_pose_callback(self, message):
+        with self.lock:
+            self.local_pose = message
+            self.local_pose_received_at = time.monotonic()
+
+    def _require_fresh_pose(self):
+        timeout = float(self.config.get("pose_timeout_seconds", 0.5))
+        with self.lock:
+            pose, received = self.local_pose, self.local_pose_received_at
+        age = None if pose is None else (
+            self.rospy.Time.now().to_sec() - pose.header.stamp.to_sec())
+        if (received is None or time.monotonic() - received > timeout
+                or age is None or not math.isfinite(age) or age < 0 or age > timeout
+                or pose.header.stamp.to_sec() <= 0):
+            raise GroundAirAdapterError(
+                "local pose is stale or unavailable; check ground_air localization pose stream and clock",
+                "LOCALIZATION_UNAVAILABLE")
 
     def _mission_status_callback(self, message):
         with self.lock:
@@ -161,6 +191,7 @@ class GroundAirTaskAdapter(object):
                            message.detail, error)
             if state in ("completed", "failed", "stopped"):
                 self.execution = None
+                self.waypoint_started_at = 0.0
 
     def _command_callback(self, command):
         if command.action == self.command_class.PREPARE:
@@ -200,6 +231,7 @@ class GroundAirTaskAdapter(object):
         return payload
 
     def _require_live_localization(self):
+        self._require_fresh_pose()
         if not bool(self.rospy.get_param(self.config["localization_param"], False)):
             raise GroundAirAdapterError(
                 "live localization parameter is false", "LOCALIZATION_UNAVAILABLE")
@@ -287,7 +319,31 @@ class GroundAirTaskAdapter(object):
             raise GroundAirAdapterError(
                 "navigation speed verification failed", "TASK_STACK_UNAVAILABLE")
 
+    def _wait_fresh_pose(self, timeout=1.5):
+        # Native localization publishes at 1 Hz, while prepare_ground accepts
+        # only a 0.5-second-old sample. Wait outside self.lock so callbacks run.
+        deadline = time.monotonic() + timeout
+        while not self.stop_event.is_set():
+            with self.lock:
+                pose, received = self.local_pose, self.local_pose_received_at
+            if pose is not None and received is not None:
+                age = self.rospy.Time.now().to_sec() - pose.header.stamp.to_sec()
+                if (0 <= age <= 0.2 and time.monotonic() - received <= 0.2):
+                    return
+            if time.monotonic() >= deadline:
+                raise GroundAirAdapterError(
+                    "timed out waiting for a fresh localization pose before native service",
+                    "LOCALIZATION_UNAVAILABLE")
+            self.stop_event.wait(0.02)
+        raise GroundAirAdapterError("task preparation was cancelled", "VEHICLE_NOT_READY")
+
     def _schedule(self, command):
+        try:
+            self.stop_event.clear()
+            self._wait_fresh_pose()
+        except Exception as exc:
+            self._feedback(command, "failed", -1, 0.0, str(exc), feedback_error_code(exc))
+            return
         with self.lock:
             if self.execution is not None:
                 self._feedback(command, "failed", -1, 0.0,
@@ -314,6 +370,7 @@ class GroundAirTaskAdapter(object):
                     "command": command, "payload": payload, "mission_id": mission_id,
                     "scheduled_at": scheduled_at, "waypoint_index": -1,
                 }
+                self.waypoint_started_at = 0.0
                 self.stop_event.clear()
                 self._feedback(command, "scheduled", -1, 0.0,
                                "ground mission accepted; waiting for UTC start")
@@ -338,6 +395,11 @@ class GroundAirTaskAdapter(object):
         if self.stop_event.is_set():
             return
         try:
+            self._wait_fresh_pose()
+            if self.execution is not execution or self.stop_event.is_set():
+                return
+            if time.time() - start_at > float(self.config.get("utc_tolerance_seconds", 2.0)):
+                raise GroundAirAdapterError("fresh pose arrived after UTC tolerance", "CLOCK_UNSYNCED")
             self._require_live_localization()
             self._require_vehicle_ready()
             self._call_trigger(self.config["mission_start_service"])
@@ -350,9 +412,14 @@ class GroundAirTaskAdapter(object):
                            str(exc), feedback_error_code(exc))
 
     def _require_vehicle_ready(self):
+        self._require_fresh_pose()
         status = self.vehicle_status
         if status is None:
             raise GroundAirAdapterError("vehicle status is unavailable", "VEHICLE_NOT_READY")
+        if (self.vehicle_status_received_at is None
+                or time.monotonic() - self.vehicle_status_received_at >
+                float(self.config.get("pose_timeout_seconds", 2.0))):
+            raise GroundAirAdapterError("vehicle status is stale", "VEHICLE_NOT_READY")
         if bool(status.emergency_stop) or self._lock_is_persisted():
             raise GroundAirAdapterError(
                 "emergency stop is active", "EMERGENCY_STOP_ACTIVE")
@@ -365,9 +432,12 @@ class GroundAirTaskAdapter(object):
         if str(status.flight_mode).upper() != "OFFBOARD":
             raise GroundAirAdapterError(
                 "manual RC OFFBOARD selection is required", "VEHICLE_NOT_READY")
-        if int(status.mode) in (2, 3, 4):
+        if int(status.mode) != 1:
             raise GroundAirAdapterError(
-                "vehicle is not in a ground-compatible mode", "VEHICLE_NOT_READY")
+                "native controller must be GROUND (1), observed mode=%s detail=%s; "
+                "operator fault recovery is required before retry" %
+                (status.mode, getattr(status, "detail", "")),
+                "GROUND_CONFIGURATION_REQUIRED")
 
     def _submit_mission(self, mission_id, payload):
         from geometry_msgs.msg import PoseStamped
@@ -398,8 +468,11 @@ class GroundAirTaskAdapter(object):
                                else ("start" if name == self.config["mission_start_service"]
                                      else "cancel"))()
         if not bool(response.success):
+            reason = feedback_error_code(RuntimeError(response.message))
+            if reason == "INTERNAL_ERROR":
+                reason = "VEHICLE_NOT_READY"
             raise GroundAirAdapterError(
-                "%s rejected: %s" % (name, response.message), "VEHICLE_NOT_READY")
+                "%s rejected: %s" % (name, response.message), reason)
         return response
 
     def _proxy(self, name, kind):
@@ -414,6 +487,7 @@ class GroundAirTaskAdapter(object):
             with self.lock:
                 self.execution = None
                 self.stop_event.set()
+                self.waypoint_started_at = 0.0
             self._feedback(command, "stopped", -1, 0.0, "ground mission stopped")
         except Exception as exc:
             self._feedback(command, "failed", -1, 0.0, str(exc), feedback_error_code(exc))

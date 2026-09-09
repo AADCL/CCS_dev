@@ -320,7 +320,75 @@ def _replace_style_colors(style: str, palette: ThemePalette) -> str:
 
 
 def build_stylesheet(mode: ThemeMode | str) -> str:
-    return _replace_style_colors(BASE_STYLE, theme_palette(mode))
+    palette = theme_palette(mode)
+    return _replace_style_colors(BASE_STYLE, palette) + _compact_list_styles(palette)
+
+
+def _compact_list_styles(palette: ThemePalette) -> str:
+    return f"""
+QFrame#compactListCard {{
+    background: {palette.surface};
+    border: 1px solid {palette.border};
+    border-radius: 6px;
+}}
+QFrame#compactListCard:hover {{ border-color: {palette.border_strong}; }}
+QFrame#compactListCard[active='true'] {{
+    border-color: {palette.primary};
+    border-left: 3px solid {palette.primary};
+}}
+QFrame#compactListCard[selected='true'] {{
+    background: {palette.selected_background};
+    border-color: {palette.primary};
+}}
+QFrame#compactListCard QLabel {{ background: transparent; border: none; }}
+QLabel#compactCardTitle {{ color: {palette.text_strong}; font-size: 15px; font-weight: 600; }}
+QLabel#compactFieldLabel {{ color: {palette.muted}; font-size: 11px; font-weight: 400; }}
+QLabel#compactFieldValue, QLabel#compactCardMetric {{
+    color: {palette.text}; font-size: 12px; font-weight: 400;
+}}
+QLabel#compactCardStatus {{
+    color: {palette.muted}; font-size: 12px; font-weight: 500; padding: 2px 0;
+}}
+QLabel#compactCardStatus[state='ready'] {{ color: {palette.good}; }}
+QLabel#compactCardStatus[state='waiting'], QLabel#compactCardStatus[state='draft'] {{
+    color: {palette.warning};
+}}
+QLabel#compactCardStatus[state='error'], QLabel#compactCardError {{
+    color: {palette.error}; font-size: 12px;
+}}
+QLabel#compactCardStatus[state='active'] {{ color: {palette.primary}; }}
+QFrame#compactListCard QLabel#compactActiveTag {{
+    color: {palette.primary}; background: {palette.primary_soft};
+    border-radius: 3px; font-size: 11px; padding: 2px 5px;
+}}
+QPushButton#compactPrimaryButton, QToolButton#compactPrimaryButton {{
+    color: {palette.primary}; background: {palette.primary_soft};
+    border: 1px solid transparent; border-radius: 4px;
+    font-size: 12px; font-weight: 500; padding: 4px 9px; min-height: 18px;
+}}
+QPushButton#compactToolButton, QToolButton#compactToolButton {{
+    color: {palette.muted}; background: transparent;
+    border: 1px solid transparent; border-radius: 4px;
+    padding: 4px; min-height: 18px; min-width: 18px;
+}}
+QPushButton#compactPrimaryButton:hover, QToolButton#compactPrimaryButton:hover,
+QPushButton#compactToolButton:hover, QToolButton#compactToolButton:hover {{
+    color: {palette.primary}; border-color: {palette.primary};
+}}
+QPushButton#compactToolButton:checked, QToolButton#compactToolButton:checked {{
+    color: {palette.primary}; background: {palette.primary_soft}; border-color: {palette.primary};
+}}
+QPushButton#compactPrimaryButton:focus, QToolButton#compactPrimaryButton:focus,
+QPushButton#compactToolButton:focus, QToolButton#compactToolButton:focus {{ border-color: {palette.focus}; }}
+QPushButton#compactPrimaryButton:disabled, QToolButton#compactPrimaryButton:disabled,
+QPushButton#compactToolButton:disabled, QToolButton#compactToolButton:disabled {{
+    color: {palette.muted}; background: {palette.surface_alt}; border-color: transparent;
+}}
+QToolButton#compactToolButton::menu-indicator {{ image: none; }}
+QLineEdit#compactListSearch, QComboBox#compactListFilter, QComboBox#compactListSort {{
+    padding: 5px 8px; min-height: 20px; font-size: 12px;
+}}
+"""
 
 
 def build_qt_palette(mode: ThemeMode | str) -> QPalette:

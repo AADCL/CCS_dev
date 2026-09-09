@@ -374,7 +374,7 @@ network/storage/ros/tf_stability 结构必填。stages 仅接受程序可调用�
 | --- | --- | --- |
 | `schema_version` | int；必填 1 | 配置 schema |
 | `protocol_id` | string；必填 ccs-relocalization-v1 | 与地面站一致 |
-| `enabled` | bool；必填 | 本包实际读取的开关；Go2 为 false |
+| `enabled` | bool；必填 | 本包实际读取的开关；仅在设备定位 stages 已完成联调时设为 true |
 | `backend` | enum；必填 | scout_mini/wheeltec_r550p/ground_air_agv/go2_edu |
 | `network.bind_host` | string；必填，示例 0.0.0.0 | 本机 UDP 绑定地址 |
 | `network.control_port` | int；必填，示例 14565 | 1..65535 |
@@ -389,9 +389,11 @@ network/storage/ros/tf_stability 结构必填。stages 仅接受程序可调用�
 | `ros.map_frame` | string；必填，示例 map | 定位地图坐标系 |
 | `ros.odom_frame` | string；必填，示例 odom | 本地里程计坐标系 |
 | `ros.initial_pose_topic` | string；必填，示例 /initialpose | 初始位姿输出 |
+| `ros.localization_health_topic` | string；默认空 | 可选定位健康 Bool 话题；配置后必须为 true 且数据新鲜，TF 才可判定成功 |
+| `ros.localization_health_timeout_seconds` | number；默认 tf_stability.timeout_seconds | 定位健康样本最大年龄，必须为正数 |
 | `ros.map_topic` | string；必填 | 就绪判定地图话题，Scout 通常 /map_2d、AGV /map |
 | `ros.startup_timeout_seconds` | number；必填，示例 60 | 正秒数，栈启动等待 |
-| `ros.stages` | mapping[]；必填 | 按顺序启动；非 Go2 后端必须非空 |
+| `ros.stages` | mapping[]；必填 | 按顺序启动；`enabled: true` 时必须非空 |
 | `ros.stages[].name` | string；必填 | 阶段标识 |
 | `ros.stages[].package` | string；必填 | ROS 包名 |
 | `ros.stages[].launch` | string；必填 | launch 文件名 |

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>epgeneral_go2_integration</name>
+  <version>0.1.2</version>
+  <description>CCS lifecycle and launch integration for AADCL GO2 devices.</description>
+  <maintainer email="edge@local.invalid">AADCL</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>rosgraph</exec_depend>
+  <exec_depend>rosnode</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>roslaunch</exec_depend>
+  <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>go2_bringup</exec_depend>
+  <exec_depend>go2_core</exec_depend>
+  <exec_depend>go2_mapping</exec_depend>
+  <exec_depend>go2_localization</exec_depend>
+  <exec_depend>go2_navigation</exec_depend>
+  <exec_depend>go2_control</exec_depend>
+  <exec_depend>epgeneral_mqtav</exec_depend>
+  <exec_depend>epgeneral_udp_telemetry</exec_depend>
+  <exec_depend>epgeneral_video_srt</exec_depend>
+  <exec_depend>epgeneral_map_stream</exec_depend>
+  <exec_depend>epgeneral_relocalization</exec_depend>
+  <exec_depend>epgeneral_task_control</exec_depend>
+  <test_depend>python3-nose</test_depend>
+</package>

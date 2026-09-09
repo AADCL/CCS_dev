@@ -41,7 +41,8 @@ def _pcd() -> bytes:
     )
 
 
-def _artifact_bytes(map_id: str, device_id: str, session_id: str) -> bytes:
+def _artifact_bytes(map_id: str, device_id: str, session_id: str,
+                    frame_id: str = "lio_odom") -> bytes:
     pcd = _pcd()
     pgm = b"P5\n2 2\n255\n" + bytes((0, 254, 205, 254))
     map_yaml = yaml.safe_dump({
@@ -53,7 +54,7 @@ def _artifact_bytes(map_id: str, device_id: str, session_id: str) -> bytes:
              "yaml": ("map.yaml", map_yaml)}
     manifest = {
         "schema_version": 1, "map_id": map_id, "device_id": device_id,
-        "session_id": session_id, "frame_id": "lio_odom",
+        "session_id": session_id, "frame_id": frame_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "files": {
             role: {"path": name, "byte_count": len(data), "sha256": _sha(data)}
@@ -108,7 +109,25 @@ class MapBuildingV2ProtocolTests(unittest.TestCase):
         self.assertEqual(self.config.mapping_frame_for("AGV_001"), "odom")
         self.assertEqual(self.config.preview_source_frame_for("AGV_001"), "camera_init")
         self.assertEqual(self.config.artifact_frame_for("AGV_001"), "map")
+        self.assertEqual(self.config.mapping_frame_for("QRD_002"), "odom")
+        self.assertEqual(self.config.preview_source_frame_for("QRD_002"), "lio_odom")
+        self.assertEqual(self.config.artifact_frame_for("QRD_002"), "odom")
         self.assertEqual(self.config.artifact_frame_for("QRD_001"), "lio_odom")
+
+    def test_go2_frame_override_is_present_in_runtime_and_release_defaults(self):
+        expected = {
+            "remote_mapping": "odom",
+            "preview_source": "lio_odom",
+            "remote_artifact": "odom",
+        }
+        root = Path(__file__).resolve().parents[1]
+        for relative in (
+                Path("config/map_building.json"),
+                Path("release/defaults/config/map_building.json")):
+            with self.subTest(config=relative):
+                payload = json.loads((root / relative).read_text(encoding="utf-8"))
+                self.assertEqual(payload["device_frames"]["QRD_002"], expected)
+                self.assertEqual(payload["frames"]["remote_artifact"], "lio_odom")
 
     def test_prepare_result_round_trip_and_consistency(self):
         envelope = MapBuildingEnvelope(
@@ -227,6 +246,21 @@ class ArtifactTests(unittest.TestCase):
             self.assertTrue(yaml_path.is_file())
             self.assertEqual(PgmMapLoader().load_yaml(yaml_path).pixels.shape, (2, 2))
             self.assertEqual(committed.last_mapping.yaml_sha256, _sha(yaml_path.read_bytes()))
+
+    def test_go2_odom_artifact_matches_only_its_device_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "result.zip"
+            archive.write_bytes(_artifact_bytes(
+                "map-1", "QRD_002", "session-1", frame_id="odom"))
+            artifact = ArtifactPackageValidator(self.config).validate(
+                archive, root / "validated", map_id="map-1",
+                device_id="QRD_002", session_id="session-1",
+            )
+            self.assertEqual(
+                artifact.frame_id, self.config.artifact_frame_for("QRD_002"))
+            self.assertNotEqual(
+                artifact.frame_id, self.config.artifact_frame_for("QRD_001"))
 
     def test_rejects_undeclared_and_traversal_members(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -120,12 +120,17 @@ class StackManager(object):
 
     def _wait_topics(self):
         deadline = self.clock() + self.config["startup_timeout_seconds"]
+        required_topics = [
+            self.config["initial_pose_topic"], self.config["map_topic"]]
+        health_topic = self.config.get("localization_health_topic", "")
+        if health_topic:
+            required_topics.append(health_topic)
         while self.clock() < deadline:
             for name, process in self.processes:
                 if process.poll() is not None:
                     raise RosIntegrationError("stage %s exited during readiness" % name)
             ready = True
-            for topic in (self.config["initial_pose_topic"], self.config["map_topic"]):
+            for topic in required_topics:
                 completed = self.run_command(
                     ["rostopic", "type", topic], stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, universal_newlines=True, check=False,
@@ -194,6 +199,16 @@ class RosBridge(object):
         self.message_class = PoseWithCovarianceStamped
         self.publisher = rospy_module.Publisher(
             config["initial_pose_topic"], PoseWithCovarianceStamped, queue_size=1, latch=False)
+        self._health_lock = threading.Lock()
+        self._health_required = bool(config.get("localization_health_topic"))
+        self._health_ok = not self._health_required
+        self._health_updated_at = 0.0
+        self.health_subscriber = None
+        if self._health_required:
+            from std_msgs.msg import Bool
+            self.health_subscriber = rospy_module.Subscriber(
+                config["localization_health_topic"], Bool,
+                self._health_callback, queue_size=1)
         self.buffer = tf2_ros.Buffer(cache_time=rospy_module.Duration(10.0))
         self.listener = tf2_ros.TransformListener(self.buffer)
         self._monitor_lock = threading.Lock()
@@ -212,8 +227,34 @@ class RosBridge(object):
         with self._monitor_lock:
             return generation == self._monitor_generation
 
+    def _health_callback(self, message):
+        with self._health_lock:
+            self._health_ok = bool(message.data)
+            self._health_updated_at = time.monotonic()
+
+    def _reset_health_gate(self):
+        if not getattr(self, "_health_required", False):
+            return
+        with self._health_lock:
+            self._health_ok = False
+            self._health_updated_at = 0.0
+
+    def _localization_health_ready(self):
+        if not getattr(self, "_health_required", False):
+            return True
+        with self._health_lock:
+            healthy = self._health_ok
+            updated_at = self._health_updated_at
+        return (
+            healthy
+            and updated_at > 0.0
+            and time.monotonic() - updated_at
+            <= self.config["localization_health_timeout_seconds"]
+        )
+
     def publish_and_monitor(self, x, y, yaw, covariance, callback):
         generation = self._next_monitor_generation()
+        self._reset_health_gate()
         message = self.message_class()
         message.header.stamp = self.rospy.Time.now()
         message.header.frame_id = self.config["map_frame"]
@@ -236,9 +277,14 @@ class RosBridge(object):
             return
         deadline = time.monotonic() + self.config["tf_timeout_seconds"]
         samples = []
+        health_seen = False
         delay = 1.0 / self.config["tf_sample_hz"]
         while (time.monotonic() < deadline and not self.rospy.is_shutdown()
                and self._monitor_is_current(generation)):
+            if not self._localization_health_ready():
+                time.sleep(delay)
+                continue
+            health_seen = True
             try:
                 transform = self.buffer.lookup_transform(
                     self.config["map_frame"], self.config["odom_frame"],
@@ -263,7 +309,12 @@ class RosBridge(object):
                     return
             time.sleep(delay)
         if self._monitor_is_current(generation):
-            callback(False, None, "map<-odom TF did not stabilize before timeout")
+            reason = (
+                "localization health did not become ready before timeout"
+                if getattr(self, "_health_required", False) and not health_seen
+                else "map<-odom TF did not stabilize before timeout"
+            )
+            callback(False, None, reason)
 
     def _monitor_continuous(self, callback, generation):
         interval = self.config["tf_report_interval_seconds"]
@@ -271,12 +322,24 @@ class RosBridge(object):
         next_sample = started_at
         cached_sample = None
         cached_stamp = None
+        health_seen = False
         while not self.rospy.is_shutdown() and self._monitor_is_current(generation):
             now = time.monotonic()
             if now < next_sample:
                 time.sleep(min(next_sample - now, 0.1))
                 continue
             next_sample += interval
+            if not self._localization_health_ready():
+                if health_seen:
+                    callback(False, None, "localization health became unavailable")
+                    return
+                if now - started_at >= self.config["tf_timeout_seconds"]:
+                    callback(
+                        False, None,
+                        "localization health did not become ready before timeout")
+                    return
+                continue
+            health_seen = True
             try:
                 transform = self.buffer.lookup_transform(
                     self.config["map_frame"], self.config["odom_frame"],

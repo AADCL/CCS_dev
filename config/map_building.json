@@ -22,6 +22,16 @@
       "remote_mapping": "odom",
       "preview_source": "camera_init",
       "remote_artifact": "map"
+    },
+    "QRD_002": {
+      "remote_mapping": "odom",
+      "preview_source": "lio_odom",
+      "remote_artifact": "odom"
+    },
+    "QRD_003": {
+      "remote_mapping": "odom",
+      "preview_source": "lio_odom",
+      "remote_artifact": "odom"
     }
   },
   "network": {

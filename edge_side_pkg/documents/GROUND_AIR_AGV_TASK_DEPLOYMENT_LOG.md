@@ -1,5 +1,60 @@
 # Ground-Air AGV 地面任务部署记录
 
+## 2026-09-08 连续两轮实车复验通过
+
+最终修复在 CCS 适配器调用准备和启动服务前有界等待新鲜定位位姿（最多 1.5 秒，
+样本年龄不超过 0.2 秒），保留原生 0.5 秒保护和 2 秒 UTC 容差，不自动复位 FAULT。
+原生定位 tracking_timer 固定 1 秒发布，与控制层 0.5 秒门限不匹配；实测发布间隔
+约 0.5 至 1 秒。这解释了执行时机不同造成的间歇性拒绝。
+
+最终版本在端侧通过 26 项隔离增量测试和单包增量构建。现场操作者完成重定位、
+解锁及 OFFBOARD 后，复验现有 test_AG_ 任务 revision=14，6 个航点，0.1 m/s：
+
+- 第一轮 `agv-retest-1-181b17f7`：completed，waypoint_index=5，progress=1.0。
+- 第二轮 `agv-retest-2-cff6eaa1`：completed，waypoint_index=5，progress=1.0。
+- 两轮之间未重启控制器或导航栈；结束后 GROUND、localized=true、无急停。
+- 两轮均未复现 local pose is stale 或 ground configuration 拒绝。
+
+反馈和摘要保存在 `/home/bitcq/ccs_edge_ws/artifacts/agv_retry_20260908/` 的
+round1-feedback.txt、round2-feedback.txt 和 two-round-summary.json。
+原生控制源码校验未改变。本次结论仅覆盖连续执行故障复验，不代表运动中急停
+等其他专项验收已经完成。下文为此前部署与排查历史，状态以本节为准。
+
+## 2026-09-08 本地故障修订（尚未部署）
+
+**更新：2026-09-08 已完成端侧增量部署，实车复验等待现场准备。**
+读取原生源码后修正了下文初步假设：Px4Backend.snapshot 的 pose_stamp 实际来自
+`/ground_air/localization/pose`，原生 telemetry_timeout 为 0.5 秒；部署版已使用
+该话题和阈值，而非 MAVROS 位姿。原生任一 transition 拒绝会进入 FAULT，
+新遥测不会自动从 FAULT 回到 GROUND。用原生纯状态机隔离复现了
+`local pose is stale` → FAULT → `ground navigation requires ground configuration`。
+适配器现严格要求 mode=GROUND(1)，拒绝 UNKNOWN/FAULT 等状态，不自动复位故障。
+
+部署批次 `agv_retry_20260908`：仅原子替换 CCS Ground-Air 包的 task_adapter.py
+和对应测试，备份位于 `/home/bitcq/ccs_edge_ws/.deployment_backups/agv_retry_20260908`，
+证据位于同工作空间 `artifacts/agv_retry_20260908`。端侧和本地 25 项增量测试通过，
+单包 catkin_make 构建成功，原生控制包 Python 文件 SHA-256 校验未变化。
+端侧开机时为 1970 年；启动平台现有 NTP 组件后恢复同步，再启动用户服务。
+启动后控制器 GROUND、未定位、STABILIZED；尚未下发实车执行指令。
+下文保留离线阶段诊断过程，实际部署以本段更新为准。
+
+操作者报告首次执行完成，后续执行分别被原生 prepare_ground 拒绝：
+`ground navigation requires ground configuration` 和 `local pose is stale`。
+这些响应说明拒绝发生在原生准备服务，不是 UDP 任务传输。端侧离线且本地
+缺少原生控制层源码，机械构型变化原因及位姿断流/时间戳异常原因尚未确认。
+
+本地适配器新增 MAVROS `/mavros/local_position/pose` 到达时间和 ROS 源时间戳
+双重检查（默认 2 秒），并检查车辆状态到达新鲜度；准备和启动执行时均检查。
+可通过适配器 `local_pose_topic` 和 `pose_timeout_seconds` 覆盖默认值。
+原生拒绝保留原文，地面构型失败映射为 `GROUND_CONFIGURATION_REQUIRED`，
+本地位姿过期映射为 `LOCALIZATION_UNAVAILABLE`，不自动改变机械构型或飞控模式。
+完成、失败、停止和新调度均复位航点计时，防止上一轮超时计时污染下一轮等待。
+Ground-Air 包 24 项隔离增量测试通过；尚未进行端侧构建、部署或连续实车复验。
+
+端侧上线后需只读核对 prepare_ground 的原生构型判据和位姿输入、VehicleStatus
+字段定义、首次完成到第二次准备期间的构型反馈、MAVROS 位姿源时间戳及频率。
+确认实际话题与阈值后部署 CCS 适配器，再由操作者完成连续两轮低速任务验收。
+
 ## 部署结果
 
 - 设备：`AGV_001`，端侧 CCS 根目录 `/home/bitcq/ccs_edge_ws`。

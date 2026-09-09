@@ -8,6 +8,9 @@ import time
 import unittest
 import zipfile
 from types import SimpleNamespace
+from unittest import mock
+
+import yaml
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,7 +21,7 @@ from epgeneral_relocalization.artifacts import (  # noqa: E402
 )
 from epgeneral_relocalization.protocol import Protocol, ProtocolError  # noqa: E402
 from epgeneral_relocalization.node import RelocalizationNode  # noqa: E402
-from epgeneral_relocalization.config import load_config  # noqa: E402
+from epgeneral_relocalization.config import ConfigError, load_config  # noqa: E402
 from epgeneral_relocalization.ros_bridge import (  # noqa: E402
     RosBridge, angle_span, rostopic_has_subscriber, scoped_search_path,
 )
@@ -122,6 +125,81 @@ class TfMathTests(unittest.TestCase):
             "Type: geometry_msgs/PoseWithCovarianceStamped\n\n"
             "Publishers:\n * /epgeneral_relocalization\n\nSubscribers: None\n"
         ))
+
+    def test_localization_health_gate_requires_a_fresh_true_sample(self):
+        bridge = object.__new__(RosBridge)
+        bridge.config = {"localization_health_timeout_seconds": 1.0}
+        bridge._health_lock = threading.Lock()
+        bridge._health_required = True
+        bridge._health_ok = False
+        bridge._health_updated_at = 0.0
+
+        with mock.patch(
+                "epgeneral_relocalization.ros_bridge.time.monotonic",
+                return_value=10.0):
+            bridge._health_callback(SimpleNamespace(data=True))
+        with mock.patch(
+                "epgeneral_relocalization.ros_bridge.time.monotonic",
+                return_value=10.5):
+            self.assertTrue(bridge._localization_health_ready())
+        with mock.patch(
+                "epgeneral_relocalization.ros_bridge.time.monotonic",
+                return_value=11.1):
+            self.assertFalse(bridge._localization_health_ready())
+        bridge._reset_health_gate()
+        self.assertFalse(bridge._localization_health_ready())
+
+    def test_continuous_monitor_ignores_provisional_tf_until_health_is_true(self):
+        class Stamp:
+            def to_sec(self):
+                return 100.0
+
+        class FakeRospy:
+            Time = type("Time", (), {
+                "__init__": lambda self, _value: None,
+                "now": staticmethod(lambda: Stamp()),
+            })
+            Duration = lambda self, value: value
+
+            @staticmethod
+            def is_shutdown():
+                return False
+
+        class Buffer:
+            calls = 0
+
+            def lookup_transform(self, *_unused):
+                self.calls += 1
+                return SimpleNamespace(
+                    header=SimpleNamespace(stamp=Stamp()),
+                    transform=SimpleNamespace(
+                        translation=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+                        rotation=SimpleNamespace(
+                            x=0.0, y=0.0, z=0.0, w=1.0),
+                    ),
+                )
+
+        bridge = object.__new__(RosBridge)
+        bridge.config = {
+            "map_frame": "map", "odom_frame": "odom",
+            "tf_timeout_seconds": 0.1, "tf_report_interval_seconds": 0.01,
+        }
+        bridge.rospy = FakeRospy()
+        bridge.buffer = Buffer()
+        bridge.logger = SimpleNamespace(warning=lambda *_unused: None)
+        bridge._monitor_lock = threading.Lock()
+        bridge._monitor_generation = 1
+        health = iter((False, False, True))
+        bridge._localization_health_ready = lambda: next(health, True)
+        results = []
+
+        def callback(success, transform, reason):
+            results.append((success, transform, reason))
+            bridge.cancel_monitor()
+
+        bridge._monitor_continuous(callback, 1)
+        self.assertEqual(bridge.buffer.calls, 1)
+        self.assertTrue(results[0][0])
 
     def test_continuous_monitor_reports_changing_tf_without_stability_wait(self):
         class Stamp:
@@ -307,6 +385,31 @@ class TfMathTests(unittest.TestCase):
         self.assertTrue(config["tf_continuous_reporting"])
         self.assertEqual(config["tf_report_interval_seconds"], 1.0)
 
+    def test_go2_template_declares_health_gate_but_remains_disabled(self):
+        profile = os.path.join(ROOT, "..", "deploy", "go2_edu", "config")
+        config = load_config(
+            os.path.join(profile, "relocalization.yaml"),
+            os.path.join(profile, "device.yaml"),
+        )
+        self.assertEqual(config["backend"], "go2_edu")
+        self.assertFalse(config["enabled"])
+        self.assertEqual(
+            config["localization_health_topic"], "/localization/ok")
+        self.assertEqual(config["localization_health_timeout_seconds"], 2.0)
+
+    def test_enabled_go2_requires_at_least_one_navigation_stage(self):
+        profile = os.path.join(ROOT, "..", "deploy", "go2_edu", "config")
+        with open(os.path.join(profile, "relocalization.yaml"), "r") as stream:
+            payload = yaml.safe_load(stream)
+        payload["enabled"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = os.path.join(directory, "relocalization.yaml")
+            with open(config_path, "w") as stream:
+                yaml.safe_dump(payload, stream)
+            with self.assertRaisesRegex(ConfigError, "stages are empty"):
+                load_config(
+                    config_path, os.path.join(profile, "device.yaml"))
+
 
 class NodeIdempotencyTests(unittest.TestCase):
     def test_active_map_state_is_written_atomically(self):
@@ -408,6 +511,72 @@ class NodeIdempotencyTests(unittest.TestCase):
         self.assertEqual(node.state, "relocalizing")
         self.assertEqual(node.ros.args[:3], (0.0, 0.0, 0.0))
 
+    def test_enabled_go2_initial_pose_starts_tf_monitor(self):
+        class FakeRos(object):
+            def publish_and_monitor(self, *args):
+                self.args = args
+
+        node = object.__new__(RelocalizationNode)
+        node.config = {"enabled": True, "backend": "go2_edu"}
+        node.state = "awaiting_pose"
+        node.ros = FakeRos()
+        node.operation_generation = 5
+        node.response_cache = {}
+        node._send = lambda *unused: None
+        node._write_active_state = lambda *unused, **kwargs: None
+        message = {
+            "map_id": "map-1", "device_id": "QRD_002",
+            "session_id": "session", "request_id": "request",
+            "payload": {"x": 1.0, "y": 2.0, "yaw": 0.5},
+        }
+        node._initial_pose(message)
+        self.assertEqual(node.state, "relocalizing")
+        self.assertEqual(node.ros.args[:3], (1.0, 2.0, 0.5))
+
+    def test_enabled_go2_rejects_initial_pose_until_stack_is_restarted(self):
+        node = object.__new__(RelocalizationNode)
+        node.config = {"enabled": True, "backend": "go2_edu"}
+        node.state = "localized"
+        node.ros = SimpleNamespace(
+            publish_and_monitor=lambda *_unused: self.fail(
+                "stale Go2 stack must not accept a new pose"))
+        replies = []
+        node._reply = lambda *args: replies.append(args)
+        node._write_active_state = lambda *unused, **kwargs: None
+        node._initial_pose({
+            "map_id": "map-1", "device_id": "QRD_002",
+            "session_id": "session", "request_id": "request",
+            "payload": {"x": 1.0, "y": 2.0, "yaw": 0.5},
+        })
+        self.assertEqual(
+            replies[-1][2]["reason"], "STACK_NOT_READY")
+
+    def test_enabled_go2_negotiates_map_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            node = object.__new__(RelocalizationNode)
+            node.config = {
+                "enabled": True, "backend": "go2_edu",
+                "map_root": directory, "pcd_filename": "public_map.pcd",
+            }
+            node.lock = threading.RLock()
+            node.identity = None
+            node.operation_generation = 0
+            node.ros = None
+            node.stack = SimpleNamespace(stop=lambda: None)
+            writes, replies = [], []
+            node._write_active_state = lambda *args: writes.append(args)
+            node._reply = lambda *args: replies.append(args)
+            message = {
+                "map_id": "map-1", "device_id": "QRD_002",
+                "session_id": "session", "request_id": "request",
+                "payload": {},
+            }
+            node._negotiate(message)
+            self.assertEqual(node.state, "map_required")
+            self.assertEqual(writes[-1], ("map-1", "map_required"))
+            self.assertEqual(replies[-1][1:], (
+                "negotiation_status", {"state": "map_required"}))
+
     def test_repeat_start_reuses_running_stack_and_waits_for_new_pose(self):
         class FakeStack(object):
             def is_running(self):
@@ -439,7 +608,7 @@ class NodeIdempotencyTests(unittest.TestCase):
             "stack_status", {"state": "awaiting_pose"}
         ))
 
-    def test_go2_rejects_stack_and_clears_persisted_transform(self):
+    def test_disabled_go2_still_rejects_stack_and_clears_persisted_transform(self):
         node = object.__new__(RelocalizationNode)
         node.config = {"enabled": False, "backend": "go2_edu"}
         writes, replies = [], []
@@ -449,6 +618,54 @@ class NodeIdempotencyTests(unittest.TestCase):
         node._start_stack(message)
         self.assertEqual(writes[-1], ("map-1", "unsupported"))
         self.assertEqual(replies[-1][2]["reason"], "UNSUPPORTED_BACKEND")
+
+    def test_go2_replacement_restarts_stack_before_waiting_for_pose(self):
+        class FakeStack(object):
+            def __init__(self):
+                self.started = []
+
+            def is_running(self):
+                return True
+
+            def start(self, *args):
+                self.started.append(args)
+
+        class FakeRos(object):
+            def cancel_monitor(self):
+                self.cancelled = True
+
+        class ImmediateThread(object):
+            def __init__(self, target, args, name):
+                self.target, self.args, self.name = target, args, name
+                self.daemon = False
+
+            def start(self):
+                self.target(*self.args)
+
+        node = object.__new__(RelocalizationNode)
+        node.config = {
+            "enabled": True, "backend": "go2_edu",
+            "pcd_filename": "public_map.pcd",
+        }
+        node.state = "localized"
+        node.map_dir = "/maps/map-1"
+        node.stack = FakeStack()
+        node.ros = FakeRos()
+        node.operation_generation = 2
+        writes, replies = [], []
+        node._write_active_state = lambda *args: writes.append(args)
+        node._reply = lambda *args: replies.append(args)
+        message = {"map_id": "map-1", "payload": {"replace_existing": True}}
+        with mock.patch(
+                "epgeneral_relocalization.node.validate_map_directory"):
+            with mock.patch(
+                    "epgeneral_relocalization.node.threading.Thread",
+                    ImmediateThread):
+                node._start_stack(message)
+        self.assertEqual(node.stack.started, [("map-1", "/maps/map-1")])
+        self.assertEqual(node.state, "awaiting_pose")
+        self.assertEqual(replies[-1][1:], (
+            "stack_status", {"state": "awaiting_pose"}))
 
     def test_stale_tf_result_is_ignored(self):
         class Logger(object):

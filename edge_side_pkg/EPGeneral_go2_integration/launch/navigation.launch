@@ -1,0 +1,20 @@
+<launch>
+  <arg name="map_name"/>
+  <arg name="map_root" default="/home/unitree/ccs_edge_ws/maps/download"/>
+  <arg name="extrinsics_file" default="/home/unitree/go2_nav_ws/src/go2_core/config/extrinsics.yaml"/>
+
+  <!-- Livox and the real SDK bridge are owned by the persistent CCS bringup. -->
+  <include file="$(find go2_bringup)/launch/fast_lio.launch"/>
+  <include file="$(find go2_core)/launch/core.launch">
+    <arg name="extrinsics" value="$(arg extrinsics_file)"/>
+    <arg name="enable_costmap_cloud" value="true"/>
+  </include>
+  <include file="$(find go2_localization)/launch/localization.launch">
+    <arg name="map_name" value="$(arg map_name)"/>
+    <arg name="map_root" value="$(arg map_root)"/>
+  </include>
+  <include file="$(find go2_navigation)/launch/navigation_stack.launch">
+    <arg name="map_name" value="$(arg map_name)"/>
+    <arg name="map_root" value="$(arg map_root)"/>
+  </include>
+</launch>

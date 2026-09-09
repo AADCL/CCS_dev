@@ -181,7 +181,7 @@ class ReleaseContentsTests(unittest.TestCase):
                 self.assertIn(base + "docs/edge/documents/USER_MANUAL.md", names)
                 self.assert_documentation_links(archive)
 
-    def test_edge_has_exactly_eight_packages(self):
+    def test_edge_has_exactly_nine_packages(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             output = root / "dist"
@@ -196,9 +196,14 @@ class ReleaseContentsTests(unittest.TestCase):
                     and Path(name).name == "package.xml"
                 }
                 self.assertEqual(packages, set(builder.EDGE_PACKAGES))
+                self.assertEqual(len(packages), 9)
                 self.assertTrue(any(n.endswith("epgeneral_video_srt_node.cpp") for n in archive.namelist()))
                 self.assertTrue(any(n.endswith("ccs-edge-dev.service") for n in archive.namelist()))
                 base = f"CCS-{builder.VERSION}-edge/edge_side_pkg/"
+                self.assertIn(base + "EPGeneral_go2_integration/scripts/go2_stack_guard.py", archive.namelist())
+                self.assertIn(base + "EPGeneral_map_stream/launch/mapping_prerequisites_go2_robot3.launch", archive.namelist())
+                self.assertIn(base + "deploy/go2_robot3/start_ccs_edge_dev.sh", archive.namelist())
+                self.assertIn(base + "deploy/go2_robot3/config/device.yaml", archive.namelist())
                 for document in ("INTERFACE_REFERENCE.md", "USER_MANUAL.md"):
                     self.assertIn(base + "documents/" + document, archive.namelist())
                 for package in builder.EDGE_PACKAGES:

@@ -1,0 +1,8 @@
+<launch>
+  <arg name="lock_file" default="/home/unitree/ccs_edge_ws/run/go2_stack.lock"/>
+  <node pkg="epgeneral_go2_integration" type="go2_stack_guard.py"
+        name="ccs_go2_navigation_guard" output="screen" required="true">
+    <param name="mode" value="navigation"/>
+    <param name="lock_file" value="$(arg lock_file)"/>
+  </node>
+</launch>
