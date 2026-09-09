@@ -200,10 +200,18 @@ class ReleaseContentsTests(unittest.TestCase):
                 self.assertTrue(any(n.endswith("epgeneral_video_srt_node.cpp") for n in archive.namelist()))
                 self.assertTrue(any(n.endswith("ccs-edge-dev.service") for n in archive.namelist()))
                 base = f"CCS-{builder.VERSION}-edge/edge_side_pkg/"
-                self.assertIn(base + "EPGeneral_go2_integration/scripts/go2_stack_guard.py", archive.namelist())
-                self.assertIn(base + "EPGeneral_map_stream/launch/mapping_prerequisites_go2_robot3.launch", archive.namelist())
-                self.assertIn(base + "deploy/go2_robot3/start_ccs_edge_dev.sh", archive.namelist())
-                self.assertIn(base + "deploy/go2_robot3/config/device.yaml", archive.namelist())
+                for relative in (
+                    "EPGeneral_go2_integration/launch/mapping_fast_lio.launch",
+                    "EPGeneral_go2_integration/launch/navigation.launch",
+                    "EPGeneral_go2_integration/scripts/go2_stack_guard.py",
+                    "EPGeneral_map_stream/launch/mapping_prerequisites_go2_robot3.launch",
+                    "deploy/go2_robot2/start_ccs_edge_dev.sh",
+                    "deploy/go2_robot2/config/udp_telemetry.yaml",
+                    "deploy/go2_robot2/DEPLOYMENT.md",
+                    "deploy/go2_robot3/start_ccs_edge_dev.sh",
+                    "deploy/go2_robot3/config/device.yaml",
+                ):
+                    self.assertIn(base + relative, archive.namelist())
                 for document in ("INTERFACE_REFERENCE.md", "USER_MANUAL.md"):
                     self.assertIn(base + "documents/" + document, archive.namelist())
                 for package in builder.EDGE_PACKAGES:

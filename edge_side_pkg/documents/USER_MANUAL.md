@@ -9,11 +9,13 @@
 | profile | 示例 SSH 目标 | CCS 工作空间 | 操作入口 |
 | --- | --- | --- | --- |
 | go2_edu | nvidia@192.168.50.100 | /home/nvidia/ccs_edge_ws | 前台一键脚本 |
+| go2_robot2 | unitree@192.168.50.111 | /home/unitree/ccs_edge_ws | 原生 Go2 前台一键脚本 |
+| go2_robot3 | unitree@192.168.50.112 | /home/unitree/ccs_edge_ws | 原生 Go2 前台一键脚本 |
 | scout_mini | nvidia@192.168.50.120 | /home/nvidia/ccs_edge_ws | 前台一键脚本 |
 | wheeltec_r550p | nrc19@192.168.50.122 | /home/nrc19/ccs_edge_ws | 前台一键脚本 |
 | ground_air_agv | bitcq@192.168.50.130 | /home/bitcq/ccs_edge_ws | 手动启动用户 systemd 服务 |
 
-这些是仓库 profile 示例，现场 ID/IP、用户和路径不同时先修改配置，不能仅改 SSH 目标。Go2 无可用重定位后端且脚本不启动任务；Ground-Air 启动地面任务协调器、适配器与急停桥接，导航和任务执行层按需启动；Wheeltec 无视频输入。Scout/Wheeltec 任务需要外部导航栈。
+这些是仓库 profile 示例，现场 ID/IP、用户和路径不同时先修改配置，不能仅改 SSH 目标。legacy go2_edu 保持重定位禁用且脚本不启动任务；Go2 Robot2/Robot3 使用地面站 go2_native profile，根脚本确认真实禁用状态和输入新鲜度后启动任务协调器，建图与定位按需互斥运行。Ground-Air 启动地面任务协调器、适配器与急停桥接，导航和任务执行层按需启动；Wheeltec 无视频输入。Scout/Wheeltec 任务需要外部导航栈。
 
 ## 2. 准备源码、配置与依赖
 
@@ -34,11 +36,14 @@ done
 if [ "$PROFILE" = ground_air_agv ]; then
   cp -a "$EDGE_SRC/EPGeneral_ground_air_control" "$STAGING/src/"
 fi
+if [ "$PROFILE" = go2_robot2 ] || [ "$PROFILE" = go2_robot3 ]; then
+  cp -a "$EDGE_SRC/EPGeneral_go2_integration" "$STAGING/src/"
+fi
 cp "$EDGE_SRC/deploy/$PROFILE/config/"*.yaml \
   "$STAGING/src/EPGeneral_device_config/config/"
 ~~~
 
-发布归档有八包，普通设备只选择七包。Ground-Air 第八包需要外部 ground_air_msgs，不能为了“全选”将它强行加入其他设备构建。deploy、documents 不进入 catkin src；设备脚本、launch 和系统配置按用途另行安装。
+发布归档有九包，普通设备选择七个公共包。Ground-Air 另加 EPGeneral_ground_air_control，需要外部 ground_air_msgs；Go2 Robot2/Robot3 另加 EPGeneral_go2_integration，需要原生 Go2 underlay。两类设备各构建八包，不应将全部设备适配包加入同一构建。默认配置加六个设备 profile 共七套，每套七份 YAML，共 49 份配置文件。deploy、documents 不进入 catkin src；设备脚本、launch 和系统配置按用途另行安装。
 
 ### 2.2 在设备准备 ROS 依赖
 
@@ -385,6 +390,8 @@ timedatectl timesync-status
 ## 9. 设备专项操作
 
 - [Go2 EDU](../deploy/go2_edu/DEPLOYMENT.md)：算法 underlay、相机及时间同步。
+- [Go2 Robot2](../deploy/go2_robot2/DEPLOYMENT.md)：原生导航接口、受管启动、迁移与回滚。
+- [Go2 Robot3](../deploy/go2_robot3/DEPLOYMENT.md)：QRD_003 身份、USB2 RGB 参数、输入新鲜度和安全状态确认。
 - [Scout Mini](SCOUT_MINI_DEPLOYMENT.md)：RealSense/navigation/Livox source 顺序、BMS、相机和导航适配。
 - [Wheeltec R550P](WHEELTEC_R550P_DEPLOYMENT.md)：底盘、无视频部署、地图工具和停车行为。
 - [Ground-Air 基础](GROUND_AIR_AGV_DEPLOYMENT.md)、[建图](GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)、[重定位](GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md)：用户服务、外部 TF owner、阶段互斥及 override 安装。

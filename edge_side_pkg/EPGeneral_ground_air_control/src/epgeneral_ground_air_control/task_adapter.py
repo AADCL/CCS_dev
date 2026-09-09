@@ -407,9 +407,11 @@ class GroundAirTaskAdapter(object):
             self._feedback(command, "running", 0, 0.0, "ground mission started")
         except Exception as exc:
             with self.lock:
+                if self.execution is not execution or self.stop_event.is_set():
+                    return
                 self.execution = None
-            self._feedback(command, "failed", -1, 0.0,
-                           str(exc), feedback_error_code(exc))
+                self._feedback(command, "failed", -1, 0.0,
+                               str(exc), feedback_error_code(exc))
 
     def _require_vehicle_ready(self):
         self._require_fresh_pose()

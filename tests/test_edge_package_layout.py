@@ -16,6 +16,7 @@ PACKAGE_DIRS = (
     "EPGeneral_task_control",
     "EPGeneral_udp_telemetry",
     "EPGeneral_video_srt",
+    "EPGeneral_go2_integration",
 )
 FUNCTION_DIRS = PACKAGE_DIRS[1:]
 CONFIG_FILES = (
@@ -30,7 +31,7 @@ CONFIG_FILES = (
 
 
 class EdgePackageLayoutTests(unittest.TestCase):
-    def test_edge_root_has_eight_packages_and_two_control_side_directories(self):
+    def test_edge_root_has_nine_packages_and_two_control_side_directories(self):
         actual = {
             path.name
             for path in EDGE_ROOT.iterdir()
@@ -53,6 +54,7 @@ class EdgePackageLayoutTests(unittest.TestCase):
             "epgeneral_task_control",
             "epgeneral_udp_telemetry",
             "epgeneral_video_srt",
+            "epgeneral_go2_integration",
         })
         self.assertFalse((EDGE_ROOT / "deploy" / "package.xml").exists())
         self.assertFalse((EDGE_ROOT / "documents" / "package.xml").exists())

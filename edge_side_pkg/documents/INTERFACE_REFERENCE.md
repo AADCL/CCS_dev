@@ -12,7 +12,8 @@
 
 | profile | 外部工作空间及集成要求 |
 | --- | --- |
-| Go2 | `/home/nvidia/go2_mid360_nav/catkin_ws` 提供 Livox、LIO、地图 accumulator 和 PGM 工具；CCS 在 `/home/nvidia/ccs_edge_ws` |
+| Go2 EDU legacy | `/home/nvidia/go2_mid360_nav/catkin_ws` 提供 Livox、LIO、地图 accumulator 和 PGM 工具；CCS 在 `/home/nvidia/ccs_edge_ws` |
+| Go2 Robot2 / Robot3 | `/home/unitree/go2_nav_ws` 提供原生控制、Livox、LIO、定位和导航；CCS 在 `/home/unitree/ccs_edge_ws`，由 `EPGeneral_go2_integration` 管理按需算法入口 |
 | Scout | 启动脚本依次 source Noetic、RealSense、Scout navigation、livox_fastlio、CCS；依赖 Scout 状态/BMS、Livox、FAST-LIO、TF/pose/cloud adapter 和 move_base |
 | Wheeltec | `/home/nrc19/livox_fastlio` 提供底盘、Livox、FAST-LIO、地图工具和导航；CCS 在 `/home/nrc19/ccs_edge_ws` |
 | Ground-Air | `/home/bitcq/catkin_ws` 提供算法与 `ground_air_msgs`；`/home/bitcq/ccs_edge_ws` 提供 CCS、阶段控制及局部 override |
@@ -31,6 +32,7 @@
 | relocalization | 地面站地图归档、定位 TF | 外部定位 launch、initialpose | 栈就绪后发初始位姿；状态文件与实时定位一致 |
 | task_control | UDP 任务、执行反馈、适配器的 Odometry/TF | 自定义 command、任务状态、move_base action、停车 Twist | 协调器不直接控制 MAVROS；运动由设备适配器执行 |
 | ground_air_control | stage 请求、initialpose | SetSystemStage、LoadMap、Relocalize、阶段状态 | 建图与重定位互斥，按会话归属释放阶段 |
+| go2_integration | 原生 Go2 ROS 包、设备标定和栈占用状态 | 建图/导航 launch、互斥锁 | 持久设备由根脚本持有，按需栈不重复启动 Livox 或 SDK bridge |
 
 ## 2. ROS 消息、服务与 TF
 
@@ -146,6 +148,9 @@ Ground-Air 输入 `/cloud_registered` 在 camera_init，预览需转换为 odom�
 | `mqtt.topics.heartbeat` | string；必填 | 示例 mqtav/{device_id}/heartbeat |
 | `mqtt.topics.status` | string；必填 | 示例 mqtav/{device_id}/status；三主题仅支持 device_id 模板，禁用 +/# 通配符 |
 | `ros.node_name` | string；必填 | 非空 ROS 节点名 |
+| `ros.connection.topic` | string；提供 connection 时必填 | 独立周期状态输入；Go2 native 使用 /go2/state/low_state 判断连接，不依赖 latched armed 状态 |
+| `ros.connection.message_type` | string；提供 connection 时必填 | package/Message；Go2 native 为 go2_control/Go2LowState |
+| `ros.connection.timeout_seconds` | number；默认 3.0 | 0.1..3600 秒；独立连接输入的新鲜度阈值，省略 connection 时沿用 ros.state 的连接判断 |
 | `ros.state.topic` | string；必填 | 以 / 开头的状态输入话题 |
 | `ros.state.message_type` | string；必填 | package/Message，必须在已 source 工作空间中可加载 |
 | `ros.state.connected_on_message` | bool；默认 false | true 时以消息新鲜度判断 connected |
@@ -455,6 +460,17 @@ adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 
 | `adapter.pose_timeout_seconds` | number；条件必填，示例 2 | 正秒数，位姿新鲜度 |
 | `adapter.zero_velocity_hz` | number；条件必填，示例 20 | 正 Hz，停车消息频率 |
 | `adapter.zero_velocity_count` | int；条件必填，示例 10 | >=1，停车消息次数 |
+| `adapter.navigation_management` | enum；默认 managed | managed 启停导航进程；attach 复用重定位持有的导航栈，Go2 native 使用 attach |
+| `adapter.auto_arm_on_schedule` | bool；默认 false | 调度时校验定位并调用控制使能；启用时必须同时启用 auto_disarm_on_terminal |
+| `adapter.auto_disarm_on_terminal` | bool；默认 false | 任务终态调用控制禁用，并等待真实禁用状态确认 |
+| `adapter.emergency_stop_state_file` | string；自动控制时必填 | 持久化急停闭锁文件；Go2 native 位于 CCS 工作空间 run/state/go2_task_safety.json |
+| `adapter.localization_ok_topic` | string；自动控制时必填 | 定位健康 std_msgs/Bool 输入，Go2 native 为 /localization/ok |
+| `adapter.control_enabled_topic` | string；自动控制时必填 | 真实使能状态 std_msgs/Bool 输入，Go2 native 为 /go2/control/enabled |
+| `adapter.control_diagnostics_topic` | string；可选，Go2 示例 /go2/diagnostics | diagnostic_msgs/DiagnosticArray，补充周期性控制状态及新鲜度确认 |
+| `adapter.navigation_reset_service` | string；自动控制时必填 | std_srvs/Trigger，Go2 native 为 /go2_navigation_supervisor/reset |
+| `adapter.control_enable_service` | string；自动控制时必填 | std_srvs/SetBool，Go2 native 为 /go2_sdk_bridge_real/enable |
+| `adapter.control_service_timeout_seconds` | number；自动控制时必填，示例 5 | >=0.01 秒，控制服务等待与调用超时 |
+| `adapter.control_state_timeout_seconds` | number；自动控制时必填，示例 3 | >=0.01 秒，控制状态与健康输入的新鲜度及确认阈值 |
 | `adapter.task_launch_package` | string；ground_air 必填 | 原生分层任务 launch 所属 ROS 包 |
 | `adapter.task_launch_file` | string；ground_air 必填，示例 task_system.launch | 原生分层任务 launch 文件 |
 | `adapter.localization_param` | string；ground_air 必填 | 实时定位 bool 参数，历史状态文件不能替代 |
@@ -505,6 +521,27 @@ adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 
 
 Ground-Air 设备适配 launch 还提供：manual_mapping_control/relocalization_control 的 map_id（必填）、maps_root（默认 /home/bitcq/catkin_ws/maps）、service_wait_timeout（90 秒）及重定位的 relocalize_timeout（60 秒）；override 的 relocalization_system 使用 map_id 和两个超时。mapping_coordinate_transforms 的 odom_frame/camera_init_frame/body_frame/base_frame 默认 odom/camera_init/body/base_link。mavros_base 的 fcu_url 默认串口 by-id 路径加 :57600，gcs_url 默认空；livox_mid360_base 的 msg_frame_id 默认 base_link。
 
+#### Go2 native 集成入口
+
+`epgeneral_go2_integration/bringup.launch` 是显式组合入口，不能与 Robot2/Robot3 根脚本同时运行；常规部署使用根脚本提供的预检、状态确认和进程监控。Robot3 的配置、遥测命名空间和相机参数必须按该设备覆盖，不能直接使用 Robot2 默认值。
+
+| launch / 参数 | 默认或要求 | 作用 |
+| --- | --- | --- |
+| bringup.launch：`profile_dir` | /home/unitree/ccs_edge_ws/config/go2_robot2 | 七份业务 YAML 的运行目录 |
+| bringup.launch：`network_interface` | go2dds | 传入真实 SDK bridge 的 DDS 网络接口 |
+| bringup.launch：`ground_station_ip` | 192.168.50.101 | UDP 遥测目标，不重写其他 YAML 的地址 |
+| bringup.launch：`log_root` | /home/unitree/ccs_edge_ws/logs | MQTT 与重定位日志根目录 |
+| bringup.launch：`telemetry_namespace` | /qrd/QRD_002 | UDP link 与 diagnostics 话题前缀；Robot3 使用 /qrd/QRD_003 |
+| bringup.launch：`camera_serial` | 空字符串 | RealSense serial_no；Robot3 使用 339222070647 |
+| bringup.launch：`color_fps` | 30 | RGB 帧率 Hz；Robot3 USB2 配置为 15 |
+| mapping_fast_lio.launch / navigation_guard.launch：`lock_file` | /home/unitree/ccs_edge_ws/run/go2_stack.lock | 建图与导航共用的排他锁；必须在两条生命周期中一致 |
+| navigation.launch：`map_name` | 必填 | 原生定位和导航加载的地图名 |
+| navigation.launch：`map_root` | /home/unitree/ccs_edge_ws/maps/download | 下载地图根目录 |
+| navigation.launch：`extrinsics_file` | /home/unitree/go2_nav_ws/src/go2_core/config/extrinsics.yaml | 原生标定文件，不以其他设备标定替换 |
+| mapping_prerequisites_go2_robot2.launch / mapping_prerequisites_go2_robot3.launch：`output_path` | /home/unitree/ccs_edge_ws/run/map/current/public_map.pcd | accumulator 的 PCD 导出路径 |
+
+重定位须先启动 navigation_guard，再启动 navigation，逆序停止。`/localization/ok` 必须为新鲜真值，不能仅凭原生栈的临时单位 TF 判断定位成功。
+
 ### 11.2 一键脚本环境
 
 下表为启动前 export 的字符串变量；时间、波特率仍需满足其使用程序的要求。不设置时采用表内缺省。这些变量不改变运行 YAML 内容。
@@ -517,6 +554,9 @@ Ground-Air 设备适配 launch 还提供：manual_mapping_control/relocalization
 | `CCS_GROUND_STATION_IP` | Go2/Scout/Wheeltec；192.168.50.101 | 授时默认目标及 UDP 覆盖；Ground-Air 脚本不提供此变量 |
 | `CCS_NTP_SERVER` | 前三者默认地面站变量；AGV 默认 192.168.50.101 | 预检要求的授时服务器 |
 | `CCS_GO2_NAV_SETUP` | Go2；/home/nvidia/go2_mid360_nav/catkin_ws/devel/setup.bash | 算法 underlay |
+| `CCS_GO2_NAV_WORKSPACE` | Go2 Robot2/Robot3；/home/unitree/go2_nav_ws | 原生算法工作空间根目录，脚本 source 其中 devel/setup.bash |
+| `CCS_GO2_NETWORK_INTERFACE` | Go2 Robot2/Robot3；go2dds | 真实 SDK bridge 使用的 DDS 接口 |
+| `CCS_GO2_USE_REAL_SDK` | Go2 Robot2；true | SDK 模式开关，仅接受 true/false；Robot3 固定使用真实 SDK，不提供此覆盖 |
 | `CCS_LIVOX_SETUP` | Scout /home/nvidia/livox_fastlio/devel/setup.bash；Wheeltec /home/nrc19/livox_fastlio/devel/setup.bash | 雷达与算法环境 |
 | `CCS_REALSENSE_SETUP` | Scout；/home/nvidia/realsense_ws/devel/setup.bash | 相机环境 |
 | `CCS_NAVIGATION_SETUP` | Scout；/home/nvidia/github_upload/AADCL_UAV_UGV/Scout_mini/devel/setup.bash | 导航环境 |

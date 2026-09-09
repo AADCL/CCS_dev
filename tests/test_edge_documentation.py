@@ -45,28 +45,43 @@ def heading_ids(text):
 
 
 class EdgeDocumentationTests(unittest.TestCase):
-    def test_all_35_yaml_files_have_parameter_coverage(self):
+    def test_all_49_yaml_files_have_parameter_coverage(self):
         reference = REFERENCE.read_text(encoding="utf-8")
+        profiles = {"go2_edu", "go2_robot2", "go2_robot3", "ground_air_agv",
+                    "scout_mini", "wheeltec_r550p"}
+        config_names = {"device.yaml", "epgeneral_mqtav.yaml", "map_stream.yaml",
+                        "relocalization.yaml", "task_control.yaml", "udp_telemetry.yaml",
+                        "video.yaml"}
+        defaults = list((EDGE / "EPGeneral_device_config/config").glob("*.yaml"))
+        self.assertEqual({path.name for path in defaults}, config_names)
         count = 0
-        for default in (EDGE / "EPGeneral_device_config/config").glob("*.yaml"):
+        for default in defaults:
             heading = re.search(r"(?m)^## \d+\. " + re.escape(default.name) + r"$", reference)
             self.assertIsNotNone(heading, default.name)
             end = reference.find("\n## ", heading.end())
             section = reference[heading.end():end if end != -1 else len(reference)]
             documented = set(re.findall(r"`([A-Za-z0-9_.\[\]]+)`", section))
-            paths = [default] + list((EDGE / "deploy").glob("*/config/" + default.name))
-            self.assertEqual(len(paths), 5, default.name)
+            deployed = list((EDGE / "deploy").glob("*/config/" + default.name))
+            self.assertEqual({path.parent.parent.name for path in deployed}, profiles,
+                             default.name)
+            paths = [default] + deployed
+            self.assertEqual(len(paths), 7, default.name)
             for path in paths:
                 count += 1
                 config = yaml.safe_load(path.read_text(encoding="utf-8"))
                 self.assertFalse(set(leaf_keys(config)) - documented,
                                  f"{path}: {set(leaf_keys(config)) - documented}")
-        self.assertEqual(count, 35)
+        self.assertEqual(count, 49)
 
     def test_all_package_readmes_and_versions_are_navigable(self):
         overview = (EDGE / "README.md").read_text(encoding="utf-8")
         manifests = list(EDGE.glob("*/package.xml"))
-        self.assertEqual(len(manifests), 8)
+        self.assertEqual({manifest.parent.name for manifest in manifests}, {
+            "EPGeneral_device_config", "EPGeneral_map_stream", "epgeneral_mqtav",
+            "EPGeneral_relocalization", "EPGeneral_ground_air_control",
+            "EPGeneral_task_control", "EPGeneral_go2_integration",
+            "EPGeneral_udp_telemetry", "EPGeneral_video_srt",
+        })
         for manifest in manifests:
             tree = ElementTree.parse(manifest).getroot()
             text = (manifest.parent / "README.md").read_text(encoding="utf-8")
@@ -99,7 +114,7 @@ class EdgeDocumentationTests(unittest.TestCase):
     def test_script_environment_and_public_launch_arguments_are_described(self):
         text = REFERENCE.read_text(encoding="utf-8")
         for script in (EDGE / "deploy").glob("*/start_ccs_edge_dev.sh"):
-            for name in set(re.findall(r"\$\{(CCS_[A-Z_]+)", script.read_text(encoding="utf-8"))):
+            for name in set(re.findall(r"\$\{(CCS_[A-Z0-9_]+)", script.read_text(encoding="utf-8"))):
                 self.assertIn(name, text, str(script))
         for launch in EDGE.glob("*/launch/*.launch"):
             for arg in ElementTree.parse(launch).getroot().findall("arg"):

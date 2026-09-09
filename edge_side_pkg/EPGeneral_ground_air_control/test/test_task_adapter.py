@@ -70,6 +70,31 @@ class GroundAirAdapterCoreTests(unittest.TestCase):
             with self.assertRaises(GroundAirAdapterError):
                 adapter._require_fresh_pose()
 
+    def test_cancelled_pose_wait_preserves_stop_and_subsequent_execution(self):
+        for start_next in (False, True):
+            with self.subTest(start_next=start_next):
+                adapter = self.make_adapter()
+                adapter.execution = {
+                    "command": object(), "payload": payload(),
+                    "scheduled_at": time.time() - 1.0,
+                }
+                stop_command = object()
+                next_execution = {"command": object()} if start_next else None
+
+                def cancelled_wait():
+                    adapter._stop(stop_command)
+                    if start_next:
+                        adapter.execution = next_execution
+                        adapter.stop_event.clear()
+                    raise GroundAirAdapterError("task preparation was cancelled", "VEHICLE_NOT_READY")
+
+                adapter._wait_fresh_pose = Mock(side_effect=cancelled_wait)
+                adapter._run_scheduled()
+
+                adapter._feedback.assert_called_once_with(
+                    stop_command, "stopped", -1, 0.0, "ground mission stopped")
+                self.assertIs(adapter.execution, next_execution)
+
     def test_native_rejections_are_preserved_without_retry_or_mode_change(self):
         adapter = self.make_adapter()
         for message, code in (
