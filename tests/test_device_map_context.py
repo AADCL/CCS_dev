@@ -78,6 +78,16 @@ class DeviceMapContextTests(unittest.TestCase):
             global_pose,
         )
 
+    def test_unbound_go2_is_unknown_instead_of_unsupported(self):
+        go2 = DeviceProfile(
+            "QRD_002", "Go2", "QRD", "127.0.0.2",
+            relocalization_profile="go2_edu", active_map_id="map-1",
+        )
+        context = resolve_device_map_context(
+            FakeSource(go2), None, None, "QRD_002")
+        self.assertEqual(context.localization_text, "未知空间")
+        self.assertEqual(context.pose_message, "活动地图尚无重定位绑定")
+
 
 if __name__ == "__main__":
     unittest.main()

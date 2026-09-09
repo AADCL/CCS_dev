@@ -1,0 +1,19 @@
+schema_version: 1
+protocol_id: ccs-relocalization-v1
+enabled: true
+backend: go2_edu
+network: {bind_host: 0.0.0.0, control_port: 14565, ground_station_ip: 192.168.50.101, status_port: 14566, max_datagram_bytes: 1400}
+storage: {map_root: /home/unitree/ccs_edge_ws/maps/download, pcd_filename: public_map.pcd, active_map_state_file: /home/unitree/ccs_edge_ws/run/state/relocalization.json, max_artifact_bytes: 4294967296, download_timeout_seconds: 300.0}
+ros:
+  map_frame: map
+  odom_frame: odom
+  initial_pose_topic: /initialpose
+  map_topic: /map_2d
+  localization_health_topic: /localization/ok
+  localization_health_timeout_seconds: 2.0
+  startup_timeout_seconds: 90.0
+  stages:
+    - {name: go2_exclusive_guard, package: epgeneral_go2_integration, launch: navigation_guard.launch, args: ["lock_file:=/home/unitree/ccs_edge_ws/run/go2_stack.lock"]}
+    - {name: go2_navigation, package: epgeneral_go2_integration, launch: navigation.launch, args: ["map_name:={map_id}", "map_root:={map_root}", "extrinsics_file:=/home/unitree/go2_nav_ws/src/go2_core/config/extrinsics.yaml"]}
+tf_stability: {timeout_seconds: 45.0, sample_hz: 10.0, sample_count: 10, translation_tolerance_m: 0.10, yaw_tolerance_deg: 2.0}
+tf_reporting: {continuous: true, interval_seconds: 1.0, persist_interval_seconds: 30.0}

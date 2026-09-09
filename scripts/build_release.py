@@ -25,7 +25,7 @@ from scripts.release_documentation import stage_documentation
 EDGE_PACKAGES = (
     "EPGeneral_device_config", "EPGeneral_map_stream", "epgeneral_mqtav",
     "EPGeneral_relocalization", "EPGeneral_ground_air_control",
-    "EPGeneral_task_control",
+    "EPGeneral_task_control", "EPGeneral_go2_integration",
     "EPGeneral_udp_telemetry", "EPGeneral_video_srt",
 )
 EXCLUDED_PARTS = {"__pycache__", ".git", ".venv", ".trash", ".pytest_cache", "build", "devel", "logs"}

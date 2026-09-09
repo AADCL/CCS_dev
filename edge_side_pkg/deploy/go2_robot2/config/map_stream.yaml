@@ -1,0 +1,60 @@
+schema_version: 6
+protocol_id: "ccs-map-stream-v2"
+network: {bind_host: "0.0.0.0", control_port: 14561, ground_station_ip: "192.168.50.101", data_port: 14562, max_datagram_bytes: 1400}
+http: {bind_host: "0.0.0.0", port: 14600, token_ttl_seconds: 900.0}
+ros:
+  inputs:
+    lidar: {topic: "/livox/lidar", message_type: "livox_ros_driver2/CustomMsg", frame: "livox_frame"}
+    imu: {topic: "/livox/imu", message_type: "sensor_msgs/Imu", frame: "livox_frame"}
+  stream:
+    cloud: {topic: "/lio/cloud_registered_body", message_type: "sensor_msgs/PointCloud2", frame: "body_lio", coordinates: "sensor"}
+    pose: {topic: "/lio/odometry", message_type: "nav_msgs/Odometry", position_path: "pose.pose.position", orientation_path: "pose.pose.orientation"}
+  frames: {map: "lio_odom", preview: "odom", body: "body_lio", sensor: "body_lio"}
+  body_from_sensor: {x: 0.0, y: 0.0, z: 0.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0}
+integrations:
+  backend: go2_accumulator
+  mapping_prerequisites:
+    setup_file: "/home/unitree/ccs_edge_ws/devel/setup.bash"
+    launch_file: "mapping_prerequisites_go2_robot2.launch"
+    extrinsics_file: "/home/unitree/go2_nav_ws/src/go2_core/config/extrinsics.yaml"
+    startup_timeout_seconds: 20.0
+  fast_lio:
+    setup_file: "/home/unitree/ccs_edge_ws/devel/setup.bash"
+    package: "epgeneral_go2_integration"
+    launch_file: "mapping_fast_lio.launch"
+    launch_args: ["lock_file:=/home/unitree/ccs_edge_ws/run/go2_stack.lock"]
+    startup_timeout_seconds: 40.0
+    stop_timeout_seconds: 40.0
+    pid_path: "{session_dir}/fast_lio.pid"
+    log_path: "{session_dir}/fast_lio.log"
+  map_accumulator:
+    setup_file: "/home/unitree/ccs_edge_ws/devel/setup.bash"
+    service: "/go2_map_accumulator/save_map"
+    save_timeout_seconds: 60.0
+  pgm:
+    setup_file: "/home/unitree/ccs_edge_ws/devel/setup.bash"
+    package: "go2_mapping"
+    launch_file: "export_occupancy.launch"
+    launch_args:
+      - "map_root:=/home/unitree/ccs_edge_ws/run/map/export"
+      - "map_name:=current"
+      - "input_pcd:=/home/unitree/ccs_edge_ws/run/map/export/public_map.pcd"
+      - "output_pgm:=/home/unitree/ccs_edge_ws/run/map/export/map.pgm"
+      - "output_yaml:=/home/unitree/ccs_edge_ws/run/map/export/map.yaml"
+    generation_timeout_seconds: 300.0
+    log_path: "{session_dir}/pgm_generation.log"
+sync: {tolerance_seconds: 0.05, pose_buffer_size: 100, preview_transform_timeout_seconds: 0.20}
+preprocess: {sample_window_seconds: 1.0, preview_transport: "pcd_fragment_http", min_range_m: 0.30, max_range_m: 100.0, voxel_size_m: 0.05}
+timeouts: {prepare_probe_timeout_seconds: 2.0, integration_check_timeout_seconds: 12.0, ready_timeout_seconds: 90.0, input_timeout_seconds: 3.0, command_cache_seconds: 60.0, artifact_poll_seconds: 0.5, artifact_stable_polls: 2}
+limits: {max_frame_points: 200000, max_window_points: 1000000, max_decompressed_bytes: 2400000, max_artifact_bytes: 4294967296, min_free_bytes: 5368709120, command_output_bytes: 16384, max_preview_fragment_bytes: 8388608, max_pending_preview_fragments: 4, max_unacked_preview_fragments: 16}
+artifacts:
+  workspace_root: "/home/unitree/ccs_edge_ws/maps/sessions"
+  accumulator_pcd_path: "/home/unitree/ccs_edge_ws/run/map/current/public_map.pcd"
+  source_pcd_path: "/home/unitree/ccs_edge_ws/run/map/export/public_map.pcd"
+  source_pgm_path: "/home/unitree/ccs_edge_ws/run/map/export/map.pgm"
+  source_yaml_path: "/home/unitree/ccs_edge_ws/run/map/export/map.yaml"
+  archive_root: "/home/unitree/ccs_edge_ws/maps/archive"
+  pcd_path: "{session_dir}/map.pcd"
+  pgm_path: "{session_dir}/map.pgm"
+  yaml_path: "{session_dir}/map.yaml"
+  frame: "odom"

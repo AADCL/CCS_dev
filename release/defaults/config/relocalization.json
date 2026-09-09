@@ -33,7 +33,7 @@
       "odom_frame": "odom"
     },
     "go2_edu": {
-      "supported": false,
+      "supported": true,
       "pose_source": "global_pose",
       "odom_frame": "odom"
     },

@@ -1,0 +1,57 @@
+<launch>
+  <arg name="profile_dir" default="/home/unitree/ccs_edge_ws/config/go2_robot2"/>
+  <arg name="network_interface" default="go2dds"/>
+  <arg name="ground_station_ip" default="192.168.50.101"/>
+  <arg name="log_root" default="/home/unitree/ccs_edge_ws/logs"/>
+
+  <include file="$(find livox_ros_driver2)/launch_ROS1/msg_MID360.launch"/>
+  <include file="$(find go2_control)/launch/control.launch">
+    <arg name="use_real_sdk" value="true"/>
+    <arg name="network_interface" value="$(arg network_interface)"/>
+  </include>
+
+  <include file="$(find epgeneral_mqtav)/launch/epgeneral_mqtav.launch">
+    <arg name="config_file" value="$(arg profile_dir)/epgeneral_mqtav.yaml"/>
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml"/>
+    <arg name="log_dir" value="$(arg log_root)/mqtav"/>
+  </include>
+  <include file="$(find epgeneral_udp_telemetry)/launch/epgeneral_udp_telemetry.launch">
+    <arg name="telemetry_config_file" value="$(arg profile_dir)/udp_telemetry.yaml"/>
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml"/>
+    <arg name="destination_host" value="$(arg ground_station_ip)"/>
+    <arg name="destination_port" value="14560"/>
+    <arg name="link_status_topic" value="/qrd/QRD_002/link/udp_tx"/>
+    <arg name="diagnostics_topic" value="/qrd/QRD_002/diagnostics"/>
+  </include>
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="device_type" value="d435i"/>
+    <arg name="enable_color" value="true"/>
+    <arg name="color_width" value="640"/>
+    <arg name="color_height" value="480"/>
+    <arg name="color_fps" value="30"/>
+    <arg name="enable_depth" value="false"/>
+    <arg name="enable_infra" value="false"/>
+    <arg name="enable_infra1" value="false"/>
+    <arg name="enable_infra2" value="false"/>
+    <arg name="enable_gyro" value="false"/>
+    <arg name="enable_accel" value="false"/>
+    <arg name="publish_tf" value="false"/>
+  </include>
+  <include file="$(find epgeneral_video_srt)/launch/epgeneral_realsense_d435i_srt.launch">
+    <arg name="video_config_file" value="$(arg profile_dir)/video.yaml"/>
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml"/>
+  </include>
+  <include file="$(find epgeneral_map_stream)/launch/epgeneral_map_stream.launch">
+    <arg name="mapping_config_file" value="$(arg profile_dir)/map_stream.yaml"/>
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml"/>
+  </include>
+  <include file="$(find epgeneral_relocalization)/launch/epgeneral_relocalization.launch">
+    <arg name="config_file" value="$(arg profile_dir)/relocalization.yaml"/>
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml"/>
+    <arg name="log_dir" value="$(arg log_root)/relocalization"/>
+  </include>
+  <include file="$(find epgeneral_task_control)/launch/navigation_task_control.launch">
+    <arg name="task_config_file" value="$(arg profile_dir)/task_control.yaml"/>
+    <arg name="device_config_file" value="$(arg profile_dir)/device.yaml"/>
+  </include>
+</launch>
