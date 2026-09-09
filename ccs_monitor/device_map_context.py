@@ -101,8 +101,6 @@ def resolve_device_map_context(source, relocalization_service, telemetry, device
         localization_text = STATUS_TEXT[snapshot.status]
     elif binding is not None:
         localization_text = STATUS_TEXT[RelocalizationStatus.SUCCEEDED]
-    elif profile.relocalization_profile == "go2_edu":
-        localization_text = STATUS_TEXT[RelocalizationStatus.UNSUPPORTED]
     else:
         localization_text = STATUS_TEXT[RelocalizationStatus.UNKNOWN_SPACE]
     if binding is None:

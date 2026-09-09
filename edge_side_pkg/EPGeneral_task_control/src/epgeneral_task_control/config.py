@@ -133,6 +133,23 @@ def load_config(task_path, device_path):
             count = adapter.get("zero_velocity_count")
             if isinstance(count, bool) or not isinstance(count, int) or count < 1:
                 raise ConfigError("adapter.zero_velocity_count must be a positive integer")
+            management = adapter.get("navigation_management", "managed")
+            if management not in ("managed", "attach"):
+                raise ConfigError("adapter.navigation_management must be managed or attach")
+            for key in ("auto_arm_on_schedule", "auto_disarm_on_terminal"):
+                if not isinstance(adapter.get(key, False), bool):
+                    raise ConfigError("adapter.%s must be boolean" % key)
+            if adapter.get("auto_arm_on_schedule", False) and not adapter.get("auto_disarm_on_terminal", False):
+                raise ConfigError("adapter.auto_arm_on_schedule requires auto_disarm_on_terminal")
+            if adapter.get("auto_arm_on_schedule", False) or adapter.get("auto_disarm_on_terminal", False):
+                for key in ("localization_ok_topic", "control_enabled_topic", "navigation_reset_service",
+                            "control_enable_service", "emergency_stop_state_file"):
+                    _text(adapter, key, "adapter." + key)
+                for key in ("control_service_timeout_seconds", "control_state_timeout_seconds"):
+                    _number(adapter.get(key), "adapter." + key, 0.01)
+                for key in ("control_diagnostics_topic", "control_diagnostics_status", "control_diagnostics_key"):
+                    if key in adapter:
+                        _text(adapter, key, "adapter." + key)
         result["adapter"] = dict(adapter)
     if result["max_raw_bytes"] < result["max_compressed_bytes"]:
         raise ConfigError("limits.max_raw_bytes must cover max_compressed_bytes")

@@ -1,0 +1,13 @@
+[Unit]
+Description=CCS robot 2 SNTP clock synchronization
+Wants=network-online.target
+After=network-online.target
+Before=roscore.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/unitree/ccs_edge_ws/scripts/ccs_sntp_sync.py --server 192.168.50.101 --set --retries 30 --max-offset 5
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

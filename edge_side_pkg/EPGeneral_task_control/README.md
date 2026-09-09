@@ -2,9 +2,25 @@
 
 配套 CCS 0.23.1：[完整使用手册](../documents/USER_MANUAL.md) · [设备内接口与参数](../documents/INTERFACE_REFERENCE.md)。包级 launch 默认读取共享配置包；一键脚本显式读取工作空间 `config/<profile>`，修改后需重启。
 
-<!-- epgeneral_task_control_VERSION: 0.5.0 -->
+<!-- epgeneral_task_control_VERSION: 0.5.1 -->
 
-版本：`v0.5.0`。运行配置统一由 `epgeneral_device_config/config/task_control.yaml` 提供。Scout Mini 继续通过 `/move_base` 执行任务；Ground-Air AGV 通过原生任务服务执行仅地面航点，并要求实时定位、人工解锁和 OFFBOARD。
+版本：`v0.5.1`。运行配置统一由 `epgeneral_device_config/config/task_control.yaml` 提供。Scout Mini 继续通过 `/move_base` 执行任务；Ground-Air AGV 通过原生任务服务执行仅地面航点，并要求实时定位、人工解锁和 OFFBOARD。
+
+## Go2 显式控制服务接入
+
+`navigation_management` 默认 `managed`，由适配器启动和管理导航进程；Go2 使用 `attach` 复用重定位会话启动的导航，不停止其原生进程。`auto_arm_on_schedule`、`auto_disarm_on_terminal` 默认均为 `false`，不改变 Scout 或其他设备的启动和控制方式。
+
+Go2 专项配置同时启用两项自动控制策略，并提供 `localization_ok_topic`、`control_enabled_topic`、`navigation_reset_service`、`control_enable_service`、`control_service_timeout_seconds`、`control_state_timeout_seconds`、`emergency_stop_state_file`。自动使能必须同时启用终止停用。
+
+原生 Go2 `/go2/control/enabled` 仅在变化时锁存发布，需配置 `control_diagnostics_topic: /go2/diagnostics`，使用每秒发布的 `GO2 SDK bridge` 状态中 `motion_enabled` 字段刷新一致的控制状态。诊断必须有新鲜时间戳，不得覆盖与 Bool 冲突的值；服务确认还要求消息序号增加且生成于服务调用之后。可选 `control_diagnostics_status`、`control_diagnostics_key` 用于同类显式控制接口，默认不为其他设备订阅诊断。
+
+只有计划开始时刻到达且定位、位姿和已停用状态新鲜时，才调用 `std_srvs/Trigger` reset 并检查 `success`，随后调用 `std_srvs/SetBool(true)`，确认新鲜 enabled 状态后发送目标。完成、停止、卸载、失败和关闭均取消目标、发送零速、检查停用服务响应，并等待服务调用后收到的新鲜 disabled 状态；停用失败反馈失败并持久闭锁。运行中定位或控制状态失效同样终止执行。
+
+`EMERGENCY_STOP` 持久化闭锁后执行取消、零速及确认停用，成功才反馈 `emergency_stopped`。重启、准备和新任务不能解除闭锁。人工调用 `/epgeneral_navigation_task_adapter/reset_emergency_stop`（`std_srvs/Trigger`）时必须没有活动执行、准备线程或控制调用，且底盘状态新鲜并为 disabled；解除只移除闭锁，不使能底盘。该服务仅在配置了显式控制策略时创建。
+
+ROS 服务调用超时后会持久闭锁；尚未返回的 RPC 继续占用控制串行锁，禁止人工解锁。若使能 RPC 延迟返回，后台在释放锁前尝试补偿停用。无法确认停用时不得将失败解释为机器人已停止，需要现场检查底盘状态。
+
+Go2 控制转换期间按原执行的 `scheduled` 或 `running` 状态保活，不提前报告完成或停用。保活和终态不等待 TF 查询，避免合法慢服务先触发协调器反馈超时；异步 watchdog 和执行线程携带执行身份，旧执行的迟到终态不能停用或清空新执行。
 
 任务准备阶段会使用导航 `map.yaml` 和 PGM 检查全部航点。地图外、障碍区或未知区航点返回 `WAYPOINT_NOT_TRAVERSABLE`，不会进入 `ready`。运行期 `move_base` 规划失败返回 `NAVIGATION_PLAN_FAILED` 并保留 action 状态文本。
 

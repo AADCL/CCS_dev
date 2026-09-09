@@ -18,6 +18,14 @@ from PySide6.QtWidgets import QApplication
 
 
 ROOT = Path(__file__).resolve().parent.parent
+GO2_ROBOT2_DESCRIPTOR_HASH = "832977e1229667bc8a49936e707473702756c8203aeb3e77fbfb727131590f02"
+LEGACY_DESCRIPTOR_HASHES = (
+    "bfd44cfe0797e6736af617ae90795d2c57f5ef9e8c75a9dca523a54f10d23fa1",
+    "46a7b7cb30d66538abb49814df3a5e908ddda192d126bea728a1d27fa2291adb",
+    "786586cacc00b2691db1fd10f81fb42d5faa3292097dc82e8058f6b368dcea44",
+    "b7981c2345e0806a465de60444ecee42edcbbb94beb02d7c6f40e2389d222fd2",
+    "f3d579c47c3c17cdf7d346e54243e3ec43ad2791a1f403a66771d43bd2c58e4f",
+)
 
 
 class UdpConfigAndProtocolTests(unittest.TestCase):
@@ -87,6 +95,86 @@ class UdpConfigAndProtocolTests(unittest.TestCase):
         )
         with self.assertRaises(UdpProtocolError):
             self.protocol.decode(self.protocol.encode(event))
+
+
+class Go2Robot2UdpContractTests(unittest.TestCase):
+    def setUp(self):
+        self.config = load_udp_config(ROOT / "config/udp_telemetry.json")
+        descriptors = self.config.descriptors_for_hash(GO2_ROBOT2_DESCRIPTOR_HASH)
+        self.assertIsNotNone(descriptors)
+        self.sender_config = replace(self.config, descriptors=descriptors, accepted_descriptor_sets=())
+        self.sender = UdpTelemetryProtocol(self.sender_config)
+        self.receiver = UdpTelemetryProtocol(self.config)
+
+    def test_development_and_release_append_go2_without_changing_legacy_contracts(self):
+        for relative in ("config/udp_telemetry.json", "release/defaults/config/udp_telemetry.json"):
+            with self.subTest(config=relative):
+                config = load_udp_config(ROOT / relative)
+                hashes = tuple(config.hash_descriptors(value) for value in (
+                    config.descriptors, *config.accepted_descriptor_sets))
+                self.assertEqual(hashes, (*LEGACY_DESCRIPTOR_HASHES, GO2_ROBOT2_DESCRIPTOR_HASH))
+                for descriptor_hash in LEGACY_DESCRIPTOR_HASHES:
+                    sender = UdpTelemetryProtocol(replace(
+                        config, descriptors=config.descriptors_for_hash(descriptor_hash)))
+                    event = UdpEnvelope("LEGACY", "boot", "heartbeat", 0, 1, None, {})
+                    self.assertEqual(UdpTelemetryProtocol(config).decode(sender.encode(event)), event)
+
+    def test_deployed_profile_matches_the_exact_accepted_contract(self):
+        edge_package = ROOT / "edge_side_pkg/EPGeneral_udp_telemetry"
+        sys.path.insert(0, str(edge_package / "src"))
+        try:
+            from epgeneral_udp_telemetry.config import load_config as load_edge_config
+            profile = ROOT / "edge_side_pkg/deploy/go2_robot2/config"
+            edge = load_edge_config(str(profile / "udp_telemetry.yaml"), str(profile / "device.yaml"))
+        finally:
+            sys.path.pop(0)
+        self.assertEqual(edge["descriptor_hash"], GO2_ROBOT2_DESCRIPTOR_HASH)
+
+    def test_heartbeat_and_all_telemetry_levels_update_go2_store(self):
+        pose = dict(valid=True, x=1.0, y=2.0, z=0.0, roll=0.0, pitch=0.0, yaw=0.0)
+        imu = dict(valid=True, roll=0.0, pitch=0.0, yaw=0.0,
+                   angular_velocity_x=0.0, angular_velocity_y=0.0, angular_velocity_z=0.0,
+                   linear_acceleration_x=0.0, linear_acceleration_y=0.0, linear_acceleration_z=9.8)
+        store = UdpTelemetryStore(self.config, lambda value: value == "QRD_002", start_watchdog=False)
+        events = [
+            UdpEnvelope("QRD_002", "go2-boot", "heartbeat", 0, 1, None, {}),
+            UdpEnvelope("QRD_002", "go2-boot", "telemetry", 1, 2, 1,
+                        {"global_pose": pose, "imu": imu}),
+            UdpEnvelope("QRD_002", "go2-boot", "telemetry", 2, 3, 2,
+                        {"livox_pointcloud": dict(valid=True, status="available", estimated_hz=10.0)}),
+            UdpEnvelope("QRD_002", "go2-boot", "telemetry", 3, 4, 3, {
+                item.name: dict(valid=True, status="available")
+                for item in self.sender_config.descriptors if item.level == 3}),
+        ]
+        for event in events:
+            encoded = self.sender.encode(event)
+            self.assertEqual(self.receiver.decode(encoded), event)
+            store.process_datagram(encoded, "192.168.50.111", 40000)
+        snapshot = store.telemetry("QRD_002")
+        self.assertEqual(snapshot.udp_link_status, UdpLinkStatus.ONLINE)
+        self.assertEqual(snapshot.global_pose.x, 1.0)
+        self.assertEqual(snapshot.imu.linear_acceleration_z, 9.8)
+        self.assertEqual(snapshot.pointcloud.estimated_hz, 10.0)
+        statuses = {item.name: item.availability for item in snapshot.sensor_statuses}
+        self.assertEqual(statuses["localization"], TelemetryAvailability.AVAILABLE)
+        self.assertEqual(statuses["chassis"], TelemetryAvailability.AVAILABLE)
+        self.assertEqual(store.warning_counts(), {})
+
+    def test_go2_contract_does_not_relax_hash_name_level_or_value_validation(self):
+        event = UdpEnvelope("QRD_002", "go2-boot", "telemetry", 1, 2, 3,
+                            {"chassis": dict(valid=True, status="available")})
+        changed = replace(self.sender_config.descriptors[0], display_name="changed")
+        wrong_hash_sender = UdpTelemetryProtocol(replace(
+            self.sender_config, descriptors=(changed, *self.sender_config.descriptors[1:])))
+        with self.assertRaises(UdpProtocolError):
+            self.receiver.decode(wrong_hash_sender.encode(event))
+        for invalid in (
+            replace(event, level=1),
+            replace(event, payload={"mapping_mode": dict(valid=True, status="available")}),
+            replace(event, payload={"chassis": dict(valid=True, status="invalid")}),
+        ):
+            with self.subTest(event=invalid), self.assertRaises(UdpProtocolError):
+                self.receiver.decode(self.sender.encode(invalid))
 
 
 class UdpStoreTests(unittest.TestCase):

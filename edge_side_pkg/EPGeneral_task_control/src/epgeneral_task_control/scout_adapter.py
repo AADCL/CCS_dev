@@ -13,10 +13,12 @@ import signal
 import subprocess
 import threading
 import time
+from contextlib import contextmanager
 
 import yaml
 
 from .storage import TrajectoryStore
+from .control_safety import NavigationControlSafety
 
 
 class ScoutAdapterError(ValueError):
@@ -219,6 +221,12 @@ class ScoutNavigationAdapter(object):
         self.tf_converter = None
         self.client = None
         self.monitor_timer = None
+        self.terminal_lock = threading.RLock()
+        self.stopping = False
+        self.control_armed = False
+        self.control_safety = None
+        if config.get("auto_arm_on_schedule", False) or config.get("auto_disarm_on_terminal", False):
+            self.control_safety = NavigationControlSafety(rospy, config, self.stop_event)
 
     def start(self):
         from geometry_msgs.msg import Twist
@@ -231,6 +239,8 @@ class ScoutNavigationAdapter(object):
         self.zero_pub = self.rospy.Publisher(
             self.config["zero_velocity_topic"], Twist, queue_size=10)
         self._initialize_tf(tf2_ros, tf2_geometry_msgs)
+        if self.control_safety is not None:
+            self.control_safety.start(self._reset_emergency_stop)
         self.rospy.Subscriber(
             self.config["command_topic"], self.command_class, self._command_callback, queue_size=10)
         self.rospy.Subscriber(
@@ -258,13 +268,31 @@ class ScoutNavigationAdapter(object):
             self._stop(command)
         elif command.action == self.command_class.UNLOAD:
             self._unload(command)
+        elif command.action == getattr(self.command_class, "EMERGENCY_STOP", None):
+            self._emergency_stop(command)
+
+    def _reset_emergency_stop(self, unused_request):
+        from std_srvs.srv import TriggerResponse
+        with self.lock:
+            if (self.execution is not None or self.stopping or
+                    (self.worker is not None and self.worker.is_alive()) or
+                    (self.prepare_worker is not None and self.prepare_worker.is_alive())):
+                return TriggerResponse(success=False, message="an execution or transition is active")
+            try:
+                self.control_safety.clear_latch()
+            except (ValueError, IOError, OSError) as exc:
+                return TriggerResponse(success=False, message=str(exc))
+        return TriggerResponse(success=True, message="emergency stop cleared; control remains disabled")
 
     def _prepare(self, command):
         with self.lock:
-            if self.execution is not None:
+            if (self.execution is not None or self.stopping or
+                    (self.worker is not None and self.worker.is_alive())):
                 self._feedback(command, "failed", -1, 0.0, "an execution is active", "BUSY")
                 return
             try:
+                if self.control_safety is not None:
+                    self.control_safety.assert_unlatched()
                 store = TrajectoryStore(self.config["storage_directory"])
                 payload = store.load_payload(command.task_id, command.subtask_id)
                 validate_trajectory(payload, command.task_id, command.subtask_id,
@@ -298,7 +326,7 @@ class ScoutNavigationAdapter(object):
                 self.navigation_process = self._start_navigation(payload["map_id"])
                 self.navigation_map_id = payload["map_id"]
                 self.prepared = {"command": command, "payload": payload}
-                self._feedback(command, "preparing", -1, 0.0, "navigation process started")
+                self._feedback(command, "preparing", -1, 0.0, "waiting for navigation readiness")
                 self.prepare_worker = threading.Thread(
                     target=self._run_prepare, args=(command, payload), name="scout-navigation-prepare")
                 self.prepare_worker.daemon = True
@@ -316,7 +344,8 @@ class ScoutNavigationAdapter(object):
                     raise ScoutAdapterError("navigation process exited during startup")
                 if client.wait_for_server(self.rospy.Duration(0.2)):
                     with self.lock:
-                        if self.prepared is None or self.prepared["payload"]["map_id"] != payload["map_id"]:
+                        if (self.stop_event.is_set() or self.stopping or self.prepared is None or
+                                self.prepared["payload"]["map_id"] != payload["map_id"]):
                             return
                         self.client = client
                     self._feedback(command, "ready", -1, 0.0, "navigation is ready")
@@ -336,9 +365,12 @@ class ScoutNavigationAdapter(object):
 
     def _schedule(self, command):
         with self.lock:
-            if self.execution is not None:
+            if (self.execution is not None or self.stopping or
+                    (self.worker is not None and self.worker.is_alive())):
                 return
             try:
+                if self.control_safety is not None:
+                    self.control_safety.assert_unlatched()
                 prepared = self.prepared
                 if prepared is None or self.client is None or self._process_exited():
                     raise ScoutAdapterError("navigation is not prepared")
@@ -356,15 +388,19 @@ class ScoutNavigationAdapter(object):
                 self.execution = {
                     "command": command, "payload": payload, "scheduled_at": scheduled_at,
                     "request_id": command.request_id, "waypoint_index": -1,
+                    "feedback_state": "scheduled", "progress": 0.0,
                 }
                 self._feedback(command, "scheduled", -1, 0.0, "navigation ready; execution scheduled")
-                self.worker = threading.Thread(target=self._run, name="scout-task-execution")
+                self.worker = threading.Thread(target=self._run, args=(self.execution,), name="scout-task-execution")
                 self.worker.daemon = True
                 self.worker.start()
             except (ScoutAdapterError, IOError, OSError, ValueError) as exc:
                 self._feedback(command, "failed", -1, 0.0, str(exc), execution_error_code(exc))
 
     def _start_navigation(self, map_id):
+        if self.config.get("navigation_management", "managed") == "attach":
+            self.rospy.loginfo("attaching to navigation for map %s", map_id)
+            return None
         map_dir = os.path.join(os.path.expanduser(self.config["navigation_map_root"]), map_id)
         map_yaml = os.path.join(map_dir, self.config["navigation_map_yaml"])
         command = ["roslaunch", self.config["navigation_launch_package"],
@@ -376,8 +412,10 @@ class ScoutNavigationAdapter(object):
         return self.process_factory(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
                                     universal_newlines=True, preexec_fn=os.setsid)
 
-    def _run(self):
-        execution = self.execution
+    def _run(self, execution=None):
+        execution = execution if execution is not None else self.execution
+        if execution is None:
+            return
         command = execution["command"]
         payload = execution["payload"]
         try:
@@ -387,13 +425,22 @@ class ScoutNavigationAdapter(object):
             start_at = execution["scheduled_at"] + float(payload["start_delay_seconds"])
             while time.time() < start_at and not self.stop_event.is_set():
                 self._feedback(command, "scheduled", -1, 0.0, "waiting for scheduled start")
-                time.sleep(1.0)
+                self.stop_event.wait(min(1.0, max(0.0, start_at - time.time())))
             if self.stop_event.is_set():
                 return
             current = self._map_pose()
+            if self.config.get("auto_arm_on_schedule", False):
+                with self._transition_feedback(execution, "confirming control enable"):
+                    self.control_safety.arm()
+                with self.lock:
+                    if self.stop_event.is_set() or self.execution is not execution:
+                        return
+                    self.control_armed = True
             yaws = waypoint_yaws(payload["waypoints"], current[0], current[1])
             from move_base_msgs.msg import MoveBaseGoal
             for index, (point, yaw) in enumerate(zip(payload["waypoints"], yaws)):
+                if self.stop_event.is_set():
+                    return
                 goal = MoveBaseGoal()
                 goal.target_pose.header.stamp = self.rospy.Time.now()
                 goal.target_pose.header.frame_id = self.config["map_frame"]
@@ -402,7 +449,13 @@ class ScoutNavigationAdapter(object):
                 goal.target_pose.pose.position.z = 0.0
                 goal.target_pose.pose.orientation.z = math.sin(yaw / 2.0)
                 goal.target_pose.pose.orientation.w = math.cos(yaw / 2.0)
-                client.send_goal(goal)
+                with self.lock:
+                    if self.stop_event.is_set() or self.execution is not execution:
+                        return
+                    if self.control_armed:
+                        self.control_safety.assert_running()
+                    client.send_goal(goal)
+                    execution["feedback_state"] = "running"
                 waypoint_deadline = time.monotonic() + float(
                     self.config["waypoint_timeout_seconds"])
                 while not client.wait_for_result(self.rospy.Duration(0.2)):
@@ -410,6 +463,8 @@ class ScoutNavigationAdapter(object):
                         return
                     if self._process_exited():
                         raise ScoutAdapterError("navigation process exited")
+                    if self.control_armed:
+                        self.control_safety.assert_running()
                     if time.monotonic() >= waypoint_deadline:
                         client.cancel_goal()
                         raise ScoutAdapterError("waypoint %d timed out" % index)
@@ -418,15 +473,23 @@ class ScoutNavigationAdapter(object):
                     self._feedback(command, "running", index - 1,
                                    float(index) / len(payload["waypoints"]), "moving to waypoint")
                 state = client.get_state()
+                if self.stop_event.is_set():
+                    return
                 if state != 3:
                     status_text = client.get_goal_status_text() if hasattr(client, "get_goal_status_text") else ""
                     raise move_base_failure(state, status_text, index)
                 self._feedback(command, "running", index,
                                float(index + 1) / len(payload["waypoints"]), "waypoint reached")
-            self._finish(command, "completed", len(payload["waypoints"]) - 1, 1.0, "task completed")
-        except (ScoutAdapterError, IOError, OSError, ValueError) as exc:
-            if not self.stop_event.is_set():
-                self._finish(command, "failed", execution["waypoint_index"], 0.0, str(exc), execution_error_code(exc))
+                execution["waypoint_index"] = index
+                execution["progress"] = float(index + 1) / len(payload["waypoints"])
+            self._finish(command, "completed", len(payload["waypoints"]) - 1, 1.0,
+                         "task completed", expected_execution=execution)
+        except Exception as exc:
+            with self.lock:
+                should_finish = self.execution is execution and not self.stopping
+            if should_finish:
+                self._finish(command, "failed", execution["waypoint_index"], 0.0, str(exc),
+                             execution_error_code(exc), expected_execution=execution)
 
     def _make_action_client(self):
         if self.action_client_factory is not None:
@@ -436,6 +499,8 @@ class ScoutNavigationAdapter(object):
         return actionlib.SimpleActionClient(self.config["navigation_action"], MoveBaseAction)
 
     def _map_pose(self):
+        if self.control_safety is not None:
+            self.control_safety.assert_localized()
         with self.lock:
             message = self.latest_odom
             received_at = self.latest_odom_at
@@ -463,9 +528,19 @@ class ScoutNavigationAdapter(object):
         return values
 
     def _process_exited(self):
+        if self.config.get("navigation_management", "managed") == "attach":
+            return False
         return self.navigation_process is None or self.navigation_process.poll() is not None
 
     def _stop(self, command):
+        if self.control_safety is not None:
+            with self.lock:
+                self.stopping = True
+                self.stop_event.set()
+                execution = self.execution
+            self._finish(command, "stopped", execution["waypoint_index"] if execution else -1,
+                         0.0, "task stopped", force=True)
+            return
         with self.lock:
             execution = self.execution
             self.stop_event.set()
@@ -475,8 +550,41 @@ class ScoutNavigationAdapter(object):
         self._publish_zero()
         if execution is not None:
             self._finish(command, "stopped", execution["waypoint_index"], 0.0, "task stopped")
+        elif self.control_safety is not None:
+            self._finish(command, "stopped", -1, 0.0, "task stopped", force=True)
+
+    def _emergency_stop(self, command):
+        if self.control_safety is None:
+            self._feedback(command, "failed", -1, 0.0,
+                           "confirmed emergency stop is not configured", "EMERGENCY_STOP_UNSUPPORTED")
+            return
+        self.stop_event.set()
+        with self.lock:
+            self.stopping = True
+        persistence_error = None
+        try:
+            self.control_safety.latch("operator emergency stop")
+        except (ValueError, IOError, OSError) as exc:
+            persistence_error = exc
+        state = "failed" if persistence_error else "emergency_stopped"
+        self._finish(command, state, -1, 0.0,
+                     str(persistence_error) if persistence_error else "emergency stop confirmed",
+                     execution_error_code(persistence_error) if persistence_error else "", force=True)
+        with self.lock:
+            self.prepared = None
+            self.client = None
 
     def _unload(self, command):
+        if self.control_safety is not None:
+            with self.lock:
+                self.stop_event.set()
+                self.stopping = True
+            self._finish(command, "unloaded", -1, 0.0, "navigation unloaded", force=True)
+            self._stop_navigation()
+            with self.lock:
+                self.prepared = None
+                self.client = None
+            return
         with self.lock:
             self.stop_event.set()
             client = self.client
@@ -515,7 +623,7 @@ class ScoutNavigationAdapter(object):
             except OSError:
                 pass
 
-    def _feedback(self, command, state, waypoint_index, progress, message, error_code=""):
+    def _feedback(self, command, state, waypoint_index, progress, message, error_code="", include_pose=True):
         if self.feedback_pub is None:
             return
         feedback = self.feedback_class()
@@ -531,24 +639,122 @@ class ScoutNavigationAdapter(object):
         feedback.progress = float(progress)
         feedback.error_code = error_code
         feedback.message = str(message)
-        try:
-            x, y, z = self._map_pose()
-        except Exception:
-            x = y = z = 0.0
+        x = y = z = 0.0
+        if include_pose:
+            try:
+                x, y, z = self._map_pose()
+            except Exception:
+                pass
         feedback.position.x, feedback.position.y, feedback.position.z = x, y, z
         self.feedback_pub.publish(feedback)
 
-    def _finish(self, command, state, waypoint_index, progress, message, error_code=""):
+    @contextmanager
+    def _transition_feedback(self, execution, message):
+        finished = threading.Event()
+        worker = None
+        if execution is not None and self.control_safety is not None:
+            interval = min(1.0, float(self.config.get("execution_feedback_seconds", 3.0)) / 3.0)
+
+            def heartbeat():
+                while not finished.is_set():
+                    with self.lock:
+                        if self.execution is not execution or finished.is_set():
+                            return
+                        self._feedback(execution["command"], execution.get("feedback_state", "scheduled"),
+                                       execution["waypoint_index"], execution.get("progress", 0.0),
+                                       message, include_pose=False)
+                    finished.wait(interval)
+
+            worker = threading.Thread(target=heartbeat, name="navigation-control-feedback")
+            worker.daemon = True
+            worker.start()
+        try:
+            yield
+        finally:
+            finished.set()
+            if worker is not None:
+                worker.join(timeout=1.0)
+
+    def _finish(self, command, state, waypoint_index, progress, message, error_code="", force=False,
+                expected_execution=None):
+        with self.terminal_lock:
+            with self.lock:
+                if expected_execution is not None and self.execution is not expected_execution:
+                    return
+                if self.execution is None and state != "failed" and not force:
+                    return
+                execution = self.execution
+                self.stopping = True
+                self.stop_event.set()
+                if self.execution is not None:
+                    self.execution["waypoint_index"] = waypoint_index
+            try:
+                with self._transition_feedback(execution, "confirming control stop"):
+                    self._finish_control(command, state, waypoint_index, progress, message, error_code)
+            finally:
+                with self.lock:
+                    self.stopping = False
+
+    def _finish_control(self, command, state, waypoint_index, progress, message, error_code):
+        if self.control_safety is not None:
+            errors = []
+            if self.client is not None:
+                try:
+                    self.client.cancel_all_goals()
+                except Exception as exc:
+                    errors.append("goal cancellation failed: %s" % exc)
+            try:
+                self._publish_zero()
+            except Exception as exc:
+                errors.append("zero velocity publication failed: %s" % exc)
+            try:
+                self.control_safety.disarm()
+            except (ValueError, IOError, OSError) as exc:
+                errors.append(str(exc))
+                error_code = execution_error_code(exc)
+            if errors:
+                state, progress, message = "failed", 0.0, message + "; stop: " + "; ".join(errors)
+                error_code = error_code or "CONTROL_STOP_FAILED"
+                try:
+                    self.control_safety.latch(message)
+                except (ValueError, IOError, OSError) as exc:
+                    message += "; " + str(exc)
+            elif state == "completed" and self.control_safety.latched:
+                state, message, error_code = "failed", "emergency stop is latched", "EMERGENCY_STOP_LATCHED"
+            self.control_armed = False
         with self.lock:
-            if self.execution is None and state != "failed":
-                return
-            if self.execution is not None:
-                self.execution["waypoint_index"] = waypoint_index
-            self._feedback(command, state, waypoint_index, progress, message, error_code)
+            self._feedback(command, state, waypoint_index, progress, message, error_code,
+                           include_pose=self.control_safety is None)
             self.execution = None
-            self.stop_event.set()
 
     def watchdog(self, unused_event=None):
+        with self.lock:
+            execution = self.execution
+            check_control = self.control_armed and not self.stop_event.is_set()
+        if check_control:
+            try:
+                self.control_safety.assert_running()
+            except ValueError as exc:
+                if execution is not None:
+                    self._finish(execution["command"], "failed", execution["waypoint_index"],
+                                 0.0, str(exc), execution_error_code(exc), expected_execution=execution)
+                return
+        if self.control_safety is not None and self.navigation_process is not None and self._process_exited():
+            with self.lock:
+                execution = self.execution
+                record = execution or self.prepared
+                process = self.navigation_process
+            if record is not None:
+                self._finish(record["command"], "failed", -1, 0.0,
+                             "navigation process exited", "NAVIGATION_PROCESS_EXITED", force=True,
+                             expected_execution=execution)
+            with self.lock:
+                if self.navigation_process is process:
+                    self.prepared = None
+                    self.client = None
+                    self.navigation_process = None
+                    self.navigation_map_id = None
+            return
         with self.lock:
             if self.navigation_process is None or not self._process_exited():
                 return
@@ -571,9 +777,22 @@ class ScoutNavigationAdapter(object):
     def close(self):
         self.stop_event.set()
         client = getattr(self, "client", None)
-        if client is not None:
-            client.cancel_all_goals()
-        self._publish_zero()
+        if self.control_safety is not None:
+            try:
+                if client is not None:
+                    client.cancel_all_goals()
+                self._publish_zero()
+            except Exception as exc:
+                self.rospy.logerr("navigation cancellation during shutdown failed: %s", exc)
+            finally:
+                try:
+                    self.control_safety.disarm()
+                except (ValueError, IOError, OSError) as exc:
+                    self.rospy.logerr("control disable during shutdown failed: %s", exc)
+        else:
+            if client is not None:
+                client.cancel_all_goals()
+            self._publish_zero()
         self._stop_navigation()
         self.client = None
         self.prepared = None

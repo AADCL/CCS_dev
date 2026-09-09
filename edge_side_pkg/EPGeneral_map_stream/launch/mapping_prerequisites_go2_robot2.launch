@@ -1,0 +1,20 @@
+<launch>
+  <arg name="extrinsics_file"
+       default="/home/unitree/go2_nav_ws/src/go2_core/config/extrinsics.yaml"/>
+  <arg name="output_path"
+       default="/home/unitree/ccs_edge_ws/run/map/current/public_map.pcd"/>
+
+  <include file="$(find go2_core)/launch/core.launch">
+    <arg name="extrinsics" value="$(arg extrinsics_file)"/>
+    <arg name="enable_costmap_cloud" value="false"/>
+  </include>
+
+  <!-- Compatibility name keeps the generic CCS save contract stable. -->
+  <node pkg="go2_mapping" type="go2_map_builder_node"
+        name="go2_map_accumulator" output="screen" required="true">
+    <rosparam command="load" file="$(find go2_mapping)/config/mapper.yaml"/>
+    <param name="input_cloud" value="/cloud_registered_odom"/>
+    <param name="input_odom" value="/odom_nav"/>
+    <param name="output_path" value="$(arg output_path)"/>
+  </node>
+</launch>
