@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 import math
 import json
 import threading
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
@@ -44,7 +45,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QStackedLayout,
     QStackedWidget,
+    QStyle,
     QSplitter,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -451,69 +454,181 @@ class MiddlePanTurntableCameraMixin:
 class MapCard(QFrame):
     double_clicked = Signal(str)
     selection_changed = Signal(str, bool)
+    action_requested = Signal(str, str)
 
-    def __init__(self, definition: MapDefinition, active: bool = False) -> None:
+    def __init__(self, definition: MapDefinition, active: bool = False,
+                 palette: ThemePalette | None = None) -> None:
         super().__init__()
         self.definition = definition
-        self.setObjectName("mapCard")
-        self.setMinimumHeight(180)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setObjectName("compactListCard")
+        self.setMinimumHeight(153)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(9)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(6)
 
         header = QHBoxLayout()
+        header.setSpacing(6)
         self.checkbox = QCheckBox()
+        self.checkbox.setAccessibleName(f"选择地图 {definition.name}")
         self.checkbox.setVisible(False)
         self.checkbox.toggled.connect(
             lambda checked: self.selection_changed.emit(self.definition.map_id, checked)
         )
         header.addWidget(self.checkbox)
-        name = QLabel(definition.name)
-        name.setObjectName("mapName")
-        name.setWordWrap(True)
-        header.addWidget(name, 1)
-        status = QLabel(("当前激活 · " if active else "") + STATUS_TEXT[definition.status])
-        status.setObjectName("mapStatus")
-        status.setProperty("state", definition.status.value)
-        header.addWidget(status, alignment=Qt.AlignmentFlag.AlignTop)
+        self.name_label = QLabel(definition.name)
+        self.name_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.name_label.setObjectName("compactCardTitle")
+        self.name_label.setWordWrap(True)
+        self.name_label.setMinimumWidth(0)
+        self.name_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        header.addWidget(self.name_label, 1)
+        self.active_label = QLabel("当前激活")
+        self.active_label.setObjectName("compactActiveTag")
+        header.addWidget(self.active_label, alignment=Qt.AlignmentFlag.AlignTop)
+        self.status_label = QLabel({
+            MapStatus.READY: "就绪", MapStatus.WAITING_FOR_PCD: "待导入", MapStatus.ERROR: "异常",
+        }[definition.status])
+        self.status_label.setObjectName("compactCardStatus")
+        self.status_label.setProperty("state", {
+            MapStatus.READY: "ready", MapStatus.WAITING_FOR_PCD: "waiting", MapStatus.ERROR: "error",
+        }[definition.status])
+        self.status_label.setToolTip(STATUS_TEXT[definition.status])
+        header.addWidget(self.status_label, alignment=Qt.AlignmentFlag.AlignTop)
         root.addLayout(header)
 
         created = definition.created_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-        root.addWidget(self._line("建图时间", created))
-        creator_names = "、".join(item.device_name for item in definition.creator_devices) or "元数据不可用"
-        root.addWidget(self._line("建图设备", creator_names))
-        if definition.bounds:
+        metadata = QGridLayout()
+        metadata.setHorizontalSpacing(8)
+        metadata.setVerticalSpacing(0)
+        self.time_label, self.time_value = self._field(
+            "文件时间" if definition.status == MapStatus.ERROR else "建图时间", created,
+        )
+        creator_names = "、".join(item.device_name for item in definition.creator_devices)
+        if not creator_names:
+            creator_names = "元数据不可用" if definition.status == MapStatus.ERROR else "未绑定设备"
+        self.device_label, self.device_value = self._field("建图设备", creator_names)
+        for row, (label, value) in enumerate((
+            (self.time_label, self.time_value), (self.device_label, self.device_value),
+        )):
+            metadata.addWidget(label, row, 0, alignment=Qt.AlignmentFlag.AlignTop)
+            metadata.addWidget(value, row, 1)
+        metadata.setColumnStretch(1, 1)
+        root.addLayout(metadata)
+        if definition.status == MapStatus.ERROR:
+            detail = definition.error_message or "地图元数据不可用"
+        elif definition.bounds:
             size = f"{definition.bounds.width:.1f} × {definition.bounds.height:.1f} × {definition.bounds.depth:.1f} m"
-            layers = "PCD + PGM" if definition.pgm else "PCD"
-            detail = f"{layers}  ·  范围 {size}  ·  {definition.point_count:,} 点"
+            detail = f"范围 {size}  ·  {definition.point_count:,} 点"
         elif definition.pgm:
             detail = (
-                f"PGM  ·  范围 {definition.pgm.width_m:.1f} × "
+                f"范围 {definition.pgm.width_m:.1f} × "
                 f"{definition.pgm.height_m:.1f} m"
             )
         elif definition.error_message:
             detail = definition.error_message
         else:
             detail = "尚未导入 map.pcd"
-        note = QLabel(detail)
-        note.setObjectName("muted")
-        note.setWordWrap(True)
-        root.addWidget(note)
-        root.addStretch()
+        self.metric_label = QLabel(detail)
+        self.metric_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.metric_label.setObjectName(
+            "compactCardError" if definition.status == MapStatus.ERROR else "compactCardMetric"
+        )
+        self.metric_label.setWordWrap(True)
+        self.metric_label.setMinimumWidth(0)
+        self.metric_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        root.addWidget(self.metric_label)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(6)
+        layers = []
+        if definition.pcd_path or definition.bounds:
+            layers.append("PCD")
+        if definition.pgm:
+            layers.append("PGM")
+        self.layer_label = QLabel(" + ".join(layers) or (
+            "图层不可用" if definition.status == MapStatus.ERROR else "无图层"
+        ))
+        self.layer_label.setObjectName("compactFieldLabel")
+        footer.addWidget(self.layer_label)
+        footer.addStretch()
+        primary_action, primary_text = {
+            MapStatus.READY: ("detail", "详情"),
+            MapStatus.WAITING_FOR_PCD: ("import_pcd", "导入 PCD"),
+            MapStatus.ERROR: ("error", "查看原因"),
+        }[definition.status]
+        self.primary_button = QPushButton(primary_text)
+        self.primary_button.setObjectName("compactPrimaryButton")
+        self.primary_button.clicked.connect(lambda: self.action_requested.emit(definition.map_id, primary_action))
+        footer.addWidget(self.primary_button)
+        self.more_button = QToolButton()
+        self.more_button.setObjectName("compactToolButton")
+        self.more_button.setText("...")
+        self.more_button.setToolTip("更多地图操作")
+        self.more_button.setAccessibleName(f"{definition.name}的更多操作")
+        self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_button.setFixedWidth(32)
+        self.more_menu = QMenu(self.more_button)
+        self.menu_actions = {}
+        for action_id, text in (
+            ("detail", "地图详情"), ("rename", "修改名称"),
+            ("import_pcd", "导入 / 替换 PCD"), ("import_pgm", "导入 / 替换 PGM"),
+            ("generate_pgm", "从 PCD 生成 PGM"), ("export", "下载地图"),
+            ("delete", "删除地图"),
+        ):
+            if action_id == "delete":
+                self.more_menu.addSeparator()
+            action = self.more_menu.addAction(text)
+            action.triggered.connect(
+                lambda _checked=False, value=action_id: self.action_requested.emit(definition.map_id, value)
+            )
+            self.menu_actions[action_id] = action
+        self.more_button.setMenu(self.more_menu)
+        footer.addWidget(self.more_button)
+        root.addLayout(footer)
+        self.set_active(active)
+        self.set_generation_running(False)
+        self.set_theme(palette or theme_palette(ThemeMode.NIGHT))
 
     @staticmethod
-    def _line(label: str, value: str) -> QLabel:
-        widget = QLabel(f"{label}  {value}")
-        widget.setObjectName("fieldValue")
-        widget.setWordWrap(True)
-        return widget
+    def _field(label: str, value: str) -> tuple[QLabel, QLabel]:
+        label_widget = QLabel(label)
+        label_widget.setObjectName("compactFieldLabel")
+        value_widget = QLabel(value)
+        value_widget.setTextFormat(Qt.TextFormat.PlainText)
+        value_widget.setObjectName("compactFieldValue")
+        value_widget.setWordWrap(True)
+        value_widget.setMinimumWidth(0)
+        value_widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        return label_widget, value_widget
+
+    def set_theme(self, palette: ThemePalette) -> None:
+        icon_name = "upload" if self.definition.status == MapStatus.WAITING_FOR_PCD else "map"
+        apply_button_icon(self.primary_button, icon_name, palette)
+
+    def set_active(self, active: bool) -> None:
+        self.active_label.setVisible(active)
+        if self.property("active") != active:
+            self.setProperty("active", active)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+
+    def set_generation_running(self, running: bool) -> None:
+        editable = self.definition.status != MapStatus.ERROR
+        for action_id, action in self.menu_actions.items():
+            action.setEnabled(action_id in {"detail", "delete"} or editable)
+        self.menu_actions["generate_pgm"].setEnabled(
+            editable and bool(self.definition.pcd_path) and not running
+        )
 
     def set_edit_mode(self, enabled: bool, checked: bool = False) -> None:
         self.checkbox.blockSignals(True)
         self.checkbox.setChecked(checked)
         self.checkbox.setVisible(enabled)
         self.checkbox.blockSignals(False)
+        self.primary_button.setEnabled(not enabled)
+        self.more_button.setEnabled(not enabled)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and not self.checkbox.isVisible():
@@ -3217,6 +3332,11 @@ class MapPage(QWidget):
         self.selected_map_ids: set[str] = set()
         self.edit_mode = False
         self.card_column_count = 0
+        self.map_cards: dict[str, MapCard] = {}
+        self._empty_card_label: QLabel | None = None
+        self._card_reflow_pending = False
+        self._card_render_revision = 0
+        self._generating_map_id: str | None = None
         self.current_map_id: str | None = None
         self.mapping_service = mapping_service
         self.relocalization_service = relocalization_service
@@ -3272,6 +3392,8 @@ class MapPage(QWidget):
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
         self.detail_page.set_theme(palette)
+        for card in self.map_cards.values():
+            card.set_theme(palette)
         self.update()
 
     def _build(self, viewer_factory: Callable[[], PointCloudViewer] | None) -> None:
@@ -3330,6 +3452,25 @@ class MapPage(QWidget):
         header.addWidget(self.edit_button)
         layout.addLayout(header)
 
+        self.selection_summary = QWidget()
+        selection_row = QHBoxLayout(self.selection_summary)
+        selection_row.setContentsMargins(0, 0, 0, 0)
+        selection_row.setSpacing(6)
+        self.selection_summary.setVisible(False)
+        self.selection_label = QLabel()
+        self.selection_label.setObjectName("muted")
+        self.selection_label.setVisible(False)
+        selection_row.addWidget(self.selection_label)
+        self.clear_selection_button = QToolButton()
+        self.clear_selection_button.setObjectName("compactToolButton")
+        self.clear_selection_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton))
+        self.clear_selection_button.setToolTip("清空选择")
+        self.clear_selection_button.setAccessibleName("清空地图选择")
+        self.clear_selection_button.setVisible(False)
+        self.clear_selection_button.clicked.connect(self._clear_selection)
+        selection_row.addWidget(self.clear_selection_button)
+        selection_row.addStretch()
+        layout.addWidget(self.selection_summary)
         self.action_bar = QHBoxLayout()
         self.action_bar.addStretch()
         self.rename_button = QPushButton("修改名称")
@@ -3357,12 +3498,27 @@ class MapPage(QWidget):
 
         search_row = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("按地图名称搜索")
+        self.search.setObjectName("compactListSearch")
+        self.search.setPlaceholderText("搜索地图或建图设备")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._render_cards)
+        self.status_filter = QComboBox()
+        self.status_filter.setObjectName("compactListFilter")
+        self.status_filter.setAccessibleName("地图状态")
+        for label, value in (("全部状态", "all"), ("就绪", "ready"), ("待导入", "waiting"), ("异常", "error")):
+            self.status_filter.addItem(label, value)
+        self.status_filter.currentIndexChanged.connect(self._render_cards)
+        self.sort_combo = QComboBox()
+        self.sort_combo.setObjectName("compactListSort")
+        self.sort_combo.setAccessibleName("地图排序")
+        for label, value in (("建图时间：最新", "newest"), ("建图时间：最早", "oldest"), ("地图名称", "name")):
+            self.sort_combo.addItem(label, value)
+        self.sort_combo.currentIndexChanged.connect(self._render_cards)
         self.result_label = QLabel()
         self.result_label.setObjectName("muted")
         search_row.addWidget(self.search, 1)
+        search_row.addWidget(self.status_filter)
+        search_row.addWidget(self.sort_combo)
         search_row.addWidget(self.result_label)
         layout.addLayout(search_row)
 
@@ -3373,33 +3529,72 @@ class MapPage(QWidget):
         self.card_container.setObjectName("mapGrid")
         self.card_grid = QGridLayout(self.card_container)
         self.card_grid.setContentsMargins(2, 2, 8, 2)
-        self.card_grid.setHorizontalSpacing(14)
-        self.card_grid.setVerticalSpacing(14)
+        self.card_grid.setHorizontalSpacing(10)
+        self.card_grid.setVerticalSpacing(10)
         self.card_grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll.setWidget(self.card_container)
+        self.scroll.viewport().installEventFilter(self)
         layout.addWidget(self.scroll, 1)
 
     def filtered_maps(self) -> list[MapDefinition]:
         query = self.search.text().strip().casefold()
-        return [item for item in self.maps if not query or query in item.name.casefold()]
+        status = {
+            "ready": MapStatus.READY, "waiting": MapStatus.WAITING_FOR_PCD, "error": MapStatus.ERROR,
+        }.get(self.status_filter.currentData())
+        filtered = [item for item in self.maps if (status is None or item.status == status) and (
+            not query or query in item.name.casefold() or any(
+                query in device.device_name.casefold() or query in device.device_id.casefold()
+                for device in item.creator_devices
+            )
+        )]
+        order = self.sort_combo.currentData()
+        if order == "name":
+            return sorted(filtered, key=lambda item: (item.name.casefold(), item.map_id))
+        return sorted(filtered, key=lambda item: (item.created_at, item.map_id), reverse=order != "oldest")
+
+    def _card_columns(self) -> int:
+        margins = self.card_grid.contentsMargins()
+        width = self.scroll.viewport().width() - margins.left() - margins.right()
+        return max(1, min(4, (width + 10) // 330))
 
     def _render_cards(self) -> None:
+        scroll_value = self.scroll.verticalScrollBar().value()
+        self._card_render_revision += 1
+        revision = self._card_render_revision
         while self.card_grid.count():
-            item = self.card_grid.takeAt(0)
-            if item.widget():
-                item.widget().hide()
-                item.widget().deleteLater()
+            self.card_grid.takeAt(0)
+        if self._empty_card_label is not None:
+            self._empty_card_label.hide()
+            self._empty_card_label.deleteLater()
+            self._empty_card_label = None
         filtered = self.filtered_maps()
-        columns = 3 if self.width() >= 1180 else 2 if self.width() >= 760 else 1
+        columns = self._card_columns()
+        for column in range(max(self.card_column_count, columns)):
+            self.card_grid.setColumnStretch(column, 1 if column < columns else 0)
+            self.card_grid.setColumnMinimumWidth(column, 0)
         self.card_column_count = columns
+        previous_cards = self.map_cards
+        self.map_cards = {}
         for index, definition in enumerate(filtered):
-            card = MapCard(definition, definition.map_id == self.repository.active_map_id())
+            card = previous_cards.pop(definition.map_id, None)
+            if card is not None and card.definition != definition:
+                card.hide()
+                card.deleteLater()
+                card = None
+            if card is None:
+                card = MapCard(definition, palette=self.theme_palette)
+                card.selection_changed.connect(self._set_selected)
+                card.double_clicked.connect(self.show_detail)
+                card.action_requested.connect(self._handle_card_action)
+            card.set_active(definition.map_id == self.repository.active_map_id())
             card.set_edit_mode(self.edit_mode, definition.map_id in self.selected_map_ids)
-            card.selection_changed.connect(self._set_selected)
-            card.double_clicked.connect(self.show_detail)
+            card.set_generation_running(self._generating_map_id is not None)
+            self.map_cards[definition.map_id] = card
             self.card_grid.addWidget(card, index // columns, index % columns)
-        for column in range(columns):
-            self.card_grid.setColumnStretch(column, 1)
+            card.show()
+        for card in previous_cards.values():
+            card.hide()
+            card.deleteLater()
         self.result_label.setText(f"显示 {len(filtered)} / {len(self.maps)} 张地图")
         if not filtered:
             message = "尚未创建地图" if not self.maps else "没有匹配的地图"
@@ -3407,6 +3602,52 @@ class MapPage(QWidget):
             empty.setObjectName("emptyState")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.card_grid.addWidget(empty, 0, 0, 1, columns)
+            self._empty_card_label = empty
+        self._sync_selection_actions()
+        self.card_grid.activate()
+        self.scroll.verticalScrollBar().setValue(scroll_value)
+        QTimer.singleShot(0, lambda: self._restore_card_scroll(scroll_value, revision))
+
+    def _restore_card_scroll(self, value: int, revision: int) -> None:
+        if revision == self._card_render_revision:
+            self.scroll.verticalScrollBar().setValue(value)
+
+    def _schedule_card_reflow(self) -> None:
+        if not self._card_reflow_pending:
+            self._card_reflow_pending = True
+            QTimer.singleShot(0, self._reflow_cards)
+
+    def _reflow_cards(self) -> None:
+        self._card_reflow_pending = False
+        if self.page_stack.currentWidget() == self.list_page and self._card_columns() != self.card_column_count:
+            self._render_cards()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if hasattr(self, "scroll") and watched is self.scroll.viewport() and event.type() == QEvent.Type.Resize:
+            self._schedule_card_reflow()
+        return super().eventFilter(watched, event)
+
+    def _handle_card_action(self, map_id: str, action: str) -> None:
+        if self.edit_mode:
+            return
+        definition = self.repository.map_by_id(map_id)
+        if definition is None:
+            return
+        if action == "detail":
+            self.show_detail(map_id)
+        elif action == "error":
+            QMessageBox.warning(self, "地图数据异常", definition.error_message or "地图元数据不可用")
+        elif action == "delete":
+            self._delete_maps((map_id,))
+        elif definition.status != MapStatus.ERROR:
+            handlers = {
+                "rename": self._rename_map, "import_pcd": self._import_pcd_map,
+                "import_pgm": self._import_pgm_map, "generate_pgm": self._generate_pgm_map,
+                "export": self._export_map,
+            }
+            handler = handlers.get(action)
+            if handler:
+                handler(map_id)
 
     def _create_map(self) -> None:
         mode_dialog = MapCreationModeDialog(self)
@@ -3760,23 +4001,48 @@ class MapPage(QWidget):
             self.selected_map_ids.add(map_id)
         else:
             self.selected_map_ids.discard(map_id)
+        self._sync_selection_actions()
+
+    def _clear_selection(self) -> None:
+        self.selected_map_ids.clear()
+        for card in self.map_cards.values():
+            card.set_edit_mode(self.edit_mode, False)
+        self._sync_selection_actions()
+
+    def _sync_selection_actions(self) -> None:
         one_selected = len(self.selected_map_ids) == 1
         selected = self.repository.map_by_id(next(iter(self.selected_map_ids))) if one_selected else None
-        editable = bool(selected and selected.status != MapStatus.ERROR)
+        editable = bool(self.edit_mode and selected and selected.status != MapStatus.ERROR)
         self.rename_button.setEnabled(editable)
         self.import_button.setEnabled(editable)
         self.import_pgm_button.setEnabled(editable)
-        self.generate_pgm_button.setEnabled(bool(editable and selected and selected.pcd_path))
+        self.generate_pgm_button.setEnabled(bool(
+            editable and selected and selected.pcd_path and self._generating_map_id is None
+        ))
+        self.generate_pgm_button.setText("生成中…" if self._generating_map_id else "从 PCD 生成 PGM")
         self.export_button.setEnabled(editable)
-        self.delete_button.setEnabled(bool(self.selected_map_ids))
+        self.delete_button.setEnabled(self.edit_mode and bool(self.selected_map_ids))
+        hidden_count = len(self.selected_map_ids.difference(self.map_cards))
+        selection_text = f"已选 {len(self.selected_map_ids)} 项"
+        if hidden_count:
+            selection_text += f"（含 {hidden_count} 项隐藏）"
+        self.selection_label.setText(selection_text)
+        self.selection_summary.setVisible(self.edit_mode)
+        self.selection_label.setVisible(self.edit_mode)
+        self.clear_selection_button.setVisible(self.edit_mode)
+        self.clear_selection_button.setEnabled(bool(self.selected_map_ids))
+        for card in self.map_cards.values():
+            card.set_generation_running(self._generating_map_id is not None)
 
     def _selected_id(self) -> str | None:
         return next(iter(self.selected_map_ids)) if len(self.selected_map_ids) == 1 else None
 
     def _rename_selected(self) -> None:
-        map_id = self._selected_id()
+        self._rename_map(self._selected_id())
+
+    def _rename_map(self, map_id: str | None) -> None:
         definition = self.repository.map_by_id(map_id) if map_id else None
-        if not definition:
+        if not definition or definition.status == MapStatus.ERROR:
             return
         name, accepted = QInputDialog.getText(self, "修改地图名称", "地图名称", text=definition.name)
         if not accepted:
@@ -3787,8 +4053,11 @@ class MapPage(QWidget):
             QMessageBox.critical(self, "地图重命名失败", str(exc))
 
     def _import_selected(self) -> None:
-        map_id = self._selected_id()
-        if not map_id:
+        self._import_pcd_map(self._selected_id())
+
+    def _import_pcd_map(self, map_id: str | None) -> None:
+        definition = self.repository.map_by_id(map_id) if map_id else None
+        if definition is None or definition.status == MapStatus.ERROR:
             return
         filename, _ = QFileDialog.getOpenFileName(self, "导入 PCD 点云", "", "PCD 点云 (*.pcd)")
         if not filename:
@@ -3804,8 +4073,11 @@ class MapPage(QWidget):
             self._export_map(map_id)
 
     def _import_pgm_selected(self) -> None:
-        map_id = self._selected_id()
-        if not map_id:
+        self._import_pgm_map(self._selected_id())
+
+    def _import_pgm_map(self, map_id: str | None) -> None:
+        definition = self.repository.map_by_id(map_id) if map_id else None
+        if definition is None or definition.status == MapStatus.ERROR:
             return
         filename, _ = QFileDialog.getOpenFileName(
             self, "导入 ROS PGM 地图", "", "ROS 地图 YAML (*.yaml *.yml)"
@@ -3818,11 +4090,13 @@ class MapPage(QWidget):
             QMessageBox.critical(self, "PGM 导入失败", str(exc))
 
     def _generate_pgm_selected(self) -> None:
-        map_id = self._selected_id()
+        self._generate_pgm_map(self._selected_id())
+
+    def _generate_pgm_map(self, map_id: str | None) -> None:
         definition = self.repository.map_by_id(map_id) if map_id else None
-        if definition is None or not definition.pcd_path:
+        if definition is None or definition.status == MapStatus.ERROR or not definition.pcd_path:
             return
-        if self._pgm_thread and self._pgm_thread.is_alive():
+        if self._generating_map_id is not None or (self._pgm_thread and self._pgm_thread.is_alive()):
             QMessageBox.information(self, "生成 PGM", "已有 PGM 生成任务正在运行")
             return
         if definition.pgm is not None:
@@ -3838,8 +4112,8 @@ class MapPage(QWidget):
         dialog = PgmGenerationDialog(definition, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        self.generate_pgm_button.setEnabled(False)
-        self.generate_pgm_button.setText("生成中…")
+        self._generating_map_id = definition.map_id
+        self._sync_selection_actions()
         self._pgm_thread = threading.Thread(
             target=self._run_pgm_generation,
             args=(definition.map_id, dialog.options()),
@@ -3856,30 +4130,32 @@ class MapPage(QWidget):
             self.pgm_generation_finished.emit(map_id, None, str(exc))
 
     def _on_pgm_generation_finished(self, map_id: str, definition: object, error: object) -> None:
-        self.generate_pgm_button.setText("从 PCD 生成 PGM")
-        selected = self.repository.map_by_id(map_id)
-        self.generate_pgm_button.setEnabled(
-            self.edit_mode and self._selected_id() == map_id and bool(selected and selected.pcd_path)
-        )
+        if self._generating_map_id == map_id:
+            self._generating_map_id = None
+        self._sync_selection_actions()
         if error:
             QMessageBox.critical(self, "PGM 生成失败", str(error))
         elif isinstance(definition, MapDefinition):
             QMessageBox.information(self, "生成 PGM", "PGM 栅格图层已生成并保存")
 
     def _delete_selected(self) -> None:
-        if not self.selected_map_ids:
+        self._delete_maps(tuple(self.selected_map_ids))
+
+    def _delete_maps(self, map_ids: Iterable[str]) -> None:
+        selected_ids = tuple(dict.fromkeys(map_ids))
+        if not selected_ids:
             return
         reply = QMessageBox.question(
             self,
             "删除地图",
-            f"确定将选中的 {len(self.selected_map_ids)} 张地图移入 map_server/.trash 吗？",
+            f"确定将选中的 {len(selected_ids)} 张地图移入 map_server/.trash 吗？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            for map_id in tuple(self.selected_map_ids):
+            for map_id in selected_ids:
                 self.repository.delete(map_id)
                 for device in self.source.snapshots():
                     profile = self.source.profile(device.device_id)
@@ -4449,4 +4725,4 @@ class MapPage(QWidget):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         if self.page_stack.currentWidget() == self.list_page:
-            self._render_cards()
+            self._schedule_card_reflow()

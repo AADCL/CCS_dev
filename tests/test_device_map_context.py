@@ -81,7 +81,7 @@ class DeviceMapContextTests(unittest.TestCase):
     def test_unbound_go2_is_unknown_instead_of_unsupported(self):
         go2 = DeviceProfile(
             "QRD_002", "Go2", "QRD", "127.0.0.2",
-            relocalization_profile="go2_edu", active_map_id="map-1",
+            relocalization_profile="go2_native", active_map_id="map-1",
         )
         context = resolve_device_map_context(
             FakeSource(go2), None, None, "QRD_002")

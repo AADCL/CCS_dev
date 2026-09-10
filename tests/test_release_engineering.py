@@ -203,9 +203,13 @@ class ReleaseContentsTests(unittest.TestCase):
                 for relative in (
                     "EPGeneral_go2_integration/launch/mapping_fast_lio.launch",
                     "EPGeneral_go2_integration/launch/navigation.launch",
+                    "EPGeneral_go2_integration/scripts/go2_stack_guard.py",
+                    "EPGeneral_map_stream/launch/mapping_prerequisites_go2_robot3.launch",
                     "deploy/go2_robot2/start_ccs_edge_dev.sh",
                     "deploy/go2_robot2/config/udp_telemetry.yaml",
                     "deploy/go2_robot2/DEPLOYMENT.md",
+                    "deploy/go2_robot3/start_ccs_edge_dev.sh",
+                    "deploy/go2_robot3/config/device.yaml",
                 ):
                     self.assertIn(base + relative, archive.namelist())
                 for document in ("INTERFACE_REFERENCE.md", "USER_MANUAL.md"):

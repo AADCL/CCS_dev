@@ -1,6 +1,7 @@
 """Python 3.6 compatible ROS subscription boundary for MAVROS telemetry."""
 
 import time
+from threading import Lock
 
 from .config import RosTopicConfig
 
@@ -38,6 +39,8 @@ class RosBridge(object):
         self._message_resolver = message_resolver
         self._subscriptions = []
         self._last_state_message = None
+        self._last_connection_message = None
+        self._connection_lock = Lock()
         self._freshness_timer = None
 
     def _subscribe(self, spec, callback, label):
@@ -46,13 +49,22 @@ class RosBridge(object):
         self._logger.info("ros_subscribed stream=%s topic=%s type=%s", label, spec.topic, spec.message_type)
 
     def start(self):
+        connection = self._config.ros.connection
+        if connection is not None:
+            self._health.update_connected(False)
+            self._subscribe(connection, self._on_connection, "connection")
         self._subscribe(self._config.ros.state, self._on_state, "state")
         if self._config.ros.battery.enabled:
             self._subscribe(self._config.ros.battery, self._on_battery, "battery")
         else:
             self._logger.info("ros_subscription_disabled stream=battery")
         state = self._config.ros.state
-        if state.connected_on_message and state.timeout_seconds is not None:
+        if connection is not None:
+            self._freshness_timer = self._rospy.Timer(
+                self._rospy.Duration(min(1.0, connection.timeout_seconds / 2.0)),
+                self._check_connection_freshness,
+            )
+        elif state.connected_on_message and state.timeout_seconds is not None:
             self._freshness_timer = self._rospy.Timer(
                 self._rospy.Duration(min(1.0, state.timeout_seconds / 2.0)),
                 self._check_state_freshness,
@@ -75,13 +87,28 @@ class RosBridge(object):
                 self._logger.warning("state_field_unavailable field=%s error=%s", name, exc)
                 return None
 
-        connected = True if self._config.ros.state.connected_on_message else mapped("connected")
+        independent_connection = self._config.ros.connection is not None
+        connected = None
+        if not independent_connection:
+            connected = True if self._config.ros.state.connected_on_message else mapped("connected")
         self._health.update_state(
             connected,
             mapped("armed"),
             mapped("system_status"),
             mapped("mode"),
+            preserve_connected=independent_connection,
         )
+
+    def _on_connection(self, _message):
+        with self._connection_lock:
+            self._last_connection_message = time.monotonic()
+            self._health.update_connected(True)
+
+    def _check_connection_freshness(self, _event):
+        with self._connection_lock:
+            timeout = self._config.ros.connection.timeout_seconds
+            if self._last_connection_message is None or time.monotonic() - self._last_connection_message > timeout:
+                self._health.update_connected(False)
 
     def _on_battery(self, message):
         mapping = self._config.ros.battery.mapping

@@ -385,7 +385,7 @@ class TfMathTests(unittest.TestCase):
         self.assertTrue(config["tf_continuous_reporting"])
         self.assertEqual(config["tf_report_interval_seconds"], 1.0)
 
-    def test_legacy_go2_template_remains_disabled_without_profile_changes(self):
+    def test_go2_template_declares_health_gate_but_remains_disabled(self):
         profile = os.path.join(ROOT, "..", "deploy", "go2_edu", "config")
         config = load_config(
             os.path.join(profile, "relocalization.yaml"),
@@ -393,7 +393,9 @@ class TfMathTests(unittest.TestCase):
         )
         self.assertEqual(config["backend"], "go2_edu")
         self.assertFalse(config["enabled"])
-        self.assertEqual(config["localization_health_topic"], "")
+        self.assertEqual(
+            config["localization_health_topic"], "/localization/ok")
+        self.assertEqual(config["localization_health_timeout_seconds"], 2.0)
 
     def test_enabled_go2_requires_at_least_one_navigation_stage(self):
         profile = os.path.join(ROOT, "..", "deploy", "go2_edu", "config")

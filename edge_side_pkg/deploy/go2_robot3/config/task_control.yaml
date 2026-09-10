@@ -1,0 +1,36 @@
+schema_version: 2
+protocol_id: "ccs-task-control-v2"
+network: {bind_host: "0.0.0.0", control_port: 14563, ground_station_ip: "192.168.50.101", status_port: 14564, max_datagram_bytes: 1400}
+storage: {directory: "/home/unitree/ccs_edge_ws/mission"}
+ros:
+  command_topic: "/epgeneral_task_control/execution_command"
+  feedback_topic: "/epgeneral_task_control/execution_feedback"
+  status_topic: "/qrd/QRD_003/task_status"
+  map_frame: "map"
+timeouts: {ack_cache_seconds: 60.0, transfer_seconds: 10.0, adapter_feedback_seconds: 2.0, execution_feedback_seconds: 3.0, preparation_retry_seconds: 5.0, utc_tolerance_seconds: 2.0}
+limits: {max_waypoints: 500, max_compressed_bytes: 1048576, max_raw_bytes: 4194304, max_chunks: 4096}
+adapter:
+  active_map_state_file: "/home/unitree/ccs_edge_ws/run/state/relocalization.json"
+  navigation_launch_package: "epgeneral_go2_integration"
+  navigation_launch_file: "navigation.launch"
+  navigation_map_root: "/home/unitree/ccs_edge_ws/maps/download"
+  navigation_map_yaml: "map.yaml"
+  navigation_action: "/move_base"
+  odom_topic: "/odom_nav"
+  zero_velocity_topic: "/cmd_vel_nav"
+  navigation_startup_timeout_seconds: 30.0
+  waypoint_timeout_seconds: 300.0
+  pose_timeout_seconds: 3.0
+  zero_velocity_hz: 20.0
+  zero_velocity_count: 10
+  navigation_management: "attach"
+  auto_arm_on_schedule: true
+  auto_disarm_on_terminal: true
+  emergency_stop_state_file: "/home/unitree/ccs_edge_ws/run/state/go2_task_safety.json"
+  localization_ok_topic: "/localization/ok"
+  control_enabled_topic: "/go2/control/enabled"
+  control_diagnostics_topic: "/go2/diagnostics"
+  navigation_reset_service: "/go2_navigation_supervisor/reset"
+  control_enable_service: "/go2_sdk_bridge_real/enable"
+  control_service_timeout_seconds: 5.0
+  control_state_timeout_seconds: 3.0

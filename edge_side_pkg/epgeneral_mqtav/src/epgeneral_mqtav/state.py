@@ -38,17 +38,18 @@ class HealthState(object):
             "mission_status": "unknown",
         }
 
-    def update_state(self, connected, armed, system_status, mode):
+    def update_state(self, connected, armed, system_status, mode, preserve_connected=False):
         def optional_bool(value):
             return None if value is None else bool(value)
 
         with self._lock:
             self._health.update(
-                fcu_connected=optional_bool(connected),
                 armed=optional_bool(armed),
                 system_status=system_status if system_status is not None else None,
                 flight_mode=str(mode) if mode else "unknown",
             )
+            if not preserve_connected:
+                self._health["fcu_connected"] = optional_bool(connected)
 
     def update_connected(self, connected):
         with self._lock:

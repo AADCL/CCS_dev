@@ -580,7 +580,7 @@ class RelocalizationService(QObject):
         if not profile_config.supported:
             return False
         return (
-            profile_name != "go2_edu"
+            profile_name != "go2_native"
             or str(device.device_type).strip().upper() == "QRD"
         )
 

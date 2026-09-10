@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 from epgeneral_mqtav.config import ConfigError, load_config
 
 
@@ -24,6 +26,48 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.client_id, "mqtav-UAV_001")
         self.assertEqual(config.topic("status"), "mqtav/UAV_001/status")
         self.assertFalse(config.ros.mission.enabled)
+        self.assertIsNone(config.ros.connection)
+
+    def config_with_connection(self, connection):
+        content = yaml.safe_load(MQTAV_CONFIG.read_text(encoding="utf-8"))
+        content["ros"]["connection"] = connection
+        return load_config(self.write_config(yaml.safe_dump(content)), DEVICE_CONFIG)
+
+    def test_independent_connection_defaults_to_three_seconds(self):
+        config = self.config_with_connection({"topic": "/robot/heartbeat", "message_type": "std_msgs/Empty"})
+        self.assertEqual(config.ros.connection.topic, "/robot/heartbeat")
+        self.assertEqual(config.ros.connection.message_type, "std_msgs/Empty")
+        self.assertEqual(config.ros.connection.timeout_seconds, 3.0)
+        self.assertTrue(config.ros.connection.connected_on_message)
+        self.assertFalse(config.ros.state.connected_on_message)
+
+    def test_independent_connection_custom_timeout(self):
+        config = self.config_with_connection(
+            {"topic": "/robot/heartbeat", "message_type": "std_msgs/Empty", "timeout_seconds": 0.5}
+        )
+        self.assertEqual(config.ros.connection.timeout_seconds, 0.5)
+
+    def test_null_connection_preserves_legacy_configuration(self):
+        self.assertIsNone(self.config_with_connection(None).ros.connection)
+
+    def test_independent_connection_rejects_invalid_topic_and_message_type(self):
+        for connection, field in (
+            ({"message_type": "std_msgs/Empty"}, "topic"),
+            ({"topic": "robot/heartbeat", "message_type": "std_msgs/Empty"}, "topic"),
+            ({"topic": "/robot/heartbeat"}, "message_type"),
+            ({"topic": "/robot/heartbeat", "message_type": "Empty"}, "message_type"),
+        ):
+            with self.subTest(connection=connection):
+                with self.assertRaisesRegex(ConfigError, "ros.connection." + field):
+                    self.config_with_connection(connection)
+
+    def test_independent_connection_rejects_invalid_timeout(self):
+        for timeout in (True, 0, -1, 3601, "3", float("nan"), float("inf")):
+            with self.subTest(timeout=timeout):
+                with self.assertRaisesRegex(ConfigError, "ros.connection.timeout_seconds"):
+                    self.config_with_connection(
+                        {"topic": "/robot/heartbeat", "message_type": "std_msgs/Empty", "timeout_seconds": timeout}
+                    )
 
     def test_invalid_ground_station_ip_is_rejected(self):
         content = MQTAV_CONFIG.read_text(encoding="utf-8")

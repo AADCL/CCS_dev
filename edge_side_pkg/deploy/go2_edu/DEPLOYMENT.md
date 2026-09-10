@@ -25,7 +25,7 @@ CCS 0.23.1 当前入口：[使用手册](../../documents/USER_MANUAL.md) · [接
 - IMU：`/livox/imu`。
 - 点云与 Livox 可用性：`/livox/lidar`。
 - 电池、armed、system status、机器人模式：无可确认 ROS 数据源，保持未知。
-- 重定位：profile 保持禁用，返回 `UNSUPPORTED_BACKEND`。
+- 重定位：共享协调器已支持 `go2_edu`，但本目录的旧设备模板没有可验证的定位 stage，因此仍保持禁用并返回 `UNSUPPORTED_BACKEND`；设备专项 profile 配齐定位 launch 和健康话题后才能启用。
 
 MQTT topic、`ccs-udp-telemetry-v1`、`ccs-map-stream-v2`、任务和重定位 wire 协议均不改变。
 

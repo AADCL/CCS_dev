@@ -2,8 +2,8 @@
 <package format="2">
   <name>epgeneral_go2_integration</name>
   <version>0.1.2</version>
-  <description>CCS lifecycle and launch integration for AADCL GO2 robot 2.</description>
-  <maintainer email="robot2@local.invalid">AADCL</maintainer>
+  <description>CCS lifecycle and launch integration for AADCL GO2 devices.</description>
+  <maintainer email="edge@local.invalid">AADCL</maintainer>
   <license>MIT</license>
   <buildtool_depend>catkin</buildtool_depend>
   <exec_depend>rospy</exec_depend>

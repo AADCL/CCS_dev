@@ -34,3 +34,14 @@ class StateTests(unittest.TestCase):
         self.assertIsNone(payload["health"]["fcu_connected"])
         self.assertIsNone(payload["health"]["armed"])
         self.assertEqual(payload["health"]["flight_mode"], "unknown")
+
+    def test_state_update_can_preserve_independent_connection(self):
+        health = HealthState(DeviceConfig("QRD_003", "192.168.50.112"))
+        for connected in (True, False):
+            with self.subTest(connected=connected):
+                health.update_connected(connected)
+                health.update_state(not connected, True, 3, "IDLE", preserve_connected=True)
+                payload = health.payload("status")["health"]
+                self.assertEqual(payload["fcu_connected"], connected)
+                self.assertTrue(payload["armed"])
+                self.assertEqual(payload["flight_mode"], "IDLE")

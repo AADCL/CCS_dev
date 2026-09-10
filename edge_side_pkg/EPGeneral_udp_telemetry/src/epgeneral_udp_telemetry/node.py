@@ -148,8 +148,7 @@ class RosUdpTelemetryNode(object):
                 5.0, "UDP telemetry source rejected name=%s reason=%s" % (name, reason))
 
     def _send_heartbeat(self, event):
-        self._send("heartbeat", self.sequences["heartbeat"], None, None)
-        self.sequences["heartbeat"] += 1
+        self._send("heartbeat", "heartbeat", None, None)
 
     def _send_level(self, level):
         now = time.monotonic()
@@ -167,8 +166,7 @@ class RosUdpTelemetryNode(object):
                 sampler.reject("snapshot failed: %s" % exc, received=False)
                 payload[descriptor["name"]] = {"valid": False, "sample_age_seconds": None}
                 self._record_sample_result(descriptor, False, exc)
-        self._send("telemetry", self.sequences[level], level, payload)
-        self.sequences[level] += 1
+        self._send("telemetry", level, level, payload)
 
     @staticmethod
     def _pgm_file_snapshot(descriptor):
@@ -194,8 +192,9 @@ class RosUdpTelemetryNode(object):
             return {"valid": True, "status": "unavailable", "sample_age_seconds": 0.0,
                     "map_id": map_id if isinstance(map_id, str) else None}
 
-    def _send(self, message_type, sequence, level, payload):
+    def _send(self, message_type, sequence_key, level, payload):
         with self.send_lock:
+            sequence = self.sequences[sequence_key]
             try:
                 encoded = encode_envelope(self.config, self.session_id, message_type, sequence, payload, level)
                 self.socket.sendto(encoded, self.destination)
@@ -210,6 +209,7 @@ class RosUdpTelemetryNode(object):
                 if level in self.level_stats:
                     self.level_stats[level]["failure_count"] += 1
                 self.rospy.logerr_throttle(5.0, "UDP send failed: %s" % exc)
+            self.sequences[sequence_key] += 1
 
     def _publish_link_status(self, event):
         from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
@@ -221,6 +221,7 @@ class RosUdpTelemetryNode(object):
             level_statistics = {
                 level: dict(stats) for level, stats in self.level_stats.items()
             }
+            next_sequences = dict(self.sequences)
         self.link_publisher.publish(Bool(data=last_send_ok))
         report = DiagnosticArray()
         report.header.stamp = self.rospy.Time.now()
@@ -240,7 +241,7 @@ class RosUdpTelemetryNode(object):
                 KeyValue(key="level_%d_sent_count" % level, value=str(stats["sent_count"])),
                 KeyValue(key="level_%d_failure_count" % level, value=str(stats["failure_count"])),
                 KeyValue(key="level_%d_byte_count" % level, value=str(stats["byte_count"])),
-                KeyValue(key="level_%d_next_sequence" % level, value=str(self.sequences[level])),
+                KeyValue(key="level_%d_next_sequence" % level, value=str(next_sequences[level])),
             ])
         report.status = [status]
         now = time.monotonic()
