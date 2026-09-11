@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Iterable
 import math
+from concurrent.futures import ThreadPoolExecutor
 import json
 import threading
 import uuid
@@ -1974,7 +1975,11 @@ class RelocalizationReticle(QWidget):
         painter.drawEllipse(cx - 4, cy - 4, 8, 8)
 
 
+_STATIC_MAP_READERS = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ccs-static-map")
+
+
 class PointCloudViewer(QWidget):
+    static_loaded = Signal(object)
     load_failed = Signal(str)
     map_point_picked = Signal(float, float)
     escape_pressed = Signal()
@@ -2000,6 +2005,16 @@ class PointCloudViewer(QWidget):
         self._live_points_visual = None
         self._marker_visual = None
         self._shape_visuals: list[object] = []
+        self._marker_meshes = {}
+        self._trail_inputs = {}
+        self._load_generation = 0
+        self._pcd_path = None
+        self._yaml_path = None
+        self._suspended = False
+        self._resume_future = None
+        self.static_loaded.connect(self._apply_static_loaded)
+        self.trails_visible = True
+        self._trail_settings_key = None
         self._pgm_visual = None
         self._pgm_data = None
         self._grid_visual = None
@@ -2060,13 +2075,16 @@ class PointCloudViewer(QWidget):
         self.cursor_check = QCheckBox("光标坐标")
         self.devices_check = QCheckBox("设备")
         self.devices_check.setChecked(True)
+        self.trails_check = QCheckBox("轨迹")
+        self.trails_check.setChecked(True)
+        self.trails_check.toggled.connect(self.set_trails_layer_visible)
         self.height_legend = HeightColorLegend()
         self.height_legend.threshold.valueChanged.connect(lambda _value: self._refresh_point_colors())
         for widget in (
             QLabel("图层"), *self.layer_buttons.values(), self.grid_check,
             self.grid_spacing_label, self.grid_spacing_input,
             self.grid_opacity_label, self.grid_opacity_input,
-            self.cursor_check, self.devices_check,
+            self.cursor_check, self.devices_check, self.trails_check,
         ):
             controls.addWidget(widget)
         controls.addStretch()
@@ -2199,10 +2217,11 @@ class PointCloudViewer(QWidget):
             color=np.asarray(colors, dtype=np.float32), connect="segments", width=4.0,
         )
 
-    def load_map(self, definition: MapDefinition, pcd_path: str | Path) -> None:
+    def load_map(self, definition: MapDefinition, pcd_path: str | Path, *, _data=None) -> None:
         self.current_map = definition
+        self._pcd_path = pcd_path
         try:
-            data = self.loader.load(pcd_path, sample_for_render=True)
+            data = _data if _data is not None else self.loader.load(pcd_path, sample_for_render=True)
             if self._points_visual is None:
                 raise PointCloudError("VisPy/OpenGL 渲染器未初始化")
             self._point_data = np.asarray(data.points, dtype=np.float32)
@@ -2221,10 +2240,11 @@ class PointCloudViewer(QWidget):
             self.load_failed.emit(str(exc))
             raise PointCloudError(str(exc)) from exc
 
-    def load_pgm_layer(self, definition: MapDefinition, yaml_path: str | Path) -> None:
+    def load_pgm_layer(self, definition: MapDefinition, yaml_path: str | Path, *, _data=None) -> None:
         self.current_map = definition
+        self._yaml_path = yaml_path
         try:
-            data = self.pgm_loader.load_yaml(yaml_path)
+            data = _data if _data is not None else self.pgm_loader.load_yaml(yaml_path)
             if self._view is None:
                 raise PgmMapError("VisPy/OpenGL 渲染器未初始化")
             from vispy import scene
@@ -2275,6 +2295,19 @@ class PointCloudViewer(QWidget):
         self._update_layer_controls()
 
     def clear(self) -> None:
+        self._load_generation += 1
+        self._suspended = False
+        self._pcd_path = self._yaml_path = None
+        self._resume_future = None
+        for visual in self._shape_visuals:
+            visual.parent = None
+        self._shape_visuals.clear()
+        self._marker_meshes.clear()
+        for visual in self._trail_visuals.values():
+            visual.parent = None
+        self._trail_visuals.clear()
+        self._trail_visibility.clear()
+        self._trail_inputs.clear()
         self.current_map = None
         self._point_data = np.empty((0, 3), dtype=np.float32)
         if self._points_visual is not None:
@@ -2283,7 +2316,8 @@ class PointCloudViewer(QWidget):
         if self._marker_visual is not None:
             self._marker_visual.set_data(np.empty((0, 3), dtype=np.float32))
         if self._pgm_visual is not None:
-            self._pgm_visual.visible = False
+            self._pgm_visual.parent = None
+            self._pgm_visual = None
         if self._device_axis_visual is not None:
             self._device_axis_visual.set_data(pos=np.empty((0, 3), dtype=np.float32))
         if self._trail_visual is not None:
@@ -2298,6 +2332,80 @@ class PointCloudViewer(QWidget):
         self.show_message("尚未加载点云")
         self._render_coordinate_grid()
         self._update_layer_controls()
+
+    def suspend_static(self):
+        if self._resume_future is not None:
+            self._load_generation += 1
+            self._resume_future.cancel()
+            self._resume_future = None
+        if self._suspended or self.current_map is None or not (self._pcd_path or self._yaml_path):
+            return
+        self._load_generation += 1
+        self._suspended = True
+        self._camera_state = self._camera.get_state() if self._camera is not None else None
+        self._point_data = np.empty((0, 3), dtype=np.float32)
+        if self._points_visual is not None:
+            self._points_visual.set_data(self._point_data)
+        if self._pgm_visual is not None:
+            self._pgm_visual.parent = None
+            self._pgm_visual = None
+        self._pgm_data = None
+        self.pointcloud_loaded = self.pgm_loaded = False
+
+    def resume_static(self):
+        if not self._suspended or self.current_map is None:
+            return
+        if self._resume_future is not None and not self._resume_future.done():
+            return
+        generation, definition = self._load_generation, self.current_map
+        pcd_path, yaml_path = self._pcd_path, self._yaml_path
+        loader, pgm_loader = self.loader, self.pgm_loader
+        def read_assets():
+            result = {"generation": generation, "definition": definition, "errors": []}
+            for key, file, load in (("pcd", pcd_path, lambda value: loader.load(value, sample_for_render=True)),
+                                    ("pgm", yaml_path, pgm_loader.load_yaml)):
+                if file:
+                    try:
+                        result[key] = load(file)
+                    except Exception as exc:
+                        result["errors"].append(str(exc))
+            return result
+        future = _STATIC_MAP_READERS.submit(read_assets)
+        self._resume_future = future
+        def complete(value):
+            if value.cancelled():
+                return
+            try:
+                self.static_loaded.emit(value.result())
+            except RuntimeError:
+                pass  # Widget was closed while file IO was finishing.
+        future.add_done_callback(complete)
+
+    def _apply_static_loaded(self, result):
+        if result["generation"] != self._load_generation or not self._suspended:
+            return
+        self._resume_future = None
+        self._suspended = False
+        try:
+            if "pcd" in result:
+                self.load_map(result["definition"], self._pcd_path, _data=result["pcd"])
+            if "pgm" in result:
+                self.load_pgm_layer(result["definition"], self._yaml_path, _data=result["pgm"])
+            if self._camera is not None and getattr(self, "_camera_state", None):
+                self._camera.set_state(self._camera_state)
+            self.set_task_paths(self._task_paths)
+        except Exception as exc:
+            self.load_failed.emit(str(exc))
+        for error in result["errors"]:
+            self.load_failed.emit(error)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.resume_static()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.suspend_static()
 
     def set_live_points(self, points: np.ndarray, bounds=None) -> None:
         array = np.asarray(points, dtype=np.float32)
@@ -2715,8 +2823,10 @@ class PointCloudViewer(QWidget):
         self.set_device_markers(markers)
 
     def set_device_markers(self, markers: list[DeviceMapMarker] | tuple[DeviceMapMarker, ...]) -> None:
-        self.markers = tuple(markers)
-        self._render_markers()
+        markers = tuple(markers)
+        if markers != self.markers:
+            self.markers = markers
+            self._render_markers()
 
     def set_devices_layer_visible(self, visible: bool) -> None:
         self.devices_visible = bool(visible)
@@ -2731,32 +2841,54 @@ class PointCloudViewer(QWidget):
             self._device_axis_visual.visible = (
                 self.devices_visible and self.selected_device_pose is not None
             )
+    def set_trail_settings_key(self, key):
+        self._trail_settings_key = key
+        settings = QSettings("CCS", "CCS Device Monitor")
+        self.set_trails_layer_visible(settings.value(f"trajectories/{key}", True, type=bool))
+
+    def set_trails_layer_visible(self, visible):
+        self.trails_visible = bool(visible)
+        self.trails_check.blockSignals(True)
+        self.trails_check.setChecked(self.trails_visible)
+        self.trails_check.blockSignals(False)
         if self._trail_visual is not None:
-            self._trail_visual.visible = self.devices_visible and len(self.device_trail) >= 2
+            self._trail_visual.visible = self.trails_visible and len(self.device_trail) >= 2
         for device_id, visual in self._trail_visuals.items():
-            visual.visible = self.devices_visible and bool(
-                self._trail_visibility.get(device_id, False)
-            )
+            visual.visible = self.trails_visible and self._trail_visibility.get(device_id, False)
+        if self._trail_settings_key:
+            QSettings("CCS", "CCS Device Monitor").setValue(f"trajectories/{self._trail_settings_key}", self.trails_visible)
 
     def _render_markers(self) -> None:
         if self._marker_visual is None:
             return
-        for visual in self._shape_visuals:
-            try:
-                visual.parent = None
-            except Exception:
-                pass
-        self._shape_visuals.clear()
+        from vispy.visuals.transforms import MatrixTransform
+        ids = {marker.device_id for marker in self.markers}
+        for device_id in tuple(self._marker_meshes):
+            if device_id not in ids:
+                self._marker_meshes.pop(device_id)[1].parent = None
         fallback = []
         fallback_colors = []
         for marker in self.markers:
             try:
-                visual = self._create_marker_mesh(marker)
+                signature = (marker.marker_shape, marker.color, self.theme_palette.text_strong)
+                cached = self._marker_meshes.get(marker.device_id)
+                if cached is None or cached[0] != signature:
+                    if cached is not None:
+                        cached[1].parent = None
+                    visual = self._create_marker_mesh(marker)
+                    self._marker_meshes[marker.device_id] = (signature, visual)
+                else:
+                    visual = cached[1]
+                    transform = MatrixTransform()
+                    transform.rotate(float(marker.yaw), (0, 0, 1))
+                    offset = 0.175 if marker.marker_shape == MapMarkerShape.CUBE else 0.03 if marker.marker_shape == MapMarkerShape.ARROW else 0
+                    transform.translate((marker.x, marker.y, marker.z + offset))
+                    visual.transform = transform
                 visual.visible = self.devices_visible
-                self._shape_visuals.append(visual)
             except Exception:
                 fallback.append((marker.x, marker.y, marker.z))
                 fallback_colors.append(marker.color or device_display_color(marker.device_id))
+        self._shape_visuals = [item[1] for item in self._marker_meshes.values()]
         positions = np.asarray(fallback, dtype=np.float32)
         if not len(positions):
             positions = np.empty((0, 3), dtype=np.float32)
@@ -2860,7 +2992,14 @@ class PointCloudViewer(QWidget):
         if not has_trail:
             points = np.empty((0, 3), dtype=np.float32)
         self._trail_visual.set_data(pos=points, color=self.theme_palette.primary_strong, width=2.0)
-        self._trail_visual.visible = self.devices_visible and has_trail
+        self._trail_visual.visible = self.trails_visible and has_trail
+
+    def remove_device_trail(self, device_id):
+        visual = self._trail_visuals.pop(device_id, None)
+        if visual is not None:
+            visual.parent = None
+        self._trail_visibility.pop(device_id, None)
+        self._trail_inputs.pop(device_id, None)
 
     def set_device_trails(
         self,
@@ -2875,8 +3014,12 @@ class PointCloudViewer(QWidget):
                 continue
             visual = self._trail_visuals.pop(device_id)
             self._trail_visibility.pop(device_id, None)
+            self._trail_inputs.pop(device_id, None)
             visual.parent = None
         for device_id, positions in trails.items():
+            if self._trail_inputs.get(device_id) is positions:
+                continue
+            self._trail_inputs[device_id] = positions
             visual = self._trail_visuals.get(device_id)
             if visual is None:
                 visual = scene.visuals.Line(parent=self._view.scene)
@@ -2887,10 +3030,11 @@ class PointCloudViewer(QWidget):
             if not has_trail:
                 points = np.empty((0, 3), dtype=np.float32)
             visual.set_data(
-                pos=points, color=device_display_color(device_id), width=2.5
+                pos=np.nan_to_num(points), color=device_display_color(device_id), width=2.5,
+                connect=(np.isfinite(points).all(axis=1)[:-1] & np.isfinite(points).all(axis=1)[1:]),
             )
             self._trail_visibility[device_id] = has_trail
-            visual.visible = self.devices_visible and has_trail
+            visual.visible = self.trails_visible and has_trail
 
     @staticmethod
     def _rgba(value: str) -> tuple[float, float, float, float]:
@@ -4236,6 +4380,14 @@ class MapPage(QWidget):
         self.page_stack.setCurrentWidget(self.list_page)
 
     def set_active(self, active: bool) -> None:
+        self._active = active
+        if active:
+            self._device_render_timer.start()
+            if self.detail_page.viewer.isVisible():
+                self.detail_page.viewer.resume_static()
+        else:
+            self._device_render_timer.stop()
+            self.detail_page.viewer.suspend_static()
         if not active:
             self.detail_page.stop_videos()
         if (not active and self.mapping_service is not None and self.mapping_service.active
@@ -4450,6 +4602,8 @@ class MapPage(QWidget):
         self.detail_page.viewer.set_relocalization_picker(picker_device_id)
 
     def _refresh_device_overlays(self) -> None:
+        if not getattr(self, "_active", True):
+            return
         if (
             self.current_map_id is None
             or self.page_stack.currentWidget() != self.detail_page

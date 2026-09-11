@@ -11,7 +11,7 @@ from pathlib import Path
 DEPS = all(importlib.util.find_spec(name) is not None for name in ("PySide6", "msgpack"))
 
 if DEPS:
-    from ccs_monitor.models import DeviceSnapshot, MapCreatorDevice, MapDefinition, MapStatus
+    from ccs_monitor.models import ConnectionStatus, DeviceSnapshot, MapCreatorDevice, MapDefinition, MapStatus
     from ccs_monitor.task_config import load_task_system_config
     from ccs_monitor.task_models import EdgeTaskStatus, TaskExecutionStatus, TaskWaypoint
     from ccs_monitor.task_protocol import TaskEnvelope, TaskProtocol
@@ -38,7 +38,7 @@ class TaskProtocolServiceTests(unittest.TestCase):
             creator_devices=(MapCreatorDevice("UAV-1", "设备", "UAV"),),
             status=MapStatus.READY, pcd_path="map.pcd", directory_name="map",
         )
-        self.device = DeviceSnapshot("UAV-1", "设备", "UAV", ip_address="127.0.0.1")
+        self.device = DeviceSnapshot("UAV-1", "设备", "UAV", ip_address="127.0.0.1", connection_status=ConnectionStatus.ONLINE)
         task = self.repository.create("任务", map_definition, [self.device], now=now)
         subtask = replace(task.subtasks[0], waypoints=(
             TaskWaypoint("a", 0, 0, 1), TaskWaypoint("b", 2, 0, 1),
@@ -140,6 +140,10 @@ class TaskProtocolServiceTests(unittest.TestCase):
             load_task_system_config(), self.repository,
             lambda value: self.device if value == self.device.device_id else None,
         )
+        from ccs_monitor.task_services import _Confirmation
+        service._confirmations[(self.task.task_id, self.device.device_id)] = _Confirmation(
+            self.task.subtasks[0].subtask_id, self.task.subtasks[0].revision,
+            {"summary-1", "summary-2", "summary-3"})
         for sequence, (state, message) in enumerate((
             ("ready", "navigation ready"),
             ("no_task", "task missing"),
@@ -202,7 +206,7 @@ class TaskProtocolServiceTests(unittest.TestCase):
             edge.recvfrom(4096)
         edge.sendto(protocol.encode(TaskEnvelope(
             commit.task_id, commit.subtask_id, commit.device_id, "",
-            "task_summary", "prepare-ready", 102, time.time_ns(),
+            "task_summary", commit.request_id, 102, time.time_ns(),
             {"state": "ready", "revision": self.task.subtasks[0].revision,
              "message": "navigation ready", "error_code": None},
         )), ("127.0.0.1", status_port))

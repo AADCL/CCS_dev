@@ -1,0 +1,12 @@
+test_detail_page_displays_udp_telemetry_without_map_position (tests.test_ui.UiTests.test_detail_page_displays_udp_telemetry_without_map_position) ... WARNING: QOpenGLWidget is not supported on this platform.
+WARNING: This plugin does not support createPlatformOpenGLContext!
+WARNING: QOpenGLWidget is not supported on this platform.
+WARNING: This plugin does not support createPlatformOpenGLContext!
+WARNING: QOpenGLWidget is not supported on this platform.
+WARNING: This plugin does not support createPlatformOpenGLContext!
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.812s
+
+OK

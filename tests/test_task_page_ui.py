@@ -15,7 +15,7 @@ if DEPS:
     from PySide6.QtWidgets import QApplication, QComboBox, QWidget
 
     from ccs_monitor.map_repository import MapRepository
-    from ccs_monitor.models import DeviceSnapshot, MapCreatorDevice, MapDefinition, MapStatus
+    from ccs_monitor.models import ConnectionStatus, DeviceSnapshot, MapCreatorDevice, MapDefinition, MapStatus
     from ccs_monitor.pages.task_page import TaskEditorPage
     from ccs_monitor.task_models import EdgeTaskStatus, TaskExecutionSnapshot, TaskExecutionStatus, TaskWaypoint
     from ccs_monitor.task_repository import TaskRepository
@@ -70,7 +70,7 @@ class TaskPageUiTests(unittest.TestCase):
         )
         self.map_repository._maps = [self.map]
         self.map_repository._active_map_id = self.map.map_id
-        self.devices = [DeviceSnapshot("UAV-1", "一号机", "UAV", ip_address="127.0.0.1")]
+        self.devices = [DeviceSnapshot("UAV-1", "一号机", "UAV", ip_address="127.0.0.1", connection_status=ConnectionStatus.ONLINE)]
         self.task = self.repository.create("任务", self.map, self.devices, now=now)
         self.editor = TaskEditorPage(
             self.repository, self.map_repository, _Source(self.devices), viewer_factory=_Viewer,
@@ -100,7 +100,7 @@ class TaskPageUiTests(unittest.TestCase):
         self._open()
         self.assertEqual(self.editor.current_subtask_id, self.task.subtasks[0].subtask_id)
 
-    def test_device_card_excludes_edge_status_and_message(self):
+    def test_device_card_shows_localized_status_and_failure_reason(self):
         changed = replace(
             self.task.subtasks[0], edge_status=EdgeTaskStatus.FAILED,
             edge_message="端侧原始错误",
@@ -108,7 +108,8 @@ class TaskPageUiTests(unittest.TestCase):
         self.editor.set_task(replace(self.task, subtasks=(changed,)))
         text = " ".join(label.text() for label in self.editor.device_cards[0].findChildren(type(self.editor.title)))
         self.assertNotIn("failed", text)
-        self.assertNotIn("端侧原始错误", text)
+        self.assertIn("端侧原始错误", text)
+        self.assertIn("失败", text)
 
     def test_log_format_clear_and_new_event(self):
         self.repository.append_audit(
@@ -159,6 +160,7 @@ class TaskPageUiTests(unittest.TestCase):
             self._open(), revision=1, delivered_revision=1, edge_revision=1,
             edge_status=EdgeTaskStatus.READY,
         )
+        self.editor.task = replace(self.task, subtasks=(subtask,))
         self.editor.drafts[subtask.subtask_id] = subtask
         self.editor._update_execution_controls()
         self.assertEqual(self.editor.run_one.objectName(), "primaryButton")

@@ -86,6 +86,25 @@ class SimulatedDeviceSource(QObject):
         self._logs = {device.device_id: self._build_logs(device) for device in self._devices}
 
     @property
+    def _devices(self):
+        return self._device_list
+
+    @_devices.setter
+    def _devices(self, values):
+        self._device_list = list(values)
+        self._device_index = {item.device_id.casefold(): item for item in self._device_list}
+        self._device_positions = {item.device_id.casefold(): index for index, item in enumerate(self._device_list)}
+
+    @property
+    def _profiles(self):
+        return self._profile_list
+
+    @_profiles.setter
+    def _profiles(self, values):
+        self._profile_list = list(values)
+        self._profile_index = {item.device_id.casefold(): item for item in self._profile_list}
+
+    @property
     def config_error(self) -> str | None:
         return self.repository.error_message or self.type_repository.error_message
 
@@ -159,20 +178,17 @@ class SimulatedDeviceSource(QObject):
 
     def device(self, device_id: str) -> DeviceSnapshot | None:
         folded_id = device_id.casefold()
-        return next((device for device in self._devices if device.device_id.casefold() == folded_id), None)
+        return self._device_index.get(folded_id)
 
     def profile(self, device_id: str) -> DeviceProfile | None:
         folded_id = device_id.casefold()
-        return next(
-            (profile for profile in self._profiles if profile.device_id.casefold() == folded_id),
-            None,
-        )
+        return self._profile_index.get(folded_id)
 
     def logs(self, device_id: str) -> list[DeviceLogEntry]:
         return list(self._logs.get(device_id, []))
 
     def has_device_id(self, device_id: str) -> bool:
-        return self.repository.contains_id(device_id)
+        return device_id.casefold() in self._device_index
 
     def append_external_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None:
         entries = self._logs.setdefault(device_id, [])

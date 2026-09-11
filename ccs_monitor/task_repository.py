@@ -8,6 +8,8 @@ import re
 import shutil
 import tempfile
 import threading
+from functools import wraps
+from collections import OrderedDict, deque
 import time
 import uuid
 from dataclasses import replace
@@ -20,7 +22,7 @@ from PySide6.QtCore import QObject, Signal
 
 from .models import DeviceProfile, DeviceSnapshot, MapDefinition, utc_now
 from .task_models import (
-    DeviceSubtask,
+    EdgeTaskStatus, DeviceSubtask,
     TaskDefinition,
     TaskDefinitionStatus,
     TaskEvent,
@@ -64,10 +66,33 @@ def map_fingerprint(definition: MapDefinition) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _transaction(method):
+    @wraps(method)
+    def locked(self, *args, **kwargs):
+        notices = []
+        try:
+            with self._write_lock:
+                outermost = self._transaction_depth == 0
+                self._transaction_depth += 1
+                try:
+                    return method(self, *args, **kwargs)
+                finally:
+                    self._transaction_depth -= 1
+                    if outermost:
+                        notices, self._notifications = self._notifications, []
+        finally:
+            # Slots may enter the service lock. Never notify while holding the
+            # repository lock (the UDP worker acquires those locks in reverse).
+            for signal, values in notices:
+                signal.emit(*values)
+    return locked
+
+
 class TaskRepository(QObject):
     tasks_updated = Signal(object)
     execution_updated = Signal(object)
     events_updated = Signal(str)
+    event_appended = Signal(object)
 
     def __init__(self, root: str | Path = DEFAULT_TASK_ROOT, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -77,8 +102,19 @@ class TaskRepository(QObject):
         self.trash_root.mkdir(parents=True, exist_ok=True)
         self._tasks: list[TaskDefinition] = []
         self._write_lock = threading.RLock()
+        self._transaction_depth = 0
+        self._notifications = []
+        self._recent_events = OrderedDict()
+        self._execution_stats = None
         self.load_all()
 
+    def _notify(self, signal, *values):
+        if self._transaction_depth:
+            self._notifications.append((signal, values))
+        else:
+            signal.emit(*values)
+
+    @_transaction
     def load_all(self) -> list[TaskDefinition]:
         tasks: list[TaskDefinition] = []
         for directory in sorted(self.root.iterdir()):
@@ -97,12 +133,15 @@ class TaskRepository(QObject):
         self._tasks = tasks
         return list(tasks)
 
+    @_transaction
     def tasks(self) -> list[TaskDefinition]:
         return list(self._tasks)
 
+    @_transaction
     def task_by_id(self, task_id: str) -> TaskDefinition | None:
         return next((item for item in self._tasks if item.task_id == task_id), None)
 
+    @_transaction
     def update_device_reference(
         self, original_device_id: str, profile: DeviceProfile
     ) -> tuple[TaskDefinition, ...]:
@@ -140,6 +179,7 @@ class TaskRepository(QObject):
             self._refresh()
         return tuple(originals)
 
+    @_transaction
     def restore_definitions(self, definitions: Iterable[TaskDefinition]) -> None:
         restored = tuple(definitions)
         for task in restored:
@@ -159,6 +199,7 @@ class TaskRepository(QObject):
                 payload={"old_device_id": old_device_id, "new_device_id": new_device_id},
             )
 
+    @_transaction
     def create(
         self,
         name: str,
@@ -199,6 +240,7 @@ class TaskRepository(QObject):
         self._refresh()
         return self.task_by_id(task.task_id) or task
 
+    @_transaction
     def update_subtask(self, task_id: str, subtask: DeviceSubtask, *, reason: str = "保存子任务") -> TaskDefinition:
         task = self._require_task(task_id)
         self._validate_subtask(subtask)
@@ -207,8 +249,12 @@ class TaskRepository(QObject):
         for current in task.subtasks:
             if current.subtask_id == subtask.subtask_id:
                 found = True
+                if current.same_definition(subtask):
+                    return task
                 updated_subtasks.append(replace(
-                    subtask, revision=current.revision + 1, delivered_revision=None
+                    subtask, revision=current.revision + 1, delivered_revision=None,
+                    edge_status=EdgeTaskStatus.NO_TASK, edge_revision=None,
+                    edge_message="", edge_updated_at=None,
                 ))
             else:
                 updated_subtasks.append(current)
@@ -228,6 +274,28 @@ class TaskRepository(QObject):
         self._refresh()
         return self.task_by_id(task_id) or updated
 
+    @_transaction
+    def save_subtasks(self, task_id: str, subtasks: tuple[DeviceSubtask, ...]) -> TaskDefinition:
+        task = self._require_task(task_id)
+        if {item.subtask_id for item in subtasks} != {item.subtask_id for item in task.subtasks}:
+            raise TaskRepositoryError("同步下发必须包含全部任务设备")
+        for item in subtasks:
+            self._validate_subtask(item)
+        for item in subtasks:
+            self.update_subtask(task_id, item)
+        return self._require_task(task_id)
+
+    @_transaction
+    def invalidate_delivery(self, task_id: str, device_id: str, *, receiving: bool = False) -> None:
+        task = self._require_task(task_id)
+        items = tuple(replace(item, delivered_revision=None if receiving else item.delivered_revision,
+                              edge_status=EdgeTaskStatus.RECEIVING if receiving else EdgeTaskStatus.TASK_EXISTS,
+                              edge_revision=None, edge_message="", edge_updated_at=None)
+                      if item.device_id == device_id else item for item in task.subtasks)
+        if items != task.subtasks:
+            self._write_task(replace(task, subtasks=items, updated_at=utc_now()))
+            self._refresh()
+
     def _write_subtask_static(self, task: TaskDefinition, subtask: DeviceSubtask) -> Path:
         stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
         safe_device = sanitize_task_name(subtask.device_id)
@@ -242,15 +310,18 @@ class TaskRepository(QObject):
         })
         return path
 
+    @_transaction
     def mark_delivered(self, task_id: str, device_id: str, revision: int) -> TaskDefinition:
         task = self._require_task(task_id)
         subtasks = tuple(
-            replace(item, delivered_revision=revision, edge_revision=revision)
+            replace(item, delivered_revision=revision)
             if item.device_id.casefold() == device_id.casefold() and item.revision == revision else item
             for item in task.subtasks
         )
-        if subtasks == task.subtasks:
+        if not any(item.device_id.casefold() == device_id.casefold() and item.revision == revision for item in task.subtasks):
             raise TaskRepositoryError("设备或子任务修订不匹配")
+        if subtasks == task.subtasks:
+            return task
         updated = replace(task, subtasks=subtasks, updated_at=utc_now())
         self._write_task(updated)
         self.append_audit(task_id, "subtask_delivered", "子任务下发成功", device_id=device_id, payload={
@@ -259,16 +330,25 @@ class TaskRepository(QObject):
         self._refresh()
         return self.task_by_id(task_id) or updated
 
+    @_transaction
     def update_edge_status(self, task_id: str, subtask: DeviceSubtask) -> TaskDefinition:
         task = self._require_task(task_id)
-        items = tuple(subtask if item.subtask_id == subtask.subtask_id else item for item in task.subtasks)
-        if items == task.subtasks:
+        current = next((item for item in task.subtasks if item.subtask_id == subtask.subtask_id), None)
+        if current is None or current.device_id != subtask.device_id:
             raise TaskRepositoryError("子任务不存在")
+        if current.revision != subtask.revision:
+            raise TaskRepositoryError("忽略过期子任务状态")
+        runtime = replace(current, edge_status=subtask.edge_status, edge_revision=subtask.edge_revision,
+                          edge_message=subtask.edge_message, edge_updated_at=subtask.edge_updated_at)
+        if (current.edge_status, current.edge_revision, current.edge_message) == (runtime.edge_status, runtime.edge_revision, runtime.edge_message):
+            return task
+        items = tuple(runtime if item.subtask_id == current.subtask_id else item for item in task.subtasks)
         updated = replace(task, subtasks=items, updated_at=utc_now())
         self._write_task(updated)
         self._refresh()
         return self.task_by_id(task_id) or updated
 
+    @_transaction
     def update_safety(self, task_id: str, settings: TaskSafetySettings) -> TaskDefinition:
         self._validate_safety(settings)
         task = self._require_task(task_id)
@@ -278,6 +358,7 @@ class TaskRepository(QObject):
         self._refresh()
         return self.task_by_id(task_id) or updated
 
+    @_transaction
     def delete(self, task_id: str) -> Path:
         task = self._require_task(task_id)
         source = self.root / task.directory_name
@@ -287,9 +368,13 @@ class TaskRepository(QObject):
             target = self.trash_root / f"{task.directory_name}_{suffix}"
             suffix += 1
         shutil.move(str(source), str(target))
+        self._tasks = [item for item in self._tasks if item.task_id != task_id]
+        self._recent_events.pop(task_id, None)
+        self._execution_stats = None
         self._refresh()
         return target
 
+    @_transaction
     def append_audit(
         self,
         task_id: str,
@@ -306,29 +391,36 @@ class TaskRepository(QObject):
             "level": level.value, "task_id": task_id, "device_id": device_id,
             "payload": payload or {},
         })
-        self.events_updated.emit(task_id)
+        self._notify(self.events_updated, task_id)
 
     def audit_events(self, task_id: str) -> list[TaskEvent]:
         task = self._require_task(task_id)
         return self._read_events(self.root / task.directory_name / "audit.jsonl")
 
+    @_transaction
     def create_execution(self, task_id: str, snapshot: TaskExecutionSnapshot) -> Path:
         task = self._require_task(task_id)
         directory = self.root / task.directory_name / "executions" / snapshot.execution_id
         directory.mkdir(parents=True, exist_ok=False)
         self._atomic_json(directory / "snapshot.json", self._serialize_execution(snapshot))
+        if self._execution_stats is not None:
+            self._execution_stats = (self._execution_stats[0] + 1, snapshot)
         self.append_execution_event(task_id, snapshot.execution_id, "execution_created", "创建任务执行")
-        self.execution_updated.emit(snapshot)
+        self._notify(self.execution_updated, snapshot)
         return directory
 
+    @_transaction
     def update_execution(self, snapshot: TaskExecutionSnapshot) -> None:
         task = self._require_task(snapshot.task_id)
         directory = self.root / task.directory_name / "executions" / snapshot.execution_id
         if not directory.is_dir():
             raise TaskRepositoryError("任务执行记录不存在")
         self._atomic_json(directory / "snapshot.json", self._serialize_execution(snapshot))
-        self.execution_updated.emit(snapshot)
+        if self._execution_stats is not None and self._execution_stats[1] is not None and self._execution_stats[1].execution_id == snapshot.execution_id:
+            self._execution_stats = (self._execution_stats[0], snapshot)
+        self._notify(self.execution_updated, snapshot)
 
+    @_transaction
     def append_execution_event(
         self,
         task_id: str,
@@ -348,7 +440,7 @@ class TaskRepository(QObject):
             "level": level.value, "task_id": task_id, "execution_id": execution_id,
             "device_id": device_id, "payload": payload or {},
         })
-        self.events_updated.emit(task_id)
+        self._notify(self.events_updated, task_id)
 
     def execution_events(self, task_id: str, execution_id: str) -> list[TaskEvent]:
         task = self._require_task(task_id)
@@ -373,12 +465,36 @@ class TaskRepository(QObject):
         result.sort(key=lambda item: item.created_at, reverse=True)
         return result
 
+    @_transaction
     def execution_count(self) -> int:
-        return len(self.executions())
+        self._ensure_execution_stats()
+        return self._execution_stats[0]
 
+    @_transaction
     def latest_execution(self) -> TaskExecutionSnapshot | None:
-        records = self.executions()
-        return records[0] if records else None
+        self._ensure_execution_stats()
+        return self._execution_stats[1]
+
+    def _ensure_execution_stats(self) -> None:
+        if self._execution_stats is None:
+            records = self.executions()
+            self._execution_stats = (len(records), records[0] if records else None)
+
+    @_transaction
+    def recent_events(self, task_id: str, limit: int = 500) -> list[TaskEvent]:
+        limit = max(0, min(limit, 500))
+        if task_id not in self._recent_events:
+            task = self._require_task(task_id)
+            directory = self.root / task.directory_name
+            events = self._read_events(directory / "audit.jsonl", limit=500)
+            for file in (directory / "executions").glob("*/events.jsonl"):
+                events.extend(self._read_events(file, limit=500))
+                events = sorted(events, key=lambda event: event.timestamp)[-500:]
+            self._recent_events[task_id] = deque(sorted(events, key=lambda event: event.timestamp)[-500:], maxlen=500)
+        self._recent_events.move_to_end(task_id)
+        while len(self._recent_events) > 4:
+            self._recent_events.popitem(last=False)
+        return list(self._recent_events[task_id])[-limit:] if limit else []
 
     def _require_task(self, task_id: str) -> TaskDefinition:
         task = self.task_by_id(task_id)
@@ -394,8 +510,8 @@ class TaskRepository(QObject):
             raise DuplicateTaskNameError(f"任务名称已存在：{name}")
 
     def _refresh(self) -> None:
-        self.load_all()
-        self.tasks_updated.emit(self.tasks())
+        self._tasks.sort(key=lambda item: item.updated_at, reverse=True)
+        self._notify(self.tasks_updated, self.tasks())
 
     @staticmethod
     def _validate_subtask(subtask: DeviceSubtask) -> None:
@@ -455,6 +571,10 @@ class TaskRepository(QObject):
             "status": task.status.value, "safety": task.safety.__dict__,
             "subtasks": [self._serialize_subtask(item) for item in task.subtasks],
         })
+
+        self._tasks = [task if item.task_id == task.task_id else item for item in self._tasks]
+        if not any(item.task_id == task.task_id for item in self._tasks):
+            self._tasks.append(task)
 
     @staticmethod
     def _serialize_subtask(item: DeviceSubtask) -> dict[str, Any]:
@@ -542,6 +662,11 @@ class TaskRepository(QObject):
                     handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
                     handle.flush()
                     os.fsync(handle.fileno())
+            event = self._event_from_payload(payload)
+            cached = self._recent_events.get(event.task_id)
+            if cached is not None:
+                cached.append(event)
+            self._notify(self.event_appended, event)
         except OSError as exc:
             raise TaskRepositoryError(f"任务日志写入失败：{exc}") from exc
 
@@ -557,21 +682,36 @@ class TaskRepository(QObject):
                 time.sleep(0.02 * (attempt + 1))
 
     @staticmethod
-    def _read_events(path: Path) -> list[TaskEvent]:
+    def _event_from_payload(payload: dict) -> TaskEvent:
+        return TaskEvent(
+            datetime.fromisoformat(str(payload["timestamp"])), str(payload["event_type"]),
+            str(payload["message"]), TaskEventLevel(str(payload.get("level", "info"))),
+            str(payload.get("task_id", "")), str(payload["execution_id"]) if payload.get("execution_id") else None,
+            str(payload["device_id"]) if payload.get("device_id") else None, dict(payload.get("payload", {})),
+        )
+
+    @staticmethod
+    def _tail_lines(path: Path, limit: int):
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            position = handle.tell()
+            data = b""
+            while position and data.count(b"\n") <= limit:
+                size = min(position, 8192)
+                position -= size
+                handle.seek(position)
+                data = handle.read(size) + data
+            return data.splitlines()[-limit:]
+
+    @staticmethod
+    def _read_events(path: Path, limit: int | None = None) -> list[TaskEvent]:
         if not path.is_file():
             return []
-        events: list[TaskEvent] = []
+        events = []
         try:
-            for line in path.read_text(encoding="utf-8").splitlines():
-                payload = json.loads(line)
-                events.append(TaskEvent(
-                    datetime.fromisoformat(str(payload["timestamp"])), str(payload["event_type"]),
-                    str(payload["message"]), TaskEventLevel(str(payload.get("level", "info"))),
-                    str(payload.get("task_id", "")),
-                    str(payload["execution_id"]) if payload.get("execution_id") else None,
-                    str(payload["device_id"]) if payload.get("device_id") else None,
-                    dict(payload.get("payload", {})),
-                ))
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            lines = TaskRepository._tail_lines(path, limit) if limit else path.read_text(encoding="utf-8").splitlines()
+            for line in lines:
+                events.append(TaskRepository._event_from_payload(json.loads(line)))
+        except (OSError, ValueError, TypeError, KeyError) as exc:
             raise TaskRepositoryError(f"任务日志读取失败：{exc}") from exc
         return events

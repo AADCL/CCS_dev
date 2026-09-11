@@ -7,7 +7,7 @@
 <p align="center">设备监测 · 联合建图 · 重定位 · 任务编排 · 指控大屏</p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-0.23.1-1677ff">
+  <img alt="版本" src="https://img.shields.io/badge/version-0.24.0-1677ff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%E2%80%933.13-3776AB">
   <img alt="Qt" src="https://img.shields.io/badge/PySide6-6.8.3-41CD52">
   <img alt="许可证" src="https://img.shields.io/badge/license-Apache--2.0-blue">
@@ -30,8 +30,8 @@ CCS 是面向可信局域网的 PySide6 地面站，连接无人车、无人机�
 | 实时视频 | 按需连接设备 SRT 视频，支持解码能力检测、超时与重试 |
 | 地图工作台 | PCD/PGM 导入、三维显示、栅格生成、算法插件、单机及多机联合遥控建图 |
 | 重定位 | 地图下发、交互选点、设备与地图坐标绑定、在线位置标记 |
-| 任务编排 | 多设备航点、冲突检查、任务下发、统一 UTC 执行与过程日志 |
-| 指控大屏 | 地图态势、轨迹和位置/姿态趋势，全屏与面板折叠 |
+| 任务编排 | 多设备航点、同步下发、逐台接收/导航就绪确认、冲突检查、统一 UTC 执行与过程日志 |
+| 指控大屏 | 地图态势、连接轨迹与独立图层开关、位置/姿态趋势，全屏与面板折叠 |
 | 本地部署 | 内置 MQTT/NTP 服务、日夜主题、整目录数据迁移 |
 
 ## 选择发布形式
@@ -102,6 +102,15 @@ Input 部分应包含 srt。设备地址、端口、MQTT 和 NTP 参数位于 co
 
 Windows 需要 Inno Setup 6；Linux 使用 Ubuntu 20.04 构建基线。
 构建环境、Docker 命令和第三方组件来源详见 [发布指南](docs/RELEASING.md#本地构建)。
+
+## v0.24.0
+
+修复多设备就绪状态相互影响和开始任务时 revision 失效，新增“同步下发”和全体就绪门禁。
+设备卡与地图标记增量复用，可见页面最高 10 Hz 刷新；电池历史后台聚合保存。
+任务页和大屏共享本次连接轨迹，隐藏仍记录，短暂断联续接，连续断联满 120 秒清理，
+并支持软件重启恢复尚未过期的轨迹。完整轨迹分块落盘，显示使用全程抽稀缓存。
+
+本次交付代码与 PR；性能回放方法和实际验证结果见 [验证记录](docs/RELEASE_VALIDATION.md)。
 
 ## v0.23.1
 

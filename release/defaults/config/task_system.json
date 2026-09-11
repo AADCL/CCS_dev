@@ -13,7 +13,8 @@
     "max_attempts": 5,
     "heartbeat_timeout_seconds": 5.0,
     "group_start_delay_seconds": 3.0,
-    "group_ack_deadline_seconds": 1.0
+    "group_ack_deadline_seconds": 1.0,
+    "navigation_ready_timeout_seconds": 60.0
   },
   "limits": {
     "max_waypoints_per_subtask": 500,

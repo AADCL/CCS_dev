@@ -151,7 +151,7 @@ class DeviceDetailPage(QWidget):
         self.pending_telemetry: DeviceTelemetrySnapshot | None = None
         self._telemetry_dirty = False
         self.telemetry_timer = QTimer(self)
-        self.telemetry_timer.setInterval(50)
+        self.telemetry_timer.setInterval(100)
         self.telemetry_timer.timeout.connect(self._render_telemetry)
         self._build()
 
@@ -356,7 +356,11 @@ class DeviceDetailPage(QWidget):
         return widget, value
 
     def set_device(self, device: DeviceSnapshot, entries: list[DeviceLogEntry]) -> None:
-        if self.device is None or self.device.device_id != device.device_id:
+        changed_device = self.device is None or self.device.device_id != device.device_id
+        if self.device == device and self.entries == entries:
+            return
+        old_entries = self.entries
+        if changed_device:
             self.pending_telemetry = None
             self._telemetry_dirty = False
         self.device = device
@@ -393,10 +397,13 @@ class DeviceDetailPage(QWidget):
             ),
         }
         for name, value in values.items():
-            self.fields[name].setText(value)
+            if self.fields[name].text() != value:
+                self.fields[name].setText(value)
         self._update_map_context()
         mqtt_online = device.connection_status.value == "online"
-        self.mqtt_card.setProperty("state", "healthy" if mqtt_online else "error")
+        next_state = "healthy" if mqtt_online else "error"
+        state_changed = self.mqtt_card.property("state") != next_state
+        self.mqtt_card.setProperty("state", next_state)
         self.mqtt_status.setText(f"MQTT · {STATUS_TEXT[device.connection_status]}")
         self.mqtt_heartbeat.setText(
             "最后心跳 " + (
@@ -404,10 +411,13 @@ class DeviceDetailPage(QWidget):
                 if device.last_heartbeat_at else "未收到"
             )
         )
-        self.mqtt_card.style().unpolish(self.mqtt_card)
-        self.mqtt_card.style().polish(self.mqtt_card)
-        self.log_filter.setCurrentIndex(0)
-        self._render_logs()
+        if state_changed:
+            self.mqtt_card.style().unpolish(self.mqtt_card)
+            self.mqtt_card.style().polish(self.mqtt_card)
+        if changed_device:
+            self.log_filter.setCurrentIndex(0)
+        if changed_device or old_entries != entries:
+            self._render_logs()
         self._render_status_cards()
 
     def set_telemetry(self, telemetry: DeviceTelemetrySnapshot) -> None:

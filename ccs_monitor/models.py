@@ -274,6 +274,7 @@ class DeviceTelemetrySnapshot:
     last_heartbeat_at: datetime | None = None
     last_data_at: datetime | None = None
     module_message: str = "UDP 遥测模块尚未启动"
+    session_id: str | None = None
 
 
 @dataclass(frozen=True)

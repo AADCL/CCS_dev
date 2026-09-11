@@ -77,6 +77,9 @@ class UdpTelemetryStore(QObject):
             self._watchdog.start(1000)
 
     def telemetry(self, device_id: str) -> DeviceTelemetrySnapshot:
+        existing = self._snapshots.get(device_id)
+        if existing is not None:
+            return existing
         default_status = UdpLinkStatus.MODULE_ERROR if self._module_failed else UdpLinkStatus.UNKNOWN
         sensor_statuses = tuple(
             SensorStatusTelemetry(item.name, item.display_name)
@@ -156,7 +159,7 @@ class UdpTelemetryStore(QObject):
             self.telemetry(event.device_id),
             udp_link_status=UdpLinkStatus.ONLINE,
             last_heartbeat_at=now,
-            module_message=self.module_message,
+            module_message=self.module_message, session_id=event.session_id,
         )
         self._snapshots[event.device_id] = snapshot
         self.udp_link_updated.emit(event.device_id, snapshot.udp_link_status)
@@ -168,7 +171,7 @@ class UdpTelemetryStore(QObject):
 
     def _handle_telemetry(self, event: UdpEnvelope) -> None:
         snapshot = self.telemetry(event.device_id)
-        changes: dict[str, object] = {"last_data_at": self._wall_clock(), "module_message": self.module_message}
+        changes: dict[str, object] = {"last_data_at": self._wall_clock(), "module_message": self.module_message, "session_id": event.session_id}
         statuses = {item.name: item for item in snapshot.sensor_statuses}
         for name, value in event.payload.items():
             descriptor = self.config.any_descriptor(name)

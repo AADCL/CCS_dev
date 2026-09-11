@@ -56,12 +56,20 @@ class DevicesPage(QWidget):
         self.detail_device_id: str | None = None
         self.edit_mode = False
         self.delete_selection: set[str] = set()
+        self._card_cache = {}
+        self._layout_ids = None
+        self._devices_dirty = False
+        self._empty_label = None
         self.card_column_count = 0
         self._reflow_pending = False
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self._build()
         self._populate_filters()
         self._render_cards()
+        self._update_timer = QTimer(self)
+        self._update_timer.setInterval(100)
+        self._update_timer.timeout.connect(self._flush_devices)
+        self._update_timer.start()
         source.devices_updated.connect(self._on_devices_updated)
         if hasattr(source, "logs_changed"):
             source.logs_changed.connect(self._on_logs_changed)
@@ -265,16 +273,33 @@ class DevicesPage(QWidget):
         self.status_filter.blockSignals(False)
 
     def _on_devices_updated(self, devices: object) -> None:
+        old_types = {item.device_type for item in self.devices}
         self.devices = list(devices)
-        self.delete_selection.intersection_update({device.device_id for device in self.devices})
-        self._populate_filters()
+        self._filters_dirty = getattr(self, "_filters_dirty", False) or old_types != {item.device_type for item in self.devices}
+        valid = {device.device_id for device in self.devices}
+        self.delete_selection.intersection_update(valid)
+        self.telemetry_cache = {key: value for key, value in self.telemetry_cache.items() if key in {item.casefold() for item in valid}}
+        self._devices_dirty = True
+
+    def _flush_devices(self):
+        if not self.isVisible() or not self._devices_dirty:
+            return
+        self._devices_dirty = False
+        if getattr(self, "_filters_dirty", False):
+            self._populate_filters()
+            self._filters_dirty = False
         self._render_cards()
         if self.detail_device_id:
-            detail_device = self.source.device(self.detail_device_id)
-            if detail_device:
-                self.detail_page.set_device(detail_device, self.source.logs(detail_device.device_id))
+            detail = self.source.device(self.detail_device_id)
+            if detail:
+                self.detail_page.set_device(detail, self.source.logs(detail.device_id))
             else:
                 self.show_list()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._devices_dirty = True
+        self._flush_devices()
 
     def filtered_devices(self) -> list[DeviceSnapshot]:
         query = self.search.text().strip().lower()
@@ -291,24 +316,45 @@ class DevicesPage(QWidget):
     def _render_cards(self) -> None:
         if not hasattr(self, "card_grid"):
             return
-        while self.card_grid.count():
-            item = self.card_grid.takeAt(0)
-            if item.widget():
-                item.widget().hide()
-                item.widget().deleteLater()
         filtered = self.filtered_devices()
         columns = self._column_count(max(1, self.width() - 56))
-        self.card_column_count = columns
-        for index, device in enumerate(filtered):
-            card = DeviceCard(device)
-            card.set_theme(self.theme_palette)
-            card.clicked.connect(self._select_device)
-            card.double_clicked.connect(self._handle_card_double_click)
-            card.selection_changed.connect(self._set_delete_selection)
+        ids = tuple(item.device_id for item in filtered)
+        valid = {item.device_id for item in self.devices}
+        for device_id in tuple(self._card_cache):
+            if device_id not in valid:
+                card = self._card_cache.pop(device_id)
+                card.hide()
+                card.deleteLater()
+        reflow = (ids, columns) != self._layout_ids
+        for device in filtered:
+            card = self._card_cache.get(device.device_id)
+            if card and (card.device.device_type, card.device.device_icon_path) != (device.device_type, device.device_icon_path):
+                card.hide()
+                card.deleteLater()
+                card = None
+                reflow = True
+            if card is None:
+                card = DeviceCard(device)
+                self._card_cache[device.device_id] = card
+                card.set_theme(self.theme_palette)
+                card.clicked.connect(self._select_device)
+                card.double_clicked.connect(self._handle_card_double_click)
+                card.selection_changed.connect(self._set_delete_selection)
+            else:
+                card.update_device(device)
             card.set_selected(device.device_id == self.selected_id)
             card.set_edit_mode(self.edit_mode, device.device_id in self.delete_selection)
-            self.card_grid.addWidget(card, index // columns, index % columns)
-            card.show()
+        if reflow:
+            while self.card_grid.count():
+                item = self.card_grid.takeAt(0)
+                if item.widget():
+                    item.widget().hide()
+            for index, device in enumerate(filtered):
+                card = self._card_cache[device.device_id]
+                self.card_grid.addWidget(card, index // columns, index % columns)
+                card.show()
+            self._layout_ids = (ids, columns)
+        self.card_column_count = columns
         for column in range(columns):
             self.card_grid.setColumnStretch(column, 1)
         self.result_label.setText(f"显示 {len(filtered)} / {len(self.devices)} 台设备")
@@ -316,7 +362,10 @@ class DevicesPage(QWidget):
         self.online_value.setText(str(sum(d.connection_status == ConnectionStatus.ONLINE for d in self.devices)))
         self.alert_value.setText(str(sum(d.connection_status != ConnectionStatus.ONLINE for d in self.devices)))
         if not filtered:
-            empty = QLabel("没有匹配的设备\n请调整搜索关键词或筛选条件")
+            if self._empty_label is None:
+                self._empty_label = QLabel("没有匹配的设备\n请调整搜索关键词或筛选条件")
+            empty = self._empty_label
+            empty.show()
             empty.setObjectName("emptyState")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.card_grid.addWidget(empty, 0, 0, 1, columns)
@@ -440,11 +489,11 @@ class DevicesPage(QWidget):
             self.detail_page.set_telemetry(snapshot)
 
     def _on_udp_log_recorded(self, device_id: str) -> None:
-        if self.detail_device_id and device_id.casefold() == self.detail_device_id.casefold():
+        if self.isVisible() and self.detail_device_id and device_id.casefold() == self.detail_device_id.casefold():
             self.detail_page.set_logs(self.source.logs(device_id))
 
     def _on_logs_changed(self, device_id: str) -> None:
-        if self.detail_device_id and device_id.casefold() == self.detail_device_id.casefold():
+        if self.isVisible() and self.detail_device_id and device_id.casefold() == self.detail_device_id.casefold():
             self.detail_page.set_logs(self.source.logs(device_id))
 
     def _update_status_cards(self, device_id: str, status_card_ids: object) -> None:
@@ -452,6 +501,10 @@ class DevicesPage(QWidget):
             self.source.update_device_status_cards(
                 device_id, None if status_card_ids is None else tuple(status_card_ids)
             )
+            if self.detail_device_id and device_id.casefold() == self.detail_device_id.casefold():
+                device = self.source.device(device_id)
+                if device is not None:
+                    self.detail_page.set_device(device, self.source.logs(device_id))
         except (DeviceConfigError, ValueError) as exc:
             QMessageBox.critical(self, "状态卡片保存失败", str(exc))
 

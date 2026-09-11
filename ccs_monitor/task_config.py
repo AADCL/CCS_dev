@@ -29,6 +29,7 @@ class TaskSystemConfig:
     group_ack_deadline_seconds: float
     max_waypoints_per_subtask: int
     max_compressed_bytes: int
+    navigation_ready_timeout_seconds: float = 60.0
 
 
 def load_task_system_config(path: str | Path = DEFAULT_TASK_CONFIG_PATH) -> TaskSystemConfig:
@@ -46,6 +47,7 @@ def load_task_system_config(path: str | Path = DEFAULT_TASK_CONFIG_PATH) -> Task
             int(transport["max_attempts"]), float(transport["heartbeat_timeout_seconds"]),
             float(transport["group_start_delay_seconds"]), float(transport["group_ack_deadline_seconds"]),
             int(limits["max_waypoints_per_subtask"]), int(limits["max_compressed_bytes"]),
+            float(transport.get("navigation_ready_timeout_seconds", 60.0)),
         )
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise TaskSystemConfigError(f"任务系统配置无效：{exc}") from exc
@@ -57,6 +59,8 @@ def load_task_system_config(path: str | Path = DEFAULT_TASK_CONFIG_PATH) -> Task
         raise TaskSystemConfigError("数据报大小无效")
     if not 64 <= config.chunk_payload_bytes < config.max_datagram_bytes:
         raise TaskSystemConfigError("分片 payload 大小无效")
+    if not 0 < config.navigation_ready_timeout_seconds <= 3600:
+        raise TaskSystemConfigError("导航就绪超时必须为 0 到 3600 秒")
     if min(config.retry_seconds, config.heartbeat_timeout_seconds, config.group_start_delay_seconds) <= 0:
         raise TaskSystemConfigError("超时参数必须大于零")
     if config.max_attempts < 1 or config.max_waypoints_per_subtask < 2 or config.max_compressed_bytes < 1024:

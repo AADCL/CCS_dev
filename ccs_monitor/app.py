@@ -83,6 +83,7 @@ def main() -> int:
         system_status.update(SubsystemId.MQTT_BROKER, SubsystemState.ERROR, mqtt_error)
         system_status.update(SubsystemId.MQTT_SUBSCRIBER, SubsystemState.ERROR, mqtt_error)
     source = MqttDeviceSource(mqtt_config, DeviceConfigRepository(DEFAULT_CONFIG_PATH))
+    app.aboutToQuit.connect(source.battery_estimator.close)
     ntp_runtime = None
     try:
         ntp_config = load_ntp_config()
@@ -165,6 +166,9 @@ def main() -> int:
     except RelocalizationConfigError as exc:
         relocalization_error = str(exc)
         system_status.update(SubsystemId.RELOCALIZATION, SubsystemState.ERROR, relocalization_error)
+    from .trajectory_store import DeviceTrajectoryStore
+    trajectory_store = DeviceTrajectoryStore(source, udp_store, relocalization_service)
+    app.aboutToQuit.connect(trajectory_store.close)
     window = MainWindow(
         source,
         telemetry_store=udp_store,
@@ -174,6 +178,7 @@ def main() -> int:
         task_repository=task_repository,
         task_execution_service=task_service,
         system_status_store=system_status,
+        trajectory_store=trajectory_store,
     )
     runtime = MqttMonitoringRuntime(mqtt_config, source) if mqtt_error is None else None
     source.module_status_changed.connect(system_status.update_mqtt_subscriber)

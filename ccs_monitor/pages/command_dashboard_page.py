@@ -243,7 +243,12 @@ class CollapsibleDevicePanel(QFrame):
 
     def _render(self) -> None:
         self.list.blockSignals(True)
-        self.list.clear()
+        items = {self.list.item(row).data(Qt.ItemDataRole.UserRole): self.list.item(row) for row in range(self.list.count())}
+        ids = {device.device_id for device in self.devices}
+        for device_id, item in tuple(items.items()):
+            if device_id not in ids:
+                self.list.takeItem(self.list.row(item))
+                items.pop(device_id)
         for device in self.devices:
             battery = "--" if device.battery_percent is None else f"{device.battery_percent:.0f}%"
             if self.mode == DevicePanelMode.DETAIL:
@@ -254,17 +259,17 @@ class CollapsibleDevicePanel(QFrame):
                 )
             else:
                 text = f"●  {device.device_name}\n{battery}  ·  {device.flight_mode}"
-            item = QListWidgetItem(text)
+            item = items.get(device.device_id)
+            if item is None:
+                item = QListWidgetItem()
+                self.list.addItem(item)
+            item.setText(text)
             item.setData(Qt.ItemDataRole.UserRole, device.device_id)
             item.setToolTip(f"{device.device_name} / {device.device_id}")
             item.setForeground(QColor(device_display_color(device.device_id)))
-            self.list.addItem(item)
             if device.device_id == self.selected_device_id:
                 self.list.setCurrentItem(item)
         self.list.blockSignals(False)
-        if self.selected_device_id:
-            self.device_selected.emit(self.selected_device_id)
-
     def _selection_changed(self, current: QListWidgetItem | None, previous) -> None:
         if current is None:
             return
@@ -748,6 +753,8 @@ class CommandDashboardPage(QWidget):
         self.selected_map_id: str | None = None
         self.fullscreen = False
         self._active = False
+        self._devices_dirty = True
+        self.trajectory_store = None
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self._build()
         self._connect_sources()
@@ -992,6 +999,9 @@ class CommandDashboardPage(QWidget):
 
     def set_active(self, active: bool) -> None:
         self._active = bool(active)
+        method = getattr(self.viewer, "resume_static" if active else "suspend_static", None)
+        if method and (not active or self.viewer.isVisible()):
+            method()
         if self._active:
             self.clock_timer.start(1000)
             self.render_timer.start(100)
@@ -1006,6 +1016,14 @@ class CommandDashboardPage(QWidget):
 
     def _update_devices(self, devices: object) -> None:
         self.devices = list(devices)
+        self._devices_dirty = True
+        valid = {item.device_id for item in self.devices}
+        for device_id in tuple(self.trends._samples):
+            if device_id not in valid:
+                self.trends._samples.pop(device_id, None)
+
+    def _flush_device_panel(self):
+        self._devices_dirty = False
         online_devices = [
             device for device in self.devices
             if device.connection_status == ConnectionStatus.ONLINE
@@ -1017,7 +1035,7 @@ class CommandDashboardPage(QWidget):
         self.device_panel.set_devices(online_devices)
         self.device_panel.select_device(self.selected_device_id)
         self.online_count.setText(f"ONLINE DEVICE {len(online_devices):02d}")
-        self._select_device(self.selected_device_id or "")
+        self.status_panel.set_device(self.source.device(self.selected_device_id) if self.selected_device_id else None)
         self._update_system_status()
 
     def _update_maps(self, maps: object) -> None:
@@ -1062,8 +1080,7 @@ class CommandDashboardPage(QWidget):
     def _telemetry_updated(self, device_id: str, telemetry: DeviceTelemetrySnapshot) -> None:
         local_pose = resolve_local_odom_pose(self.source, telemetry, device_id)
         self.trends.append(device_id, telemetry, pose=local_pose)
-        if device_id == self.selected_device_id:
-            self.status_panel.set_telemetry(telemetry, local_pose)
+
 
     def _map_changed(self) -> None:
         map_id = self.map_combo.currentData()
@@ -1133,6 +1150,12 @@ class CommandDashboardPage(QWidget):
         self._update_console_status()
 
     def _render_realtime(self) -> None:
+        if not self._active or not self.isVisible():
+            return
+        if self._devices_dirty:
+            self._flush_device_panel()
+        if self.trajectory_store is not None:
+            self.viewer.set_device_trails(self.trajectory_store.trails(self.selected_map_id or ""))
         device_id = self.selected_device_id
         if not device_id:
             self.status_panel.set_trends(
@@ -1152,15 +1175,16 @@ class CommandDashboardPage(QWidget):
             bound_map_pose(self.source, telemetry, device_id, self.selected_map_id or "")
             if telemetry else None
         )
-        self.viewer.set_selected_device_pose(display_pose or local_pose)
-        self.viewer.set_device_trail(self.trends.trail(device_id))
+        self.status_panel.set_telemetry(telemetry, local_pose)
+        self.viewer.set_selected_device_pose(display_pose)
+        self.viewer.set_device_trail([])
         markers: list[DeviceMapMarker] = []
         if self.telemetry_store is not None:
             for device in self.device_panel.devices:
                 snapshot = self.telemetry_store.telemetry(device.device_id)
                 pose_item = bound_map_pose(
                     self.source, snapshot, device.device_id, self.selected_map_id or ""
-                ) or resolve_local_odom_pose(self.source, snapshot, device.device_id)
+                )
                 if pose_item is not None:
                     markers.append(DeviceMapMarker(
                         device.device_id, device.device_name,

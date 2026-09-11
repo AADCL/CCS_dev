@@ -18,7 +18,9 @@ class BatteryEstimatorTests(unittest.TestCase):
             json.dumps(payload or DEFAULT_PROFILE_PAYLOAD, ensure_ascii=False),
             encoding="utf-8",
         )
-        return BatteryEstimator(config, root / "history"), root, config
+        estimator = BatteryEstimator(config, root / "history")
+        self.addCleanup(estimator.close)
+        return estimator, root, config
 
     def test_wheeltec_curve_anchors_interpolation_and_clamping(self):
         estimator, _, _ = self.make_estimator()
@@ -45,6 +47,7 @@ class BatteryEstimatorTests(unittest.TestCase):
         estimator.observe("UGV_003", "wheeltec_r550p", 25.5, stamp, True)
         result = estimator.observe("UGV_003", "wheeltec_r550p", 21.5, stamp, True)
         self.assertEqual(result, 25.0)
+        estimator.flush()
         records = json.loads(
             (root / "history" / "UGV_003.json").read_text(encoding="utf-8")
         )

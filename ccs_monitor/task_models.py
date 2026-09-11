@@ -82,6 +82,13 @@ class DeviceSubtask:
     def edge_ready(self) -> bool:
         return self.is_delivered and self.edge_revision == self.revision and self.edge_status == EdgeTaskStatus.READY
 
+    def same_definition(self, other: DeviceSubtask) -> bool:
+        """Runtime acknowledgements do not constitute a route edit."""
+        fields = ("subtask_id", "device_id", "device_name", "device_type", "ip_address",
+                  "layer_mode", "waypoints", "default_altitude_m", "cruise_speed_mps",
+                  "start_delay_seconds")
+        return all(getattr(self, name) == getattr(other, name) for name in fields)
+
 
 @dataclass(frozen=True)
 class TaskSafetySettings:

@@ -147,10 +147,10 @@ class DeviceCard(QFrame):
         else:
             self.type_badge = TypeBadge(self.device.device_type)
             head.addWidget(self.type_badge, 0, 0, 2, 1)
-        name = QLabel(self.device.device_name)
+        name = self.name_label = QLabel(self.device.device_name)
         name.setObjectName("deviceName")
         head.addWidget(name, 0, 1)
-        ident = QLabel(self.device.device_id)
+        ident = self.id_label = QLabel(self.device.device_id)
         ident.setObjectName("deviceId")
         head.addWidget(ident, 1, 1)
         status = QLabel(STATUS_TEXT[self.device.connection_status])
@@ -162,13 +162,14 @@ class DeviceCard(QFrame):
         root.addLayout(head)
 
         root.addWidget(self._battery_row())
+        self.detail_values = []
         details = QGridLayout()
         details.setHorizontalSpacing(20)
         details.setVerticalSpacing(4)
-        self._add_detail(details, 0, 0, "定位状态", STATUS_TEXT[self.device.localization_status])
-        self._add_detail(details, 0, 1, "任务状态", STATUS_TEXT[self.device.task_status])
-        self._add_detail(details, 1, 0, "运行模式", self.device.flight_mode)
-        self._add_detail(details, 1, 1, "数据更新时间", self.device.updated_at.astimezone().strftime("%H:%M:%S"))
+        self.detail_values.append(self._add_detail(details, 0, 0, "定位状态", STATUS_TEXT[self.device.localization_status]))
+        self.detail_values.append(self._add_detail(details, 0, 1, "任务状态", STATUS_TEXT[self.device.task_status]))
+        self.detail_values.append(self._add_detail(details, 1, 0, "运行模式", self.device.flight_mode))
+        self.detail_values.append(self._add_detail(details, 1, 1, "数据更新时间", self.device.updated_at.astimezone().strftime("%H:%M:%S")))
         root.addLayout(details)
 
     def _battery_row(self) -> QWidget:
@@ -178,7 +179,7 @@ class DeviceCard(QFrame):
         label = QLabel("电量")
         label.setObjectName("fieldLabel")
         value = "--" if self.device.battery_percent is None else f"{self.device.battery_percent:g}%"
-        amount = QLabel(value)
+        amount = self.battery_amount = QLabel(value)
         amount.setObjectName("fieldValue")
         bar = QProgressBar()
         bar.setObjectName("lowBattery" if self.device.battery_percent is not None and self.device.battery_percent < 25 else "batteryBar")
@@ -199,6 +200,29 @@ class DeviceCard(QFrame):
         value.setObjectName("fieldValue")
         layout.addWidget(label, row * 2, column)
         layout.addWidget(value, row * 2 + 1, column)
+        return value
+
+    def update_device(self, device: DeviceSnapshot) -> None:
+        old = self.device
+        self.device = device
+        self.name_label.setText(device.device_name)
+        self.id_label.setText(device.device_id)
+        if old.connection_status != device.connection_status:
+            self.status_label.setText(STATUS_TEXT[device.connection_status])
+            self.status_label.setStyleSheet(self._status_style(device.connection_status))
+        if old.battery_percent != device.battery_percent:
+            self.battery_amount.setText("--" if device.battery_percent is None else f"{device.battery_percent:g}%")
+            self.battery_bar.setValue(round(device.battery_percent or 0))
+            style = "lowBattery" if device.battery_percent is not None and device.battery_percent < 25 else "batteryBar"
+            if self.battery_bar.objectName() != style:
+                self.battery_bar.setObjectName(style)
+                self.battery_bar.style().unpolish(self.battery_bar)
+                self.battery_bar.style().polish(self.battery_bar)
+        values = (STATUS_TEXT[device.localization_status], STATUS_TEXT[device.task_status],
+                  device.flight_mode, device.updated_at.astimezone().strftime("%H:%M:%S"))
+        for label, value in zip(self.detail_values, values):
+            if label.text() != value:
+                label.setText(value)
 
     def set_theme(self, palette: ThemePalette) -> None:
         self.theme_palette = palette
@@ -220,6 +244,8 @@ class DeviceCard(QFrame):
         return f"background: {background}; color: {foreground};"
 
     def set_selected(self, selected: bool) -> None:
+        if self.property("selected") == selected:
+            return
         self.setProperty("selected", selected)
         self.style().unpolish(self)
         self.style().polish(self)

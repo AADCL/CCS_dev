@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+from concurrent.futures import ThreadPoolExecutor
 import re
 import socket
 import threading
@@ -51,9 +52,12 @@ def is_mdns_hostname(value: str) -> bool:
     return False
 
 
-def clear_device_address_cache() -> None:
+def clear_device_address_cache(address: str | None = None) -> None:
     with _resolution_cache_lock:
-        _resolution_cache.clear()
+        if address is None:
+            _resolution_cache.clear()
+        else:
+            _resolution_cache.pop(normalize_device_address(address), None)
 
 
 def resolve_device_addresses(
@@ -262,3 +266,43 @@ def _store_resolution(
 ) -> None:
     with _resolution_cache_lock:
         _resolution_cache[hostname] = (now + max(0.0, ttl_seconds), addresses)
+        while len(_resolution_cache) > 256:
+            _resolution_cache.pop(next(iter(_resolution_cache)))
+
+
+_async_resolver = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ccs-address")
+_async_pending: set[str] = set()
+
+
+def cached_device_address_matches(configured: str, observed: str) -> bool:
+    """A cache miss remains a non-match; resolve asynchronously without relaxing validation."""
+    try:
+        expected = normalize_device_address(configured)
+        actual = normalize_device_address(observed)
+        if expected == actual:
+            return True
+        try:
+            return _canonical_ip(expected) == _canonical_ip(actual)
+        except ValueError:
+            pass
+        actual_ip = _canonical_ip(actual)
+        with _resolution_cache_lock:
+            cached = _resolution_cache.get(expected)
+            if cached is not None and cached[0] > time.monotonic():
+                return actual_ip in cached[1]
+            if expected not in _async_pending and len(_async_pending) < 128:
+                _async_pending.add(expected)
+                _async_resolver.submit(_refresh_address, expected)
+        return False
+    except (DeviceAddressError, ValueError):
+        return False
+
+
+def _refresh_address(address: str) -> None:
+    try:
+        resolve_device_addresses(address)
+    except OSError:
+        pass
+    finally:
+        with _resolution_cache_lock:
+            _async_pending.discard(address)
