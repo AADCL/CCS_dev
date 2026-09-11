@@ -1,0 +1,12 @@
+test_status_card_editor_selection_and_device_binding (tests.test_ui.UiTests.test_status_card_editor_selection_and_device_binding) ... WARNING: QOpenGLWidget is not supported on this platform.
+WARNING: This plugin does not support createPlatformOpenGLContext!
+WARNING: QOpenGLWidget is not supported on this platform.
+WARNING: This plugin does not support createPlatformOpenGLContext!
+WARNING: QOpenGLWidget is not supported on this platform.
+WARNING: This plugin does not support createPlatformOpenGLContext!
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.856s
+
+OK

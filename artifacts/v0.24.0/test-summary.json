@@ -1,0 +1,518 @@
+{
+  "full_suite": [
+    {
+      "module": "tests.test_agv_mapping_incremental_test",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_app_icons",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_battery_estimation",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_command_dashboard",
+      "exit_code": 0,
+      "tests": 11,
+      "failures": []
+    },
+    {
+      "module": "tests.test_compact_lists",
+      "exit_code": 0,
+      "tests": 6,
+      "failures": []
+    },
+    {
+      "module": "tests.test_data_source",
+      "exit_code": 0,
+      "tests": 4,
+      "failures": []
+    },
+    {
+      "module": "tests.test_device_address",
+      "exit_code": 0,
+      "tests": 7,
+      "failures": []
+    },
+    {
+      "module": "tests.test_device_config",
+      "exit_code": 0,
+      "tests": 14,
+      "failures": []
+    },
+    {
+      "module": "tests.test_device_map_context",
+      "exit_code": 0,
+      "tests": 4,
+      "failures": []
+    },
+    {
+      "module": "tests.test_device_types",
+      "exit_code": 0,
+      "tests": 11,
+      "failures": []
+    },
+    {
+      "module": "tests.test_edge_config",
+      "exit_code": 0,
+      "tests": 2,
+      "failures": []
+    },
+    {
+      "module": "tests.test_edge_documentation",
+      "exit_code": 0,
+      "tests": 6,
+      "failures": []
+    },
+    {
+      "module": "tests.test_edge_package_layout",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_edge_video_config",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_go2_edge_profile",
+      "exit_code": 0,
+      "tests": 7,
+      "failures": []
+    },
+    {
+      "module": "tests.test_go2_robot2_profile",
+      "exit_code": 0,
+      "tests": 9,
+      "failures": []
+    },
+    {
+      "module": "tests.test_go2_robot3_profile",
+      "exit_code": 1,
+      "tests": 14,
+      "failures": [
+        "test_ros_contract_probe_is_python38_and_cannot_name_production_endpoints (tests.test_go2_robot3_profile.Go2Robot3ProfileTests.test_ros_contract_probe_is_python38_and_cannot_name_production_endpoints)\r",
+        "test_scripts_are_linux_text_and_parse (tests.test_go2_robot3_profile.Go2Robot3ProfileTests.test_scripts_are_linux_text_and_parse)\r"
+      ]
+    },
+    {
+      "module": "tests.test_ground_air_agv_profile",
+      "exit_code": 0,
+      "tests": 17,
+      "failures": []
+    },
+    {
+      "module": "tests.test_input_widgets_v012",
+      "exit_code": 0,
+      "tests": 2,
+      "failures": []
+    },
+    {
+      "module": "tests.test_joint_remote_mapping",
+      "exit_code": 0,
+      "tests": 4,
+      "failures": []
+    },
+    {
+      "module": "tests.test_map_building",
+      "exit_code": 0,
+      "tests": 7,
+      "failures": []
+    },
+    {
+      "module": "tests.test_map_building_service",
+      "exit_code": 0,
+      "tests": 2,
+      "failures": []
+    },
+    {
+      "module": "tests.test_map_building_v2",
+      "exit_code": 0,
+      "tests": 17,
+      "failures": []
+    },
+    {
+      "module": "tests.test_map_device_overlay",
+      "exit_code": 0,
+      "tests": 10,
+      "failures": []
+    },
+    {
+      "module": "tests.test_map_fusion_v011",
+      "exit_code": 0,
+      "tests": 8,
+      "failures": []
+    },
+    {
+      "module": "tests.test_map_mapping_log_ui",
+      "exit_code": 0,
+      "tests": 3,
+      "failures": []
+    },
+    {
+      "module": "tests.test_map_picking",
+      "exit_code": 0,
+      "tests": 15,
+      "failures": []
+    },
+    {
+      "module": "tests.test_map_repository",
+      "exit_code": 0,
+      "tests": 8,
+      "failures": []
+    },
+    {
+      "module": "tests.test_models",
+      "exit_code": 0,
+      "tests": 6,
+      "failures": []
+    },
+    {
+      "module": "tests.test_mqtt_config",
+      "exit_code": 0,
+      "tests": 2,
+      "failures": []
+    },
+    {
+      "module": "tests.test_mqtt_data_source",
+      "exit_code": 0,
+      "tests": 10,
+      "failures": []
+    },
+    {
+      "module": "tests.test_mqtt_protocol",
+      "exit_code": 0,
+      "tests": 3,
+      "failures": []
+    },
+    {
+      "module": "tests.test_mqtt_services",
+      "exit_code": 0,
+      "tests": 3,
+      "failures": []
+    },
+    {
+      "module": "tests.test_multi_device_v024",
+      "exit_code": 0,
+      "tests": 22,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ntp_services",
+      "exit_code": 0,
+      "tests": 4,
+      "failures": []
+    },
+    {
+      "module": "tests.test_pgm_fusion_ui_v013",
+      "exit_code": 0,
+      "tests": 2,
+      "failures": []
+    },
+    {
+      "module": "tests.test_pgm_fusion_v013",
+      "exit_code": 0,
+      "tests": 6,
+      "failures": []
+    },
+    {
+      "module": "tests.test_pgm_generation_v012",
+      "exit_code": 0,
+      "tests": 7,
+      "failures": []
+    },
+    {
+      "module": "tests.test_pgm_map",
+      "exit_code": 0,
+      "tests": 3,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ping_service",
+      "exit_code": 0,
+      "tests": 6,
+      "failures": []
+    },
+    {
+      "module": "tests.test_point_cloud",
+      "exit_code": 0,
+      "tests": 2,
+      "failures": []
+    },
+    {
+      "module": "tests.test_release_engineering",
+      "exit_code": 0,
+      "tests": 12,
+      "failures": []
+    },
+    {
+      "module": "tests.test_relocalization",
+      "exit_code": 0,
+      "tests": 22,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ros_adapters",
+      "exit_code": 0,
+      "tests": 3,
+      "failures": []
+    },
+    {
+      "module": "tests.test_scout_mini_profile",
+      "exit_code": 0,
+      "tests": 3,
+      "failures": []
+    },
+    {
+      "module": "tests.test_srt_video",
+      "exit_code": 0,
+      "tests": 16,
+      "failures": []
+    },
+    {
+      "module": "tests.test_static_paths",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_task_map",
+      "exit_code": 0,
+      "tests": 2,
+      "failures": []
+    },
+    {
+      "module": "tests.test_task_page_ui",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_task_protocol_service",
+      "exit_code": 0,
+      "tests": 8,
+      "failures": []
+    },
+    {
+      "module": "tests.test_task_system",
+      "exit_code": 0,
+      "tests": 4,
+      "failures": []
+    },
+    {
+      "module": "tests.test_theme_v010",
+      "exit_code": 0,
+      "tests": 4,
+      "failures": []
+    },
+    {
+      "module": "tests.test_udp_telemetry",
+      "exit_code": 0,
+      "tests": 21,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_navigation_contains_five_pages_and_defaults_home",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_theme_button_switches_theme_without_changing_page",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_theme_mode_round_trips_through_settings",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_home_metrics_follow_device_updates",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_home_status_cards_show_icons_and_preserve_state_during_theme_switch",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_device_list_icons_preserve_filters_edit_selection_and_mqtt_on_theme_switch",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_lab_branding_follows_version_and_fits_narrow_navigation",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_device_page_reflows_cards",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_map_page_defaults_to_repository_backed_empty_list",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_map_repository_signal_updates_list_search_and_home_count",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_new_map_dialog_device_selector_uses_the_dark_theme",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_minimum_window_size",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_edit_mode_shows_checkboxes_and_deletes_confirmed_device",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_new_device_dialog_requires_current_ip_test",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_new_device_dialog_detects_duplicate_id",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_edit_device_reuses_current_ping_but_ip_change_requires_retest",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_detail_page_and_log_filter",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_detail_page_displays_udp_telemetry_without_map_position",
+      "exit_code": 1,
+      "tests": 1,
+      "failures": [
+        "test_detail_page_displays_udp_telemetry_without_map_position (tests.test_ui.UiTests.test_detail_page_displays_udp_telemetry_without_map_position)\r"
+      ]
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_detail_page_timer_renders_latest_high_frequency_snapshot",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_status_card_editor_selection_and_device_binding",
+      "exit_code": 1,
+      "tests": 1,
+      "failures": [
+        "test_status_card_editor_selection_and_device_binding (tests.test_ui.UiTests.test_status_card_editor_selection_and_device_binding)\r"
+      ]
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_detail_layout_switches_and_navigation_stops_video",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_visible_card_double_click_signal_opens_detail",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_corrupt_config_disables_management_actions",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_mqtt_module_status_card_and_detail_fields_update",
+      "exit_code": 0,
+      "tests": 1,
+      "failures": []
+    },
+    {
+      "module": "tests.test_v015_system_and_migration",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_version",
+      "exit_code": 0,
+      "tests": 5,
+      "failures": []
+    },
+    {
+      "module": "tests.test_wheeltec_r550p_profile",
+      "exit_code": 0,
+      "tests": 4,
+      "failures": []
+    }
+  ],
+  "post_fix_reruns": [
+    {
+      "module": "tests.test_ui.UiTests.test_detail_page_displays_udp_telemetry_without_map_position",
+      "tests": 1,
+      "exit_code": 0
+    },
+    {
+      "module": "tests.test_ui.UiTests.test_status_card_editor_selection_and_device_binding",
+      "tests": 1,
+      "exit_code": 0
+    },
+    {
+      "module": "tests.test_multi_device_v024",
+      "tests": 24,
+      "exit_code": 0
+    }
+  ],
+  "total": 434,
+  "passed": 432,
+  "remaining_failures": [
+    "test_ros_contract_probe_is_python38_and_cannot_name_production_endpoints (tests.test_go2_robot3_profile.Go2Robot3ProfileTests.test_ros_contract_probe_is_python38_and_cannot_name_production_endpoints)",
+    "test_scripts_are_linux_text_and_parse (tests.test_go2_robot3_profile.Go2Robot3ProfileTests.test_scripts_are_linux_text_and_parse)"
+  ],
+  "limitations": [
+    "Windows offscreen: isolated modules; test_ui isolated per case to avoid accumulating native OpenGL contexts.",
+    "Remaining two Go2 checks fail on both aa55385 and this worktree because Windows checkout uses CRLF; no edge scripts changed."
+  ]
+}

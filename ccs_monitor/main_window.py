@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
         task_repository: TaskRepository | None = None,
         task_execution_service=None,
         system_status_store: SystemRuntimeStatusStore | None = None,
+        trajectory_store=None,
     ) -> None:
         super().__init__()
         self.source = source
@@ -65,6 +66,7 @@ class MainWindow(QMainWindow):
         self.task_repository = task_repository or TaskRepository()
         self.task_execution_service = task_execution_service
         self.system_status_store = system_status_store
+        self.trajectory_store = trajectory_store
         self.dashboard_fullscreen = False
         self._dashboard_was_maximized = False
         self._theme_settings = QSettings("CCS", "CCS Device Monitor")
@@ -177,6 +179,19 @@ class MainWindow(QMainWindow):
             task_repository=self.task_repository,
             execution_service=self.task_execution_service,
         )
+        self.task_page.editor.trajectory_store = self.trajectory_store
+        self.command_page.trajectory_store = self.trajectory_store
+        for key, viewer in (("task", self.task_page.editor.viewer), ("dashboard", self.command_page.viewer)):
+            if hasattr(viewer, "set_trail_settings_key"):
+                viewer.set_trail_settings_key(key)
+        if self.trajectory_store is not None:
+            self.trajectory_store.expired.connect(self.task_page.editor.viewer.remove_device_trail)
+            self.trajectory_store.expired.connect(self.command_page.viewer.remove_device_trail)
+            self.trajectory_store.changed.connect(lambda: setattr(self.task_page.editor, "_telemetry_dirty", True))
+            self.trajectory_store.storage_error.connect(
+                lambda message: self.statusBar().showMessage("轨迹保存异常：" + message))
+            if self.trajectory_store.last_error:
+                self.statusBar().showMessage("轨迹保存异常：" + self.trajectory_store.last_error)
         self.command_page.fullscreen_requested.connect(self.set_dashboard_fullscreen)
         if self.mapping_service is not None:
             self.mapping_service.remote_navigation_locked.connect(self._set_mapping_navigation_lock)

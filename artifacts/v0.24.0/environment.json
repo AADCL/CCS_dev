@@ -1,0 +1,15 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+  "packages": {
+    "PySide6": "6.11.1",
+    "numpy": "2.5.1",
+    "vispy": "0.16.2"
+  },
+  "baseline_commit": "aa55385e6d4bd90f32463b6ddccf5bdb59faa369",
+  "benchmark": "scripts/benchmark_multi_device.py",
+  "long_run_seconds": 600,
+  "short_run_seconds": 30,
+  "data": "Temporary simulated devices and map; no field configuration or actual device commands.",
+  "measurement": "Real MQTT/UDP processing, Qt event loop and VisPy CPU scene. No network transport or GPU rasterization."
+}

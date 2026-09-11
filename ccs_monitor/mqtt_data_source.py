@@ -9,7 +9,7 @@ from typing import Callable
 
 from PySide6.QtCore import QTimer, Signal, Slot
 
-from .device_address import device_address_matches
+from .device_address import cached_device_address_matches as device_address_matches, clear_device_address_cache, DeviceAddressError
 from .data_source import SimulatedDeviceSource
 from .models import (
     ConnectionStatus,
@@ -73,14 +73,38 @@ class MqttDeviceSource(SimulatedDeviceSource):
         self._trackers = {device.device_id: HeartbeatTracker() for device in self._devices}
         self._sequences: dict[tuple[str, str], int] = {}
         self._sessions: dict[str, str] = {}
+        self._address_warning_at = {}
         self._retired_sessions: dict[str, set[str]] = {}
         self.module_status_message = "MQTT 监测模块正在启动"
         self.module_healthy = False
+        self._update_timer = QTimer(self)
+        self._update_timer.setSingleShot(True)
+        self._update_timer.setInterval(100)
+        self._update_timer.timeout.connect(self.flush_updates)
         self._watchdog = QTimer(self)
         self._watchdog.timeout.connect(self.check_heartbeats)
         if start_watchdog:
             interval_ms = max(1, round(1000 / config.heartbeat_check_hz))
             self._watchdog.start(interval_ms)
+
+    def _schedule_update(self):
+        if not self._update_timer.isActive():
+            self._update_timer.start()
+
+    def flush_updates(self):
+        self._update_timer.stop()
+        self.devices_updated.emit(self.snapshots())
+
+    def connection_timing(self, device_id):
+        """UTC heartbeat/disconnect origins; offline classification adds no extra TTL."""
+        tracker = self._trackers.get(device_id)
+        if tracker is None:
+            return None, None
+        now = self._clock()
+        wall = self._wall_clock().timestamp()
+        alive = None if tracker.last_heartbeat_monotonic is None else wall - (now - tracker.last_heartbeat_monotonic)
+        disconnected = None if tracker.disconnect_started_monotonic is None else wall - (now - tracker.disconnect_started_monotonic)
+        return alive, disconnected
 
     def _snapshot_from_profile(self, profile: DeviceProfile) -> DeviceSnapshot:
         template = self.device_type_template(profile.device_type)
@@ -123,8 +147,17 @@ class MqttDeviceSource(SimulatedDeviceSource):
         return created
 
     def delete_devices(self, device_ids: set[str]) -> None:
+        addresses = {item.ip_address for key in device_ids if (item := self.device(key)) is not None}
         super().delete_devices(device_ids)
+        for address in addresses:
+            try:
+                clear_device_address_cache(address)
+            except DeviceAddressError:
+                pass
         folded = {device_id.casefold() for device_id in device_ids}
+        for device_id in device_ids:
+            if hasattr(self.battery_estimator, "remove_device"):
+                self.battery_estimator.remove_device(device_id)
         self._trackers = {
             key: value for key, value in self._trackers.items() if key.casefold() not in folded
         }
@@ -138,6 +171,7 @@ class MqttDeviceSource(SimulatedDeviceSource):
             key: value for key, value in self._retired_sessions.items()
             if key.casefold() not in folded
         }
+        self._address_warning_at = {key: value for key, value in self._address_warning_at.items() if key.casefold() not in folded}
 
     def logs(self, device_id: str) -> list[DeviceLogEntry]:
         return list(self._logs.get(device_id, ()))
@@ -179,7 +213,9 @@ class MqttDeviceSource(SimulatedDeviceSource):
         if device is None:
             self._warn(f"忽略未登记设备：{event.device_id}")
             return
-        if not device_address_matches(device.ip_address, event.ip_address):
+        if (not device_address_matches(device.ip_address, event.ip_address)
+                and self._clock() - self._address_warning_at.get(device.device_id, float("-inf")) >= 5.0):
+            self._address_warning_at[device.device_id] = self._clock()
             self._append_log(
                 device.device_id,
                 DeviceLogLevel.WARNING,
@@ -248,7 +284,7 @@ class MqttDeviceSource(SimulatedDeviceSource):
             self._replace_device(replace(device, connection_status=ConnectionStatus.WARNING, updated_at=self._wall_clock()))
             if device.connection_status != ConnectionStatus.WARNING:
                 self._append_log(device.device_id, DeviceLogLevel.WARNING, "MQTT presence：设备连接中断")
-        self.devices_updated.emit(self.snapshots())
+        self._schedule_update()
 
     def _handle_heartbeat(self, device: DeviceSnapshot, event: MqttHeartbeatEvent) -> None:
         tracker = self._trackers[device.device_id]
@@ -272,7 +308,7 @@ class MqttDeviceSource(SimulatedDeviceSource):
             self._append_log(device.device_id, DeviceLogLevel.INFO, "MQTT 心跳已建立")
         elif was_degraded:
             self._append_log(device.device_id, DeviceLogLevel.INFO, "设备心跳恢复，连接已恢复")
-        self.devices_updated.emit(self.snapshots())
+        self._schedule_update()
 
     def _handle_status(self, device: DeviceSnapshot, event: MqttStatusEvent) -> None:
         health = (
@@ -309,7 +345,7 @@ class MqttDeviceSource(SimulatedDeviceSource):
                 updated_at=self._wall_clock(),
             )
         )
-        self.devices_updated.emit(self.snapshots())
+        self._schedule_update()
 
     @Slot()
     def check_heartbeats(self) -> None:
@@ -337,7 +373,7 @@ class MqttDeviceSource(SimulatedDeviceSource):
                 self._append_log(device_id, DeviceLogLevel.WARNING, f"心跳中断超过 {self.monitor_config.warning_timeout_seconds:g}s")
                 changed = True
         if changed:
-            self.devices_updated.emit(self.snapshots())
+            self._schedule_update()
 
     @Slot(str, bool)
     def set_module_status(self, message: str, healthy: bool) -> None:
@@ -351,7 +387,11 @@ class MqttDeviceSource(SimulatedDeviceSource):
                 self._append_log(device.device_id, level, message)
 
     def _replace_device(self, updated: DeviceSnapshot) -> None:
-        self._devices = [updated if item.device_id == updated.device_id else item for item in self._devices]
+        key = updated.device_id.casefold()
+        position = self._device_positions.get(key)
+        if position is not None:
+            self._device_list[position] = updated
+            self._device_index[key] = updated
 
     def _append_log(self, device_id: str, level: DeviceLogLevel, message: str) -> None:
         entries = self._logs.setdefault(device_id, deque(maxlen=self.monitor_config.log_capacity))

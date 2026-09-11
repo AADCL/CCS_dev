@@ -5,6 +5,8 @@ import json
 import math
 import os
 import statistics
+import threading
+import logging
 import tempfile
 from collections import deque
 from dataclasses import dataclass
@@ -148,6 +150,13 @@ class BatteryEstimator:
             )
         self.history_root = history_root
         self._samples: dict[tuple[str, str], deque[float]] = {}
+        self._pending = {}
+        self._lock = threading.RLock()
+        self._flush_lock = threading.Lock()
+        self._wake = threading.Event()
+        self._closed = False
+        self._writer = None
+        self.last_error = None
 
     def observe(self, device_id: str, profile_name: str, voltage: float | None,
                 timestamp: datetime, online: bool) -> float | None:
@@ -169,10 +178,45 @@ class BatteryEstimator:
         median_voltage = statistics.median(values)
         stamp = timestamp.astimezone(timezone.utc)
         minute = stamp.replace(second=0, microsecond=0).isoformat()
-        self._write_history(
-            device_id, profile_name, minute, median_voltage, online, stamp, profile,
-        )
+        with self._lock:
+            self._pending[(device_id, minute)] = (device_id, profile_name, minute, median_voltage, online, stamp, profile)
+            if self._writer is None and not self._closed:
+                self._writer = threading.Thread(target=self._run_writer, daemon=True, name="ccs-battery-history")
+                self._writer.start()
         return round(self.percentage(profile_name, median_voltage), 1)
+
+    def _run_writer(self):
+        while not self._closed:
+            self._wake.wait(60.0)
+            self._wake.clear()
+            self.flush()
+
+    def flush(self):
+        with self._flush_lock:
+            with self._lock:
+                batch, self._pending = self._pending, {}
+            for key, record in batch.items():
+                try:
+                    self._write_history(*record)
+                    self.last_error = None
+                except (OSError, ValueError, TypeError, KeyError) as exc:
+                    self.last_error = str(exc)
+                    logging.getLogger(__name__).warning("电池历史写入失败：%s", exc)
+                    with self._lock:
+                        if not any(item[0] == key[0] for item in self._pending):
+                            self._pending[key] = record
+
+    def close(self):
+        self._closed = True
+        self._wake.set()
+        if self._writer is not None:
+            self._writer.join(timeout=5)
+        self.flush()
+
+    def remove_device(self, device_id):
+        with self._lock:
+            self._samples = {key: value for key, value in self._samples.items() if key[0] != device_id}
+            self._pending = {key: value for key, value in self._pending.items() if key[0] != device_id}
 
     def percentage(self, profile_name: str, voltage: float) -> float:
         profile = self.profiles.get(profile_name)

@@ -174,7 +174,10 @@ class MqttDeviceSourceTests(unittest.TestCase):
         records = [
             (socket.AF_INET, socket.SOCK_DGRAM, 17, "", (self.ip, 0)),
         ]
+        from ccs_monitor.device_address import resolve_device_addresses
         with patch("ccs_monitor.device_address.socket.getaddrinfo", return_value=records):
+            resolve_device_addresses("nrc17.local")
+        with patch("ccs_monitor.device_address.socket.getaddrinfo", side_effect=AssertionError("blocking DNS")):
             self.message("heartbeat", 1, ip=self.ip)
         messages = [entry.message for entry in self.source.logs(self.device_id)]
         self.assertFalse(any("不一致或无法解析" in message for message in messages))

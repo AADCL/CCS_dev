@@ -192,6 +192,7 @@ class CommandDashboardUiTests(unittest.TestCase):
         ]
         self.source.devices_updated.emit(updated)
         self.app.processEvents()
+        page._render_realtime()
         self.assertNotEqual(page.selected_device_id, previous_id)
         self.assertIn(
             page.selected_device_id,

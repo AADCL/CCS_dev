@@ -1,5 +1,11 @@
 # 端侧设备交互接口总册
 
+## v0.24.0 多设备任务确认兼容性
+
+端侧协议格式保持不变。地面站批量下发为每台设备维护独立请求与传输轮次；`command_ack` 必须对应原命令的任务、子任务、设备、执行会话及 request_id。`task_summary` 必须回传当前协商或提交请求的 request_id、当前 revision，并使用递增 sequence。旧请求、旧 revision、乱序及重复 summary 不再更新新状态。
+
+`task_commit` 接收成功只表示子任务接收完成；端侧导航准备完成后还需返回 `state=ready`。允许 READY 先于 commit ACK 到达，但地面站必须同时收到两者才允许执行。拒绝或准备失败仅影响对应设备，其他设备成功状态保留。统一 UTC `scheduled_at` 执行机制保持不变，开始任务不再触发重新下发。
+
 本册负责地面站网络协议；设备内部 ROS、工作空间和逐参数定义见[接口与配置参考](../edge_side_pkg/documents/INTERFACE_REFERENCE.md)，操作见[端侧手册](../edge_side_pkg/documents/USER_MANUAL.md)。日期段落保留兼容性历史，当前包版本和能力见[端侧 README](../edge_side_pkg/README.md)。
 
 文档版本：`v0.23.1`，更新日期：2026-09-05。

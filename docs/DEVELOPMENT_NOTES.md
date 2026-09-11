@@ -1,5 +1,20 @@
 # 开发笔记
 
+## v0.24.0 数据与刷新约定
+
+- `TaskRepository.save_subtasks(task_id, subtasks)` 在事务锁内校验全部草稿并保存。定义未改变时 revision 和运行状态不变；运行回执只合并对应设备的运行字段。仓库通知推迟至最外层事务释放锁后发出，避免与任务服务锁反转。
+- `TaskExecutionService.deliver_task(task)` 是批量下发入口。每设备的传输、请求 ID、当前 revision、子任务 ID 和接收序号单独关联；旧回执及旧轮次超时不能覆盖新草稿。接收成功与导航 READY 是两个条件，顺序可以互换。`execute_devices` 只使用仓库中已确认版本；统一启动时间一旦安排不再重排。
+- MQTT/UDP 快照入库不等待界面绘制。MQTT 通知、可见设备页面和任务地图最多每 100 ms 合并刷新；大屏复用设备列表、标记及轨迹对象。隐藏页面停止实时绘制。
+- `DeviceTrajectoryStore` 由应用创建并共享，订阅连接状态和有效地图位姿。`trails(map_id, device_ids=None)` 返回有分段标记的显示轨迹；`expired` 通知页面移除过期图形；`clear(device_id)` 提供显式设备记录清理（图层开关不调用它）；`tick()` 检查连接期限，`flush()` / `close()` 刷新后台存储。
+- `MqttDeviceSource.connection_timing(device_id)` 提供最近有效心跳及明确断联的 UTC 时间；`DeviceTelemetrySnapshot.session_id` 是遥测会话只读信息。120 秒按断联起点计算，不再叠加 UI 离线分类的等待时间。
+- 轨迹目录为设备 ID 哈希加连接 UUID；`session.json` 为小型元数据，`chunk-*.jsonl` 每块最多 4096 点，每点为 `[map_id, segment_id, x, y, z, timestamp]`。显示轮廓常态最多 2000 点（低于 10000 点上限），待写入每设备上限 10000 点。后台流式恢复、抽稀及追加，隐藏不删除；过期清理验证目录边界。损坏元数据跳过，残缺 JSONL 尾行在下次写入前修复。
+- 电池分钟桶后台写入两天 JSON 历史；任务日志 JSONL 增量追加，最近事件 LRU 最多四任务、每任务 500 条；执行统计初次构建轻量索引后增量维护。地图资源保持文件引用，后台恢复使用加载代次隔离旧结果。
+- 高频设备地址比对只使用保守缓存，未解析仍视为不匹配；后台刷新 mDNS，不在消息处理线程阻塞 DNS。任务控制路径的地址校验规则不变。
+
+本地文件和端侧任务协议保持兼容；新增就绪超时配置有默认值，不要求迁移旧任务文件。回归入口为 `tests/test_multi_device_v024.py`；Windows 无显示 OpenGL 环境可用 `python scripts/run_isolated_tests.py` 按模块隔离完整测试，原生崩溃或超时会明确记入结果，不计作通过。
+
+性能复现：`python scripts/benchmark_multi_device.py --source-root <checkout> --devices 20 --seconds 600 --output build/performance/after-20.json`。同脚本分别运行干净基线和当前版本，另测 1、10 台；回放走真实 MQTT 解析、UDP 编解码、Qt 控件和 VisPy CPU 场景，使用临时数据，GPU 光栅化与真实网络不在测量范围。
+
 ## v0.23.1 端侧文档与分发
 
 - 端侧 README、INTERFACE_REFERENCE 和 USER_MANUAL 分别负责总览、真实接口/配置契约和操作流程；包级及设备专项文档链接到统一入口。
