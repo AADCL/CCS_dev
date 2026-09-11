@@ -76,6 +76,16 @@ class ArtifactTests(unittest.TestCase):
             stream.write(b"new mapping data")
         current = require_fresh_file(source, baseline, baseline["mtime_ns"])
         self.assertNotEqual(current["sha256"], baseline["sha256"])
+
+    def test_optional_log_root_is_separate_from_artifacts(self):
+        log_root = os.path.join(self.temp.name, "runtime-logs")
+        paths = SessionPaths(self.config, self.identity, log_root=log_root)
+        paths.prepare(1)
+        self.assertEqual(paths.session_dir, os.path.join(self.temp.name, self.identity["session_id"]))
+        self.assertEqual(paths.log_dir, os.path.join(log_root, self.identity["session_id"]))
+        self.assertTrue(os.path.isdir(paths.log_dir))
+        paths.reset()
+        self.assertTrue(os.path.isdir(paths.log_dir))
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

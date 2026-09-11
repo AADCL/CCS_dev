@@ -245,6 +245,33 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(payload["checks"]), 4)
         self.assertEqual(self.node.state, "standby")
 
+    def test_prepare_log_directory_failure_releases_session_and_allows_retry(self):
+        log_root = os.path.join(self.temp.name, "runtime-logs")
+        with io.open(log_root, "w", encoding="ascii") as stream:
+            stream.write("not a directory")
+        self.node.session_log_root = log_root
+
+        self.prepare()
+
+        result = self.messages()[-1]
+        self.assertEqual(result["message_type"], "prepare_result")
+        self.assertFalse(result["payload"]["accepted"])
+        self.assertEqual(result["payload"]["error_code"], "ARTIFACT_STORAGE_UNAVAILABLE")
+        self.assertEqual(self.node.state, "standby")
+        self.assertIsNone(self.node.session)
+
+        os.unlink(log_root)
+        self.node.handle_datagram(self.command("prepare_mapping", {
+            "request_id": "prepare-retry", "return_host": self.config["ground_station_ip"],
+            "return_port": self.config["data_port"],
+            "required_inputs": ["pointcloud", "imu", "artifact_storage", "map_generation"],
+        }), self.config["ground_station_ip"])
+
+        self.assertTrue(self.messages()[-1]["payload"]["accepted"])
+        self.assertEqual(self.node.state, "ready")
+        self.assertIsNotNone(self.node.session)
+        self.assertTrue(os.path.isdir(self.node.session.paths.log_dir))
+
     def test_prepare_command_failure_is_compact_enough_for_udp(self):
         def fail_check(unused_commands):
             raise ArtifactError("integration preflight failed: " + "x" * 5000)

@@ -461,6 +461,7 @@ def load_config(mapping_path, device_path):
 def command_context(config, values):
     context = dict(values)
     session_dir = os.path.abspath(values["session_dir"])
+    session_log_dir = os.path.abspath(values.get("session_log_dir", session_dir))
     for key, template_key in (
             ("fast_lio_pid_path", "fast_lio_pid_template"),
             ("fast_lio_log_path", "fast_lio_log_template"),
@@ -472,6 +473,15 @@ def command_context(config, values):
             inside = path == session_dir or path.startswith(session_dir + os.sep)
         if not inside:
             raise ConfigError("%s escapes session directory" % template_key)
+        if key.endswith("_log_path") and session_log_dir != session_dir:
+            path = os.path.abspath(os.path.join(
+                session_log_dir, os.path.relpath(path, session_dir)))
+            try:
+                inside = os.path.commonpath([path, session_log_dir]) == session_log_dir
+            except (AttributeError, ValueError):
+                inside = path == session_log_dir or path.startswith(session_log_dir + os.sep)
+            if not inside:
+                raise ConfigError("%s escapes session log directory" % template_key)
         context[key] = path
     return context
 

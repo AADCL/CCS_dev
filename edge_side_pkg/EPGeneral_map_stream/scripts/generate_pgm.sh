@@ -26,7 +26,6 @@ check_launch() {
 if [[ "${1:-}" == "--check" ]]; then
   [[ "$#" -eq 5 ]] || fail "usage: $0 --check SETUP PACKAGE LAUNCH SOURCE_PCD"
   check_launch "$2" "$3" "$4"
-  [[ -s "$5" ]] || fail "source PCD is missing or empty: $5"
   exit 0
 fi
 
@@ -47,8 +46,8 @@ shift 12
 
 check_launch "${SETUP_FILE}" "${PACKAGE_NAME}" "${LAUNCH_FILE}"
 [[ -s "${PCD_PATH}" ]] || fail "input PCD is missing or empty: ${PCD_PATH}"
-[[ -s "${SOURCE_PCD_PATH}" ]] || fail "source PCD is missing or empty: ${SOURCE_PCD_PATH}"
 [[ "${TIMEOUT_SECONDS}" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "timeout is invalid"
+mkdir -p "$(dirname "${SOURCE_PCD_PATH}")" "$(dirname "${SOURCE_PGM_PATH}")" "$(dirname "${SOURCE_YAML_PATH}")"
 mkdir -p "$(dirname "${PGM_PATH}")" "$(dirname "${YAML_PATH}")" "$(dirname "${LOG_FILE}")"
 rm -f "${PGM_PATH}" "${YAML_PATH}"
 

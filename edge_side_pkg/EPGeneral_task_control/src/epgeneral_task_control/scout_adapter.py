@@ -708,7 +708,10 @@ class ScoutNavigationAdapter(object):
             except Exception as exc:
                 errors.append("zero velocity publication failed: %s" % exc)
             try:
-                self.control_safety.disarm()
+                shutdown_unload = (
+                    getattr(command, "request_id", "") == "shutdown-unload" and
+                    self._ros_shutdown_requested())
+                self.control_safety.disarm(allow_confirmed_disabled=shutdown_unload)
             except (ValueError, IOError, OSError) as exc:
                 errors.append(str(exc))
                 error_code = execution_error_code(exc)
@@ -774,6 +777,13 @@ class ScoutNavigationAdapter(object):
                            "navigation process exited", "NAVIGATION_PROCESS_EXITED")
         self._publish_zero()
 
+    def _ros_shutdown_requested(self):
+        # rospy runs on_shutdown callbacks before setting is_shutdown().
+        core = getattr(self.rospy, "core", None)
+        requested = getattr(core, "is_shutdown_requested", None)
+        return (self.rospy.is_shutdown() is True or
+                (callable(requested) and requested() is True))
+
     def close(self):
         self.stop_event.set()
         client = getattr(self, "client", None)
@@ -786,7 +796,8 @@ class ScoutNavigationAdapter(object):
                 self.rospy.logerr("navigation cancellation during shutdown failed: %s", exc)
             finally:
                 try:
-                    self.control_safety.disarm()
+                    self.control_safety.disarm(
+                        allow_confirmed_disabled=self._ros_shutdown_requested())
                 except (ValueError, IOError, OSError) as exc:
                     self.rospy.logerr("control disable during shutdown failed: %s", exc)
         else:

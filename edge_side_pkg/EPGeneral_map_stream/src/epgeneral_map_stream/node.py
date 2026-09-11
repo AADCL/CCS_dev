@@ -86,7 +86,8 @@ class MappingSession(object):
 class RosMapStreamNode(object):
     def __init__(self, rospy, config, socket_factory=socket.socket,
                   clock=time.monotonic, message_resolver=None, command_runner=None,
-                  artifact_server=None, transform_lookup=None, log_path=None):
+                  artifact_server=None, transform_lookup=None, log_path=None,
+                  session_log_root=None):
         self.rospy = rospy
         self.config = config
         self.socket_factory = socket_factory
@@ -108,6 +109,8 @@ class RosMapStreamNode(object):
         self.request_cache = {}
         self.sequences = {}
         self.log_path = os.path.abspath(os.path.expanduser(log_path)) if log_path else None
+        self.session_log_root = (os.path.abspath(os.path.expanduser(session_log_root))
+                                 if session_log_root else None)
         self.log_lock = threading.Lock()
         self.file_log_throttles = {}
 
@@ -294,7 +297,8 @@ class RosMapStreamNode(object):
             restarted = True
         try:
             paths = SessionPaths(self.config, {
-                "map_id": command["map_id"], "session_id": command["session_id"]})
+                "map_id": command["map_id"], "session_id": command["session_id"]},
+                log_root=self.session_log_root)
         except ArtifactError as exc:
             self._send_prepare_rejection(
                 command, destination, "ARTIFACT_STORAGE_UNAVAILABLE", str(exc))
@@ -410,7 +414,7 @@ class RosMapStreamNode(object):
                     available, code = True, ""
                 elif name not in known:
                     reason = "required input is not supported"
-            except (ArtifactError, ConfigError, ProcessingError, RuntimeError) as exc:
+            except (ArtifactError, ConfigError, OSError, ProcessingError, RuntimeError) as exc:
                 reason = str(exc)
                 code = {
                     "pointcloud": "SENSOR_UNAVAILABLE", "imu": "IMU_UNAVAILABLE",
@@ -1300,11 +1304,14 @@ def run():
         "~device_config_file", device_package_path + "/config/device.yaml")
     try:
         config = load_config(mapping_path, device_path)
+        log_dir = os.path.expanduser(rospy.get_param("~log_dir", "")).strip()
         transform_lookup = RosTfTransformLookup(
             rospy, config["preview_transform_timeout_seconds"])
         node = RosMapStreamNode(
             rospy, config, transform_lookup=transform_lookup,
-            log_path=os.path.expanduser("~/.ros/ccs_edge_dev/log/map_stream.log"))
+            log_path=(os.path.join(log_dir, "map_stream.log") if log_dir else
+                      os.path.expanduser("~/.ros/ccs_edge_dev/log/map_stream.log")),
+            session_log_root=(os.path.join(log_dir, "sessions") if log_dir else None))
         node.start()
     except (ConfigError, OSError, ArtifactError, ProcessingError) as exc:
         rospy.logfatal("epgeneral_map_stream startup failed: %s", exc)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only SNTP offset query; systemd-timesyncd owns clock adjustment."""
+"""Read-only SNTP availability or offset query; timesyncd owns clock adjustment."""
 import argparse
 import socket
 import struct
@@ -14,7 +14,7 @@ def timestamp(raw):
     return seconds - NTP_DELTA + fraction / float(1 << 32)
 
 
-def query(server, timeout):
+def query(server, timeout, availability_only=False):
     packet = bytearray(48)
     packet[0] = 0x23
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -25,14 +25,16 @@ def query(server, timeout):
         packet[40:48] = struct.pack("!II", int(ntp_sent), int((ntp_sent % 1) * (1 << 32)))
         sock.send(packet)
         data = sock.recv(512)
-        received = time.time()
+        received = None if availability_only else time.time()
         peer = sock.getpeername()[0]
     if len(data) < 48 or data[0] & 7 != 4:
         raise RuntimeError("invalid NTP server response")
-    if data[0] >> 6 == 3 or not 1 <= data[1] <= 15:
-        raise RuntimeError("NTP server reports unsynchronized time")
     if data[24:32] != packet[40:48]:
         raise RuntimeError("NTP response does not match this request")
+    if availability_only:
+        return {"server": peer}
+    if data[0] >> 6 == 3 or not 1 <= data[1] <= 15:
+        raise RuntimeError("NTP server reports unsynchronized time")
     server_received = timestamp(data[32:40])
     server_sent = timestamp(data[40:48])
     if server_received < 1577836800 or server_sent < server_received:
@@ -48,12 +50,18 @@ def main():
     parser.add_argument("--timeout", type=float, default=3.0)
     parser.add_argument("--retries", type=int, default=2)
     parser.add_argument("--max-offset", type=float, default=2.0)
+    parser.add_argument("--availability-only", action="store_true",
+                        help="check only that the server responds; ignore clock offset")
     args = parser.parse_args()
     if args.timeout <= 0 or args.retries < 1 or args.max_offset <= 0:
         parser.error("timeout, retries and max-offset must be positive")
     last_error = None
     for attempt in range(args.retries):
         try:
+            if args.availability_only:
+                result = query(args.server, args.timeout, availability_only=True)
+                print("server={server} available=true".format(**result))
+                return 0
             result = query(args.server, args.timeout)
             print("server={server} offset_seconds={offset_seconds:.3f} "
                   "round_trip_seconds={round_trip_seconds:.3f}".format(**result))

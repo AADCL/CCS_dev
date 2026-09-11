@@ -14,6 +14,12 @@ SCRIPT_NAMES = (
 
 
 class ScriptTests(unittest.TestCase):
+    def test_shell_scripts_use_lf(self):
+        script_dir = os.path.join(PACKAGE, "scripts")
+        for name in sorted(item for item in os.listdir(script_dir) if item.endswith(".sh")):
+            with self.subTest(name=name), open(os.path.join(script_dir, name), "rb") as stream:
+                self.assertNotIn(b"\r", stream.read())
+
     def test_wrappers_are_installed_and_do_not_use_eval(self):
         with open(os.path.join(PACKAGE, "CMakeLists.txt"), "r", encoding="utf-8") as stream:
             cmake = stream.read()
@@ -176,6 +182,45 @@ d435i_mount:
                 self.assertEqual(stream.read().strip(),
                                  "call /go2_map_accumulator/save")
 
+
+    @unittest.skipIf(os.name == "nt" or not shutil.which("bash"),
+                     "native Bash is required")
+    def test_generate_pgm_preflight_allows_missing_future_map(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = os.path.join(directory, "bin")
+            os.makedirs(binary)
+            for name in ("rospack", "roslaunch"):
+                path = os.path.join(binary, name)
+                with open(path, "w", encoding="utf-8") as stream:
+                    stream.write("#!/usr/bin/env bash\nexit 0\n")
+                os.chmod(path, 0o755)
+            setup = os.path.join(directory, "setup.bash")
+            with open(setup, "w", encoding="utf-8") as stream:
+                stream.write('export PATH="%s:$PATH"\n' % binary)
+            future_map = os.path.join(directory, "export", "public_map.pcd")
+
+            result = subprocess.run([
+                "bash", os.path.join(PACKAGE, "scripts", "generate_pgm.sh"),
+                "--check", setup, "go2_mapping", "export_occupancy.launch",
+                future_map,
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+                timeout=10)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(os.path.exists(future_map))
+
+    def test_generate_pgm_runtime_publishes_first_source_pcd(self):
+        path = os.path.join(PACKAGE, "scripts", "generate_pgm.sh")
+        with open(path, "r", encoding="utf-8") as stream:
+            source = stream.read()
+        copy_session_map = 'cp -- "${PCD_PATH}" "${TEMP_SOURCE_PCD}"'
+        prepare_source_dir = 'mkdir -p "$(dirname "${SOURCE_PCD_PATH}")"'
+        run_generator = 'roslaunch "${PACKAGE_NAME}" "${LAUNCH_FILE}"'
+        self.assertNotIn("source PCD is missing or empty", source)
+        self.assertIn(copy_session_map, source)
+        self.assertIn(prepare_source_dir, source)
+        self.assertLess(source.index(prepare_source_dir), source.index(copy_session_map))
+        self.assertLess(source.index(copy_session_map), source.index(run_generator))
 
 if __name__ == "__main__":
     unittest.main()

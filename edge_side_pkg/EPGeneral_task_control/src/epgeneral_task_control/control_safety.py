@@ -270,12 +270,14 @@ class NavigationControlSafety(object):
             self.latch("control disable failed: %s" % exc)
             raise
 
-    def disarm(self):
+    def disarm(self, allow_confirmed_disabled=False):
         timeout = float(self.config["control_service_timeout_seconds"])
         if not self.transition_lock.acquire(timeout=timeout):
             self.latch("control transition did not finish before disarm")
             raise ControlSafetyError("control transition did not finish before disarm", "CONTROL_SERVICE_TIMEOUT")
         try:
+            if allow_confirmed_disabled and self._control_matches(False):
+                return
             self._disarm_locked()
         finally:
             self.transition_lock.release()

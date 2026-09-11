@@ -76,10 +76,51 @@ class Go2Robot3ProfileTests(unittest.TestCase):
         self.assertEqual([video[key] for key in ("output_width", "output_height", "framerate",
                          "srt_port", "srt_latency_ms", "bitrate_kbps")], [640, 480, 15, 9000, 120, 2500])
         script = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
-        self.assertIn('CAMERA_SERIAL="339222070647"', script)
-        for argument in ("color_fps:=15", "enable_depth:=false", "enable_infra1:=false",
-                         "enable_infra2:=false", "enable_gyro:=false", "enable_accel:=false", "publish_tf:=false"):
+        self.assertIn('CAMERA_SERIAL="${CCS_D435_SERIAL:-}"', script)
+        self.assertIn('if [[ -n "${CAMERA_SERIAL}" ]]', script)
+        self.assertIn('camera_args+=("serial_no:=${CAMERA_SERIAL}")', script)
+        self.assertNotIn("device_type:=d435i", script)
+        self.assertNotIn('serial_no:="_${CAMERA_SERIAL}"', script)
+        for argument in ("color_width:=640", "color_height:=480", "color_fps:=15",
+                         "enable_depth:=false", "enable_infra:=false", "enable_infra1:=false",
+                         "enable_infra2:=false", "enable_gyro:=false", "enable_accel:=false",
+                         "publish_tf:=false"):
             self.assertIn(argument, script)
+
+    def test_camera_readiness_precedes_ready_message_and_srt(self):
+        script = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
+        camera_start = script.index('launch 2 --defer-ready "${camera_args[@]}"')
+        camera_gate = script.index('"${READINESS}" camera --timeout 30 --max-age 3')
+        camera_ready = script.index('report OK "camera is ready."')
+        core_gate = script.index('"${READINESS}" inputs --timeout 30 --max-age 3')
+        video_start = script.index("launch 5 epgeneral_video_srt")
+        self.assertLess(camera_start, camera_gate)
+        self.assertLess(camera_gate, camera_ready)
+        self.assertLess(camera_ready, core_gate)
+        self.assertLess(core_gate, video_start)
+        self.assertIn("D435i RGB did not produce fresh frames within 30 seconds", script)
+        self.assertIn('${LOG_DIR}/camera.log', script)
+
+    def test_startup_output_matches_go2_robot2_contract(self):
+        script = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
+        self.assertIn('report OK "${name} is ready."', script)
+        self.assertIn('if [[ "${announce_ready}" == true ]]; then', script)
+        self.assertIn('report OK "${name} is ready."\n  fi\n  return 0', script)
+        self.assertIn(
+            "GO2 configuration, time, persistent and on-demand launch files passed "
+            "preflight; no nodes were started.",
+            script,
+        )
+        self.assertIn(
+            "GO2 CCS services are running. Mapping/localization remain task-managed. "
+            "Ctrl+C stops only this workflow.",
+            script,
+        )
+        self.assertNotIn("node registered", script)
+        self.assertNotIn("report INFO", script)
+        self.assertIn('run_quiet python3 "${PREFLIGHT}"', script)
+        self.assertIn('run_quiet python3 "${READINESS}"', script)
+        self.assertIn('run_quiet python3 "${WORKSPACE}/scripts/ccs_sntp_sync.py"', script)
 
     def test_on_demand_mapping_navigation_share_exclusive_lock(self):
         mapping = config("map_stream")
@@ -93,7 +134,7 @@ class Go2Robot3ProfileTests(unittest.TestCase):
                          "mapping_prerequisites_go2_robot3.launch")
         self.assertEqual(config("task_control")["adapter"]["navigation_management"], "attach")
 
-    def test_task_control_has_persistent_safety_and_matching_clock_tolerance(self):
+    def test_task_control_has_persistent_safety_and_startup_checks_availability(self):
         task = config("task_control")
         adapter = task["adapter"]
         self.assertTrue(adapter["auto_arm_on_schedule"])
@@ -104,7 +145,8 @@ class Go2Robot3ProfileTests(unittest.TestCase):
                          "/home/unitree/ccs_edge_ws/run/state/go2_task_safety.json")
         self.assertEqual(task["timeouts"]["utc_tolerance_seconds"], 2.0)
         script = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
-        self.assertIn("--max-offset 2", script)
+        self.assertIn("--availability-only", script)
+        self.assertNotIn("--max-offset", script)
         self.assertNotIn("--set", script)
         self.assertFalse(list(PROFILE.glob("*.service")))
 
@@ -121,6 +163,15 @@ class Go2Robot3ProfileTests(unittest.TestCase):
         self.assertNotIn("pkill", script)
         self.assertNotIn("bringup.launch", script)
         self.assertNotIn("data: true", script)
+        self.assertIn('LOG_ROOT="${CCS_EDGE_LOG_ROOT:-/home/unitree/.ros/ccs_edge_ws}"', script)
+        self.assertIn('RUN_ID="$(date -u +%Y%m%dT%H%M%S.%NZ)_$$"', script)
+        self.assertIn('export ROS_LOG_DIR="${LOG_DIR}/ros"', script)
+        self.assertIn('ln -sfn -- "${RUN_ID}" "${LOG_ROOT}/latest"', script)
+        self.assertIn('setsid roscore >"${LOG_DIR}/roscore.log"', script)
+        self.assertIn('setsid roslaunch "$@" >"${log_file}"', script)
+        self.assertIn('log_dir:="${LOG_DIR}/mqtav"', script)
+        self.assertIn('log_dir:="${LOG_DIR}/mapping"', script)
+        self.assertIn('log_dir:="${LOG_DIR}/relocalization"', script)
         for name in ("mapping_prerequisites_go2_robot3.launch", "mapping_fast_lio.launch",
                      "export_occupancy.launch", "navigation_guard.launch", "navigation.launch"):
             self.assertIn(name, script)
@@ -163,6 +214,36 @@ class Go2Robot3ProfileTests(unittest.TestCase):
 
 
 class Go2FreshnessTests(unittest.TestCase):
+    def test_camera_mode_is_separate_from_core_inputs(self):
+        self.assertEqual(
+            READINESS.topics_for_mode("camera"),
+            {"/camera/color/image_raw": "sensor_msgs/Image"},
+        )
+        self.assertNotIn("/camera/color/image_raw", READINESS.topics_for_mode("inputs"))
+
+    def test_camera_requires_two_fresh_increasing_frames(self):
+        topic = "/camera/color/image_raw"
+        observations = {}
+        self.assertEqual(
+            READINESS.record_observation(observations, topic, 101.0, 101.1, 100.0, 3.0),
+            1,
+        )
+        self.assertEqual(
+            READINESS.record_observation(observations, topic, 102.0, 102.1, 100.0, 3.0),
+            2,
+        )
+        self.assertEqual(
+            READINESS.record_observation(observations, topic, 102.0, 102.2, 100.0, 3.0),
+            0,
+        )
+
+        for stamp, now, started in ((99.0, 100.0, 100.0), (100.0, 104.0, 90.0), (103.0, 102.0, 100.0)):
+            with self.subTest(stamp=stamp, now=now, started=started):
+                self.assertEqual(
+                    READINESS.record_observation({}, topic, stamp, now, started, 3.0),
+                    0,
+                )
+
     def test_disabled_requires_post_subscription_diagnostics(self):
         self.assertTrue(READINESS.disabled_diagnostics(diagnostics(), 102.0, 100.0, 3.0))
         self.assertFalse(READINESS.disabled_diagnostics(diagnostics(stamp=99.0), 102.0, 100.0, 3.0))
@@ -177,7 +258,7 @@ class Go2FreshnessTests(unittest.TestCase):
 
 
 class Go2SntpTests(unittest.TestCase):
-    def response_socket(self, unsynchronized=False, forged=False):
+    def response_socket(self, unsynchronized=False, forged=False, server_seconds=1800000001):
         sock = mock.MagicMock()
         sock.__enter__.return_value = sock
         sock.getpeername.return_value = ("192.168.50.101", 123)
@@ -188,12 +269,38 @@ class Go2SntpTests(unittest.TestCase):
             packet[1] = 2
             request = sock.send.call_args.args[0]
             packet[24:32] = b"\x00" * 8 if forged else request[40:48]
-            packet[32:40] = struct.pack("!II", int(SNTP.NTP_DELTA + 1800000001), 0)
+            packet[32:40] = struct.pack("!II", int(SNTP.NTP_DELTA + server_seconds), 0)
             packet[40:48] = packet[32:40]
             return bytes(packet)
 
         sock.recv.side_effect = receive
         return sock
+
+    def test_availability_cli_accepts_large_offsets_and_unsynchronized_server(self):
+        for seconds in (1800000000 - 86400, 1800000000 + 86400):
+            with self.subTest(server_seconds=seconds), \
+                 mock.patch.object(SNTP.socket, "socket", return_value=self.response_socket(
+                     unsynchronized=True, server_seconds=seconds)), \
+                 mock.patch.object(SNTP.time, "time", return_value=1800000000.0), \
+                 mock.patch.object(SNTP, "timestamp", side_effect=AssertionError("time comparison")), \
+                 mock.patch.object(SNTP.sys, "argv", ["ccs_sntp_sync.py", "--availability-only"]), \
+                 mock.patch("builtins.print"):
+                self.assertEqual(SNTP.main(), 0)
+
+    def test_availability_cli_rejects_timeout_and_unrelated_or_malformed_reply(self):
+        for failure in ("timeout", "unrelated", "malformed"):
+            sock = self.response_socket(forged=failure == "unrelated")
+            if failure == "timeout":
+                sock.recv.side_effect = SNTP.socket.timeout("timed out")
+            elif failure == "malformed":
+                sock.recv.side_effect = None
+                sock.recv.return_value = b"invalid"
+            with self.subTest(failure=failure), \
+                 mock.patch.object(SNTP.socket, "socket", return_value=sock), \
+                 mock.patch.object(SNTP.sys, "argv", [
+                     "ccs_sntp_sync.py", "--availability-only", "--retries", "1"]), \
+                 mock.patch("builtins.print"):
+                self.assertEqual(SNTP.main(), 1)
 
     def test_sntp_computes_midpoint_offset_without_changing_clock(self):
         with mock.patch.object(SNTP.socket, "socket", return_value=self.response_socket()), \

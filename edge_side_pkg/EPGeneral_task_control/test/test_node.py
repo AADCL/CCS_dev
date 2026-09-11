@@ -113,17 +113,17 @@ class NodeTests(unittest.TestCase):
     def messages(self):
         return [msgpack.unpackb(item[0], raw=False) for item in self.node.socket.sent]
 
-    def deliver(self, split=True):
+    def deliver(self, split=True, request_id="prepare"):
         raw = json.dumps(task_payload(self.config["device_id"]), sort_keys=True, separators=(",", ":")).encode("utf-8")
         compressed = zlib.compress(raw)
         crc32 = zlib.crc32(compressed) & 0xFFFFFFFF
         chunks = [compressed[:len(compressed) // 2], compressed[len(compressed) // 2:]] if split else [compressed]
         prepare = {"revision": 1, "chunk_count": len(chunks), "compressed_bytes": len(compressed),
                    "raw_bytes": len(raw), "crc32": crc32, "compression": "zlib", "encoding": "json-utf8"}
-        self.node.handle_datagram(pack(self.config, "task_prepare", "prepare", prepare), self.config["ground_station_ip"])
+        self.node.handle_datagram(pack(self.config, "task_prepare", request_id, prepare), self.config["ground_station_ip"])
         for index in reversed(range(len(chunks))):
             payload = {"revision": 1, "chunk_count": len(chunks), "chunk_index": index, "crc32": crc32, "data": chunks[index]}
-            self.node.handle_datagram(pack(self.config, "task_chunk", "prepare", payload), self.config["ground_station_ip"])
+            self.node.handle_datagram(pack(self.config, "task_chunk", request_id, payload), self.config["ground_station_ip"])
         return crc32, len(chunks)
 
     def prepare_ready(self, request_id="commit"):
@@ -136,6 +136,91 @@ class NodeTests(unittest.TestCase):
         )
         self.assertIsNotNone(preparation)
         self.node.feedback_callback(feedback)
+
+    def write_emergency_latch(self, content=None):
+        path = os.path.join(self.temp.name, "go2_task_safety.json")
+        with open(path, "w", encoding="utf-8") as stream:
+            stream.write(content if content is not None else json.dumps({
+                "schema_version": 1, "latched": True,
+                "reason": "control disable timed out",
+            }))
+        self.node.emergency_stop_state_file = path
+        return path
+
+    def test_negotiate_reports_persistent_emergency_reason(self):
+        self.write_emergency_latch()
+        self.node.handle_datagram(pack(
+            self.config, "negotiate_task", "negotiate", {}),
+            self.config["ground_station_ip"])
+        acknowledgement, summary = self.messages()[-2:]
+        self.assertTrue(acknowledgement["payload"]["accepted"])
+        self.assertEqual(summary["message_type"], "task_summary")
+        self.assertEqual(summary["payload"]["state"], "failed")
+        self.assertEqual(summary["payload"]["error_code"], "EMERGENCY_STOP_LATCHED")
+        self.assertIn("control disable timed out", summary["payload"]["message"])
+        self.assertIn("reset_emergency_stop", summary["payload"]["message"])
+
+    def test_corrupt_emergency_marker_is_fail_closed(self):
+        self.write_emergency_latch("corrupt")
+        self.node.handle_datagram(pack(
+            self.config, "task_prepare", "prepare-corrupt", {}),
+            self.config["ground_station_ip"])
+        acknowledgement = self.messages()[-1]
+        self.assertFalse(acknowledgement["payload"]["accepted"])
+        self.assertEqual(acknowledgement["payload"]["error_code"], "EMERGENCY_STOP_LATCHED")
+        self.assertIn("cannot be read", acknowledgement["payload"]["reason"])
+
+    def test_latched_prepare_is_rejected_before_transfer(self):
+        self.write_emergency_latch()
+        self.deliver(split=False)
+        acknowledgement = self.messages()[-1]
+        self.assertFalse(acknowledgement["payload"]["accepted"])
+        self.assertEqual(acknowledgement["payload"]["error_code"], "EMERGENCY_STOP_LATCHED")
+        self.assertIsNone(self.node.transfer)
+        self.assertEqual(self.node.publisher.messages, [])
+
+    def test_latch_appearing_during_transfer_rejects_commit(self):
+        crc32, count = self.deliver()
+        self.assertIsNotNone(self.node.transfer)
+        self.write_emergency_latch()
+        self.node.handle_datagram(pack(self.config, "task_commit", "commit-latched", {
+            "revision": 1, "chunk_count": count, "crc32": crc32,
+        }), self.config["ground_station_ip"])
+        acknowledgement = self.messages()[-1]
+        self.assertFalse(acknowledgement["payload"]["accepted"])
+        self.assertEqual(acknowledgement["payload"]["error_code"], "EMERGENCY_STOP_LATCHED")
+        self.assertIsNone(self.node.transfer)
+        self.assertIsNone(self.node.store.load("task-1", "sub-1"))
+
+    def test_emergency_preparation_failure_is_terminal_until_redelivery(self):
+        crc32, count = self.deliver()
+        self.node.handle_datagram(pack(self.config, "task_commit", "commit", {
+            "revision": 1, "chunk_count": count, "crc32": crc32,
+        }), self.config["ground_station_ip"])
+        feedback = SimpleNamespace(
+            request_id="commit", task_id="task-1", subtask_id="sub-1",
+            device_id=self.config["device_id"], execution_id="", revision=1,
+            state="failed", waypoint_index=-1, waypoint_count=0, progress=0.0,
+            position=SimpleNamespace(x=0, y=0, z=0),
+            error_code="EMERGENCY_STOP_LATCHED", message="manual reset required",
+        )
+        self.node.feedback_callback(feedback)
+        sent = len(self.node.publisher.messages)
+        self.node.preparation.last_publish_at -= self.config["preparation_retry_seconds"] + 1
+        self.node.watchdog()
+        self.assertEqual(len(self.node.publisher.messages), sent)
+        self.assertFalse(self.node.preparation.retryable)
+
+    def test_redelivery_after_manual_reset_restarts_preparation(self):
+        marker = self.write_emergency_latch()
+        self.deliver(split=False)
+        os.unlink(marker)
+        crc32, count = self.deliver(split=False, request_id="prepare-reset")
+        self.node.handle_datagram(pack(self.config, "task_commit", "commit-reset", {
+            "revision": 1, "chunk_count": count, "crc32": crc32,
+        }), self.config["ground_station_ip"])
+        self.assertTrue(self.messages()[-1]["payload"]["accepted"])
+        self.assertEqual(self.node.publisher.messages[-1].action, FakeCommand.PREPARE)
 
     def test_transfer_missing_chunks_commit_and_duplicate(self):
         raw = json.dumps(task_payload(self.config["device_id"]), sort_keys=True, separators=(",", ":")).encode("utf-8")

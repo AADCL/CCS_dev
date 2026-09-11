@@ -6,6 +6,32 @@ import threading
 import time
 
 
+INPUT_TOPICS = {
+    "/livox/lidar": "livox_ros_driver2/CustomMsg",
+    "/livox/imu": "sensor_msgs/Imu",
+    "/go2/imu": "sensor_msgs/Imu",
+    "/go2/state/low_state": "go2_control/Go2LowState",
+    "/go2/battery_state": "sensor_msgs/BatteryState",
+}
+CAMERA_TOPICS = {"/camera/color/image_raw": "sensor_msgs/Image"}
+DISABLED_TOPICS = {"/go2/diagnostics": "diagnostic_msgs/DiagnosticArray"}
+
+
+def topics_for_mode(mode):
+    return {
+        "inputs": INPUT_TOPICS,
+        "camera": CAMERA_TOPICS,
+        "disabled": DISABLED_TOPICS,
+    }[mode]
+
+
+def record_observation(observations, topic, stamp, now, started, max_age, valid=True):
+    fresh = valid and stamp >= started and 0 <= now - stamp <= max_age
+    count, previous, _ = observations.get(topic, (0, 0.0, 0.0))
+    observations[topic] = ((count + 1) if fresh and stamp > previous else 0, stamp, now)
+    return observations[topic][0]
+
+
 def disabled_diagnostics(message, now, started, max_age):
     stamp = message.header.stamp.to_sec()
     if stamp < started or not 0 <= now - stamp <= max_age:
@@ -26,7 +52,7 @@ def disabled_diagnostics(message, now, started, max_age):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("inputs", "disabled"))
+    parser.add_argument("mode", choices=("inputs", "camera", "disabled"))
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--max-age", type=float, default=3.0)
     args = parser.parse_args()
@@ -38,17 +64,7 @@ def main():
     lock = threading.Lock()
     observations = {}
     enabled = [None]
-    if args.mode == "inputs":
-        topics = {
-            "/livox/lidar": "livox_ros_driver2/CustomMsg",
-            "/livox/imu": "sensor_msgs/Imu",
-            "/go2/imu": "sensor_msgs/Imu",
-            "/go2/state/low_state": "go2_control/Go2LowState",
-            "/go2/battery_state": "sensor_msgs/BatteryState",
-            "/camera/color/image_raw": "sensor_msgs/Image",
-        }
-    else:
-        topics = {"/go2/diagnostics": "diagnostic_msgs/DiagnosticArray"}
+    topics = topics_for_mode(args.mode)
 
     def observe(message, topic):
         now = time.time()
@@ -58,8 +74,7 @@ def main():
         if args.mode == "disabled":
             valid = disabled_diagnostics(message, now, started, args.max_age)
         with lock:
-            count, previous, _ = observations.get(topic, (0, 0.0, 0.0))
-            observations[topic] = ((count + 1) if valid and stamp > previous else 0, stamp, now)
+            record_observation(observations, topic, stamp, now, started, args.max_age, valid)
 
     subscribers = [rospy.Subscriber(topic, roslib.message.get_message_class(type_name),
                                    observe, callback_args=topic, queue_size=1)
