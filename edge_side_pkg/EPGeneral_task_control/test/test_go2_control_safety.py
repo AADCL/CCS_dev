@@ -142,6 +142,18 @@ class ControlSafetyTests(unittest.TestCase):
             self.control.disarm()
         self.assertTrue(self.control.latched)
 
+    def test_shutdown_accepts_an_existing_fresh_disabled_confirmation(self):
+        self.control.disarm(allow_confirmed_disabled=True)
+        self.control.enable_client.assert_not_called()
+        self.assertFalse(self.control.latched)
+
+    def test_shutdown_does_not_accept_a_stale_disabled_confirmation(self):
+        self.control.control = (False, time.monotonic() - 5.0)
+        self.control.enable_client.side_effect = lambda unused: response()
+        with self.assertRaisesRegex(ControlSafetyError, "confirmation timed out"):
+            self.control.disarm(allow_confirmed_disabled=True)
+        self.assertTrue(self.control.latched)
+
     def test_late_enable_timeout_stays_locked_and_is_compensated(self):
         released = threading.Event()
         entered = threading.Event()
@@ -322,6 +334,40 @@ class Go2AdapterTests(unittest.TestCase):
         self.adapter.client.cancel_all_goals.side_effect = RuntimeError("lost action")
         self.adapter.close()
         self.safety.enable_client.assert_called_once_with(False)
+
+    def test_ros_shutdown_with_fresh_disabled_state_does_not_reissue_rpc(self):
+        self.adapter.rospy.is_shutdown.return_value = True
+        self.adapter.close()
+        self.safety.enable_client.assert_not_called()
+        self.assertFalse(self.safety.latched)
+
+    def test_on_shutdown_hook_accepts_fresh_disabled_state_before_shutdown_flag(self):
+        self.adapter.rospy.is_shutdown.return_value = False
+        self.adapter.rospy.core.is_shutdown_requested.return_value = True
+        self.adapter.close()
+        self.safety.enable_client.assert_not_called()
+        self.assertFalse(self.safety.latched)
+
+    def test_close_outside_ros_shutdown_still_confirms_disable(self):
+        self.adapter.rospy.is_shutdown.return_value = False
+        self.adapter.rospy.core.is_shutdown_requested.return_value = False
+        self.adapter.close()
+        self.safety.enable_client.assert_called_once_with(False)
+
+    def test_shutdown_unload_with_fresh_disabled_state_does_not_reissue_rpc(self):
+        self.adapter.rospy.is_shutdown.return_value = True
+        self.command.request_id = "shutdown-unload"
+        self.adapter._unload(self.command)
+        self.safety.enable_client.assert_not_called()
+        self.assertFalse(self.safety.latched)
+
+    def test_shutdown_unload_accepts_disabled_state_before_shutdown_flag(self):
+        self.adapter.rospy.is_shutdown.return_value = False
+        self.adapter.rospy.core.is_shutdown_requested.return_value = True
+        self.command.request_id = "shutdown-unload"
+        self.adapter._unload(self.command)
+        self.safety.enable_client.assert_not_called()
+        self.assertFalse(self.safety.latched)
 
     def test_manual_reset_requires_no_active_execution_and_does_not_enable(self):
         self.safety.latch("test")

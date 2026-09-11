@@ -139,6 +139,26 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("config:=/home/nvidia/go2_mid360_nav/catkin_ws/src/go2_map_tools/config/corridor_nav.yaml",
                       commands["generate_pgm"])
 
+    def test_runtime_log_directory_redirects_only_session_logs(self):
+        config = load_config(MAPPING, DEVICE)
+        session_dir = os.path.abspath(os.path.join("tmp", "session"))
+        log_dir = os.path.abspath(os.path.join("tmp", "runtime-logs", "session"))
+        values = {
+            "map_id": "map-1", "device_id": config["device_id"],
+            "session_id": "a" * 32, "session_dir": session_dir,
+            "session_log_dir": log_dir,
+            "pcd_path": os.path.join(session_dir, "map.pcd"),
+            "pgm_path": os.path.join(session_dir, "map.pgm"),
+            "yaml_path": os.path.join(session_dir, "map.yaml"),
+        }
+        commands = build_integration_commands(config, values)
+        self.assertEqual(commands["start_fast_lio"][9],
+                         os.path.join(session_dir, "fast_lio.pid"))
+        self.assertEqual(commands["start_fast_lio"][10],
+                         os.path.join(log_dir, "fast_lio.log"))
+        self.assertIn(os.path.join(log_dir, "pgm_generation.log"),
+                      commands["generate_pgm"])
+
     def test_schema_five_is_rejected(self):
         path = self._modified_mapping("schema_version: 6", "schema_version: 5")
         with self.assertRaisesRegex(ConfigError, "schema_version must be 6"):

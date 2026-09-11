@@ -86,16 +86,19 @@ def write_binary_pcd(path, points):
 
 
 class SessionPaths(object):
-    def __init__(self, config, identity):
+    def __init__(self, config, identity, log_root=None):
         self.root = os.path.abspath(config["workspace_root"])
         safe_session = identity["session_id"]
         if (not safe_session or len(safe_session) > 128
                 or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for char in safe_session)):
             raise ArtifactError("session_id cannot be used as a directory name")
         self.session_dir = os.path.join(self.root, safe_session)
+        self.log_dir = (os.path.join(os.path.abspath(os.path.expanduser(log_root)), safe_session)
+                        if log_root else self.session_dir)
         values = {
             "map_id": identity["map_id"], "device_id": config["device_id"],
             "session_id": identity["session_id"], "session_dir": self.session_dir,
+            "session_log_dir": self.log_dir,
             "map_name": "19700101_000000",
         }
         values.update({"pcd_path": "", "pgm_path": "", "yaml_path": ""})
@@ -119,6 +122,7 @@ class SessionPaths(object):
     def prepare(self, minimum_free_bytes):
         os.makedirs(self.session_dir, mode=0o750, exist_ok=True)
         os.makedirs(self.fragment_dir, mode=0o750, exist_ok=True)
+        os.makedirs(self.log_dir, mode=0o750, exist_ok=True)
         probe = os.path.join(self.session_dir, ".write-probe")
         try:
             with io.open(probe, "wb") as stream:

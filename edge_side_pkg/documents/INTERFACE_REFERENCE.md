@@ -508,6 +508,7 @@ adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 
 | epgeneral_udp_telemetry.launch：diagnostics_topic | /epgeneral_udp_telemetry/diagnostics | DiagnosticArray 发布名 |
 | epgeneral_video_srt.launch / epgeneral_realsense_d435i_srt.launch：video_config_file | 共享目录/video.yaml | 视频配置；后者不会自动安装相机驱动 |
 | epgeneral_map_stream.launch：mapping_config_file | 共享目录/map_stream.yaml | 建图配置 |
+| epgeneral_map_stream.launch：log_dir | 空字符串 | 可选 map-stream 事件日志目录；设置后 FAST-LIO 与 PGM 日志进入 `sessions/<session_id>` 子目录 |
 | mapping_prerequisites.launch：extrinsics_file | Go2 calibration/go2_edu_02/extrinsics.yaml 绝对路径 | Go2 prerequisites 的外参文件，不通用于其他 profile |
 | epgeneral_relocalization.launch：config_file | 共享目录/relocalization.yaml | 重定位配置 |
 | epgeneral_relocalization.launch：log_dir | 空字符串 | 空时由节点选默认日志目录 |
@@ -556,6 +557,8 @@ Ground-Air 设备适配 launch 还提供：manual_mapping_control/relocalization
 | `CCS_GO2_NAV_SETUP` | Go2；/home/nvidia/go2_mid360_nav/catkin_ws/devel/setup.bash | 算法 underlay |
 | `CCS_GO2_NAV_WORKSPACE` | Go2 Robot2/Robot3；/home/unitree/go2_nav_ws | 原生算法工作空间根目录，脚本 source 其中 devel/setup.bash |
 | `CCS_GO2_NETWORK_INTERFACE` | Go2 Robot2/Robot3；go2dds | 真实 SDK bridge 使用的 DDS 接口 |
+| `CCS_D435_SERIAL` | Go2 Robot3；空字符串 | 可选 RealSense 序列号；空值使用单设备自动选择，非空值原样传给 `serial_no`，不添加前导下划线 |
+| `CCS_EDGE_LOG_ROOT` | Go2 Robot3；`/home/unitree/.ros/ccs_edge_ws` | 每次正常启动按 UTC 时间、纳秒和 PID 建立独立日志目录；`--check` 不创建目录 |
 | `CCS_GO2_USE_REAL_SDK` | Go2 Robot2；true | SDK 模式开关，仅接受 true/false；Robot3 固定使用真实 SDK，不提供此覆盖 |
 | `CCS_LIVOX_SETUP` | Scout /home/nvidia/livox_fastlio/devel/setup.bash；Wheeltec /home/nrc19/livox_fastlio/devel/setup.bash | 雷达与算法环境 |
 | `CCS_REALSENSE_SETUP` | Scout；/home/nvidia/realsense_ws/devel/setup.bash | 相机环境 |

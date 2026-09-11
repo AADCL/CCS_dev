@@ -1,4 +1,6 @@
 import datetime
+import json
+import os
 import socket
 import threading
 import time
@@ -59,6 +61,7 @@ class Preparation(object):
         self.last_publish_at = 0.0
         self.error_code = ""
         self.message = "task stored; navigation preparation pending"
+        self.retryable = True
 
 
 class RosTaskControlNode(object):
@@ -91,6 +94,38 @@ class RosTaskControlNode(object):
         self.ack_cache = {}
         self.sequence = 0
         self.state = "no_task"
+        adapter = config.get("adapter", {})
+        marker = adapter.get("emergency_stop_state_file") if isinstance(adapter, dict) else None
+        self.emergency_stop_state_file = (
+            os.path.abspath(os.path.expanduser(marker)) if isinstance(marker, str) and marker else "")
+
+    def _emergency_stop_status(self):
+        if not self.emergency_stop_state_file or not os.path.lexists(self.emergency_stop_state_file):
+            return None
+        reason = ""
+        try:
+            with open(self.emergency_stop_state_file, "r", encoding="utf-8") as stream:
+                record = json.load(stream)
+            if isinstance(record, dict) and isinstance(record.get("reason"), str):
+                reason = record["reason"].strip()
+        except (IOError, OSError, TypeError, ValueError):
+            reason = "persistent emergency-stop state cannot be read"
+        message = "emergency stop requires manual reset"
+        if reason:
+            message += ": " + reason
+        message += "; confirm disabled control, then call reset_emergency_stop"
+        return {"state": "failed", "message": message,
+                "error_code": "EMERGENCY_STOP_LATCHED"}
+
+    def _reject_if_emergency_stopped(self, command, discard_transfer=False):
+        status = self._emergency_stop_status()
+        if status is None:
+            return False
+        if discard_transfer:
+            self.transfer = None
+        self._set_state("failed")
+        self._ack(command, False, status["message"], status["error_code"])
+        return True
 
     def _set_state(self, state):
         self.state = str(state)
@@ -189,6 +224,9 @@ class RosTaskControlNode(object):
 
     def _negotiate(self, command):
         status = self.mission_store.status(command["task_id"], command["device_id"])
+        emergency = self._emergency_stop_status()
+        if emergency is not None:
+            status = dict(status, **emergency)
         self._ack(command, True, cache=True)
         self._send(command, "task_summary", status)
 
@@ -254,6 +292,8 @@ class RosTaskControlNode(object):
         return True
 
     def _prepare(self, command):
+        if self._reject_if_emergency_stopped(command, discard_transfer=True):
+            return
         payload = command["payload"]
         try:
             revision = self._integer(payload, "revision", 1)
@@ -312,6 +352,8 @@ class RosTaskControlNode(object):
                 return
 
     def _commit(self, command):
+        if self._reject_if_emergency_stopped(command, discard_transfer=True):
+            return
         payload = command["payload"]
         transfer = self.transfer
         try:
@@ -368,6 +410,8 @@ class RosTaskControlNode(object):
                            revision, len(trajectory["waypoints"]), metadata["xml_path"])
 
     def _execute(self, command):
+        if self._reject_if_emergency_stopped(command):
+            return
         if not command["execution_id"]:
             self._ack(command, False, "execution ID is required", "EXECUTION_CONFLICT")
             return
@@ -446,6 +490,16 @@ class RosTaskControlNode(object):
                 self.mission_store.save(payload, "received")
         preparation = Preparation(record, request_id, self.clock())
         self.preparation = preparation
+        emergency = self._emergency_stop_status()
+        if emergency is not None:
+            preparation.state = "failed"
+            preparation.message = emergency["message"]
+            preparation.error_code = emergency["error_code"]
+            preparation.retryable = False
+            self.mission_store.update_state(
+                preparation.identity["task_id"], preparation.identity["device_id"], "failed")
+            self._set_state("failed")
+            return
         self._set_state("received")
         preparation.last_publish_at = self.clock()
         self._publish_command("PREPARE", preparation.record, preparation.request_id)
@@ -581,6 +635,7 @@ class RosTaskControlNode(object):
             self._set_state("ready")
         elif state == "failed":
             preparation.state = "failed"
+            preparation.retryable = preparation.error_code != "EMERGENCY_STOP_LATCHED"
             self.mission_store.update_state(
                 preparation.identity["task_id"], preparation.identity["device_id"], "failed")
             self._set_state("failed")
@@ -691,7 +746,8 @@ class RosTaskControlNode(object):
             self.transfer = None
             self._set_state("ready" if existing is not None else "no_task")
         preparation = self.preparation
-        if preparation is not None and preparation.state != "ready":
+        if (preparation is not None and preparation.state != "ready" and
+                preparation.retryable):
             if now - preparation.last_publish_at >= self.config["preparation_retry_seconds"]:
                 preparation.last_publish_at = now
                 preparation.state = "received"
