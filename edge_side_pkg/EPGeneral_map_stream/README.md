@@ -111,6 +111,14 @@ FAST_LIO start 必须在启动超时内产生输出。Go2 MID360 profile 使用�
 YAML 的 `image` 必须引用 `map.pgm`，并包含有效的 `resolution`、三元素
 `origin`、`occupied_thresh` 和 `free_thresh`。
 
+## GO2 地图生成与日志
+
+原生 Robot2/Robot3 使用 /go2_map_accumulator/save_map；legacy 保存服务以所选 profile 为准。先校验本次 accumulator 输出的新鲜度并保存为 session PCD，再由 generate_pgm.sh 原子复制该快照至 source_pcd_path，然后执行 PGM 工具。第一次生成前 export PCD 不存在是允许的；不能用空文件或旧图替代。所有直接/间接 Shell 必须 LF，无 BOM 并可执行，避免协商时报 bash\r / 127。
+
+epgeneral_map_stream.launch 可选 log_dir：事件写 log_dir/map_stream.log，FAST-LIO/PGM 写 log_dir/sessions/<session_id>/。未提供则保留原日志位置；配置模板先在 session_dir 校验，再映射至受控日志目录，PID/成果路径不迁移。创建成果或日志目录遇到 OSError 时返回 ARTIFACT_STORAGE_UNAVAILABLE、释放会话，修复目录后可重新 prepare。
+
+从零安装与故障回滚见[部署指南](../documents/DEPLOYMENT_GUIDE.md)，实测范围见[设备记录](../deploy/README.md)。
+
 ## 安装与运行
 
 ```bash
@@ -126,7 +134,7 @@ source devel/setup.bash
 roslaunch epgeneral_map_stream epgeneral_map_stream.launch
 ```
 
-设备 ID/IP 始终来自 `epgeneral_device_config/config/device.yaml`。防火墙需允许
+设备 ID/IP 来自 device_config_file；默认是 `epgeneral_device_config/config/device.yaml`，一键入口显式读取工作空间/config/profile/device.yaml。防火墙需允许
 平台访问端侧 UDP 14561 和 TCP 14600，并允许端侧发往平台 UDP 14562。
 
 ## 验证

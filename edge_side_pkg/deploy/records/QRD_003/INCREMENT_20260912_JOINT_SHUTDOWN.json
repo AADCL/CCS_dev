@@ -1,0 +1,159 @@
+{
+  "date": "2026-09-12",
+  "device_id": "QRD_003",
+  "base_commit": "c0243faeb08e8e98fe765a9d65166915bda282d2",
+  "uncommitted_increment": true,
+  "runtime_files": [
+    {
+      "path": "src/EPGeneral_task_control/src/epgeneral_task_control/control_safety.py",
+      "source": "runtime/control_safety.py",
+      "sha256": "37a099a8662e001d7a0b360c7661697b8412336739ae0ab327fd939a88a692bc",
+      "before_sha256": "4f4b3147291de764d418abff4102b0a8b1daefa21e781446b5f1969372de29f4"
+    },
+    {
+      "path": "src/EPGeneral_task_control/src/epgeneral_task_control/scout_adapter.py",
+      "source": "runtime/scout_adapter.py",
+      "sha256": "fb10efa86ae745f33c06bbb78e2fa05488f4ff1eded1e628e93b301d75393b51",
+      "before_sha256": "798e1167e17773c374d8ee14b1be9ef735f00cecffdd786efe46bc906638f6df"
+    }
+  ],
+  "document_files": [
+    {
+      "path": "docs/go2_robot3/INCREMENT_20260912_JOINT_SHUTDOWN.md",
+      "before_sha256": null,
+      "sha256": "620b06abc66a322f892b817b0f35a6b6ed4507166ccdc4d2704f86c2dd1e4c15"
+    },
+    {
+      "path": "docs/go2_robot3/README.md",
+      "before_sha256": "a350bc1f8dee22a1eba176dc175c1188d39eb6c6614f57278d72913f36e68bdf",
+      "sha256": "605e8cb8c1032e53de25151bbf6ba3dca0563cbefbbc998c08aaeed76ad4a925"
+    },
+    {
+      "path": "docs/go2_robot3/DEPLOYMENT.md",
+      "before_sha256": "a59611c15aba8b2852b4fdd70b68b075e3481344622f0bb08a191c935ec0202d",
+      "sha256": "85bddbff4e3202d4207e8cdeb7820644b30977810b962631081c3bb74d2aa878"
+    },
+    {
+      "path": "docs/go2_robot3/VALIDATION.md",
+      "before_sha256": "d68de3348dc6c4eb04b65b6249a5d89c45b80c5eee0ad37c4b1fe8a135f0df67",
+      "sha256": "88d895550cdb8d440ecbe8f4de65cbbbd0a7865c47e9371270f14dbb212cc80e"
+    },
+    {
+      "path": "docs/go2_robot3/deployment_source.json",
+      "before_sha256": null,
+      "sha256": "0d2a240993fb987ab076bde3de0be47aa57a801271e02caf8a8e22c3c3619d1c"
+    }
+  ],
+  "backup": "/home/unitree/ccs_edge_ws/backups/joint-task-shutdown-20260912T022612Z",
+  "evidence": "/home/unitree/ccs_edge_ws/run/joint-task-shutdown-20260912T022612Z",
+  "reset": {
+    "root_pid": 71886,
+    "reset_success": true,
+    "samples": 18,
+    "duration_seconds": 16.997427940368652,
+    "safety_absent": true,
+    "disabled_zero_command": true
+  },
+  "ordered_exit": {
+    "root_pid": 71886,
+    "signal": "SIGTERM",
+    "owned_pids": [
+      71886,
+      72032,
+      72054,
+      72077,
+      72111,
+      72148,
+      72200,
+      72238,
+      72239,
+      72350,
+      72387,
+      72388,
+      73086,
+      73157,
+      73344,
+      73412,
+      73603,
+      73668,
+      73809,
+      73880,
+      74114,
+      74194,
+      74356,
+      74424,
+      74425,
+      76918
+    ],
+    "remaining": [],
+    "marker_absent": true,
+    "master_exited": true,
+    "log_root": "/home/unitree/.ros/ccs_edge_ws/20260912T023317.665053025Z_71886",
+    "task_before_stop": "data: \"failed\"\n---\n"
+  },
+  "final_start": {
+    "root_pid": 77500,
+    "task_node_pid": 79933,
+    "adapter_pid": 79935,
+    "task_ros_log": "/home/unitree/.ros/ccs_edge_ws/20260912T023641.077962837Z_77500/ros/c982d986-ae52-11f1-8904-3c6d66616e6f/epgeneral_task_control-1.log",
+    "nodes": [
+      "/camera/realsense2_camera",
+      "/camera/realsense2_camera_manager",
+      "/epgeneral_map_stream",
+      "/epgeneral_mqtav",
+      "/epgeneral_navigation_task_adapter",
+      "/epgeneral_relocalization",
+      "/epgeneral_task_control",
+      "/epgeneral_udp_telemetry",
+      "/epgeneral_video_srt",
+      "/go2_sdk_bridge_real",
+      "/go2_velocity_shaper",
+      "/livox_lidar_publisher2",
+      "/rosout"
+    ],
+    "camera_fresh": true,
+    "disabled": true,
+    "marker_absent": true
+  },
+  "joint_delivery": {
+    "device_id": "QRD_003",
+    "acks": {
+      "prepare": "[rosout][INFO] 2026-09-12 10:45:47,536: sent task_prepare ACK request=joint-final-e3a249e4a18a42f0b82efbf960d4bb84 accepted=True",
+      "commit": "[rosout][INFO] 2026-09-12 10:45:48,266: sent task_commit ACK request=joint-final-414c17b0536246059218747ca537e0fe accepted=True"
+    },
+    "metadata": {
+      "task_id": "6b482cb3119944be9a166e661052b473",
+      "subtask_id": "2caa9832fe9049df92fc44461fb4e4e1",
+      "device_id": "QRD_003",
+      "revision": 5,
+      "crc32": 3976024108,
+      "map_id": "decc922f-883a-422d-b215-03157d6e5e9a",
+      "frame_id": "map",
+      "xml_path": "/home/unitree/ccs_edge_ws/mission/1355953148c293bd27d17a48735e77434f445ce28327fc59f82465fd74802a00/trajectory.xml"
+    },
+    "waypoints": 4,
+    "samples": 18,
+    "duration_seconds": 16.999959230422974,
+    "disabled_zero_command": true,
+    "safety_absent": true,
+    "final_task_status": "data: \"failed\"\n---\n",
+    "execute_or_schedule_sent": false,
+    "root_pid": 77500
+  },
+  "tests": {
+    "task_tests_each_target": 81,
+    "process_tests_each_target": 10,
+    "isolated_real_ros_cases_each_target": 2,
+    "local_profiles": 33,
+    "documentation_and_release": 10,
+    "production_control_calls_from_isolated_tests": 0
+  },
+  "final_status": {
+    "root_pid": 77500,
+    "motion_enabled": false,
+    "localization": "standby",
+    "navigation_preparation_error": "LOCALIZATION_UNAVAILABLE",
+    "safety_marker_absent": true,
+    "execute_schedule_sent": false
+  }
+}

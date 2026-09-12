@@ -1,8 +1,8 @@
 # CCS 端侧功能包
 
-配套产品 **CCS 0.23.1**。本目录维护 ROS1 设备侧通信、建图、重定位和任务协调源码，以及六套设备部署资料。运行基线为 Ubuntu 20.04、ROS Noetic、Python 3；视频节点使用 C++、OpenCV 和 GStreamer。ROS2 不属于当前可运行交付。
+配套产品 **CCS 0.24.0**。本目录维护 ROS1 设备侧通信、建图、重定位和任务协调源码，以及六套设备部署资料。运行基线为 Ubuntu 20.04、ROS Noetic、Python 3；视频节点使用 C++、OpenCV 和 GStreamer。ROS2 不属于当前可运行交付。
 
-**文档入口：** [完整使用手册](documents/USER_MANUAL.md) · [其他工作空间接入与配置说明](documents/EXTERNAL_WORKSPACE_INTEGRATION.md) · [设备内接口与配置参考](documents/INTERFACE_REFERENCE.md) · [地面站通信协议](../docs/EDGE_DEVICE_INTERFACES.md)
+**文档入口：** [从零部署指南](documents/DEPLOYMENT_GUIDE.md) · [配置话题与服务清单](documents/CONFIG_TOPIC_REFERENCE.md) · [按设备 ID 的部署记录](deploy/README.md) · [完整使用手册](documents/USER_MANUAL.md) · [其他工作空间接入与配置说明](documents/EXTERNAL_WORKSPACE_INTEGRATION.md) · [设备内接口与配置参考](documents/INTERFACE_REFERENCE.md) · [地面站通信协议](../docs/EDGE_DEVICE_INTERFACES.md)
 
 ## 功能包与边界
 
@@ -44,7 +44,7 @@
 
 ## 最短部署路径
 
-1. 阅读[使用手册](documents/USER_MANUAL.md)，选择设备 profile 并核对 underlay 依赖。
+1. 阅读[从零部署指南](documents/DEPLOYMENT_GUIDE.md)，完成设备盘点、独立身份/profile 和备份；用接口清单核对 underlay。
 2. 在指控端准备 staging，选择公共七包；Ground-Air 或 Go2 Robot2/Robot3 增加各自专用第八包。将选定 profile YAML 放入 staging 的共享配置包。
 3. 将源码安装到设备 CCS 工作空间并构建；按设备指南另行安装运行配置、脚本、launch 和授时配置。
 4. 对齐设备 ID/IP、地面站地址、ROS 数据源、地图状态路径和 TF；执行配置检查后启动。
@@ -54,6 +54,7 @@
 
 ## 设备专项指南
 
+- [GO2 部署与恢复经验](documents/GO2_DEPLOYMENT_LESSONS.md)：锁存溯源、幂等关闭、RPC 防护、限时联合传输和现场确认边界。
 - [Go2 EDU](deploy/go2_edu/DEPLOYMENT.md)
 - [Go2 Robot2 / QRD_002](deploy/go2_robot2/DEPLOYMENT.md)
 - [Go2 Robot3 / QRD_003](deploy/go2_robot3/DEPLOYMENT.md)
@@ -63,4 +64,4 @@
 - [Ground-Air 建图](documents/GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)
 - [Ground-Air 重定位](documents/GROUND_AIR_AGV_RELOCALIZATION_DEPLOYMENT.md)
 
-带 `DEPLOYMENT_LOG` 的文件记录当时设备上的事实，不代表本次发行已重新完成实机验收。接口及操作文档以随版本源码为准。
+所有专项旧路径已跳转到 `deploy/records/<设备ID>/DEPLOYMENT.md`，原文按来源合并并保留 SHA-256，后续记录只追加到该文件。历史事实不代表当前源码已重新部署。2026-09-12 两台适配器退出修复已部署，用户后续确认落地测试完成；普通卸载后恢复准备的后续修订、QRD_003 其他存储/启动锁改动仍未有部署证据。接口及操作以实际源码身份和本次实测为准。

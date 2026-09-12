@@ -223,6 +223,10 @@ class ScoutNavigationAdapter(object):
         self.monitor_timer = None
         self.terminal_lock = threading.RLock()
         self.stopping = False
+        self.closing = False
+        self.closed = False
+        self.close_permanent = False
+        self.close_result = None
         self.control_armed = False
         self.control_safety = None
         if config.get("auto_arm_on_schedule", False) or config.get("auto_disarm_on_terminal", False):
@@ -274,7 +278,8 @@ class ScoutNavigationAdapter(object):
     def _reset_emergency_stop(self, unused_request):
         from std_srvs.srv import TriggerResponse
         with self.lock:
-            if (self.execution is not None or self.stopping or
+            if ((self.closing and not self._can_resume_after_unload()) or
+                    self.execution is not None or self.stopping or
                     (self.worker is not None and self.worker.is_alive()) or
                     (self.prepare_worker is not None and self.prepare_worker.is_alive())):
                 return TriggerResponse(success=False, message="an execution or transition is active")
@@ -284,8 +289,15 @@ class ScoutNavigationAdapter(object):
                 return TriggerResponse(success=False, message=str(exc))
         return TriggerResponse(success=True, message="emergency stop cleared; control remains disabled")
 
+    def _can_resume_after_unload(self):
+        return (self.closed and not self.close_permanent and
+                not self._ros_shutdown_requested())
+
     def _prepare(self, command):
         with self.lock:
+            if self.closing and not self._can_resume_after_unload():
+                self._feedback(command, "failed", -1, 0.0, "navigation adapter is closing", "BUSY")
+                return
             if (self.execution is not None or self.stopping or
                     (self.worker is not None and self.worker.is_alive())):
                 self._feedback(command, "failed", -1, 0.0, "an execution is active", "BUSY")
@@ -322,6 +334,12 @@ class ScoutNavigationAdapter(object):
                 if self.navigation_process is not None:
                     self._stop_navigation()
                     self.client = None
+                if self.closed:
+                    # A restarted coordinator can prepare again after unloading.
+                    self.monitor_timer = self.rospy.Timer(self.rospy.Duration(0.5), self.watchdog)
+                    self.closing = False
+                    self.closed = False
+                    self.close_result = None
                 self.stop_event.clear()
                 self.navigation_process = self._start_navigation(payload["map_id"])
                 self.navigation_map_id = payload["map_id"]
@@ -365,6 +383,9 @@ class ScoutNavigationAdapter(object):
 
     def _schedule(self, command):
         with self.lock:
+            if self.closing:
+                self._feedback(command, "failed", -1, 0.0, "navigation adapter is closing", "BUSY")
+                return
             if (self.execution is not None or self.stopping or
                     (self.worker is not None and self.worker.is_alive())):
                 return
@@ -575,6 +596,17 @@ class ScoutNavigationAdapter(object):
             self.client = None
 
     def _unload(self, command):
+        if getattr(command, "request_id", "") == "shutdown-unload":
+            state, message, error_code = self._close_once(
+                shutdown_context=True, permanent=self._ros_shutdown_requested())
+            self._feedback(command, state, -1, 0.0, message, error_code, include_pose=False)
+            return
+        with self.terminal_lock:
+            if self.closing:
+                return
+            self._unload_navigation(command)
+
+    def _unload_navigation(self, command):
         if self.control_safety is not None:
             with self.lock:
                 self.stop_event.set()
@@ -679,6 +711,8 @@ class ScoutNavigationAdapter(object):
                 expected_execution=None):
         with self.terminal_lock:
             with self.lock:
+                if self.closing:
+                    return
                 if expected_execution is not None and self.execution is not expected_execution:
                     return
                 if self.execution is None and state != "failed" and not force:
@@ -708,10 +742,7 @@ class ScoutNavigationAdapter(object):
             except Exception as exc:
                 errors.append("zero velocity publication failed: %s" % exc)
             try:
-                shutdown_unload = (
-                    getattr(command, "request_id", "") == "shutdown-unload" and
-                    self._ros_shutdown_requested())
-                self.control_safety.disarm(allow_confirmed_disabled=shutdown_unload)
+                self.control_safety.disarm()
             except (ValueError, IOError, OSError) as exc:
                 errors.append(str(exc))
                 error_code = execution_error_code(exc)
@@ -732,6 +763,8 @@ class ScoutNavigationAdapter(object):
 
     def watchdog(self, unused_event=None):
         with self.lock:
+            if self.closing:
+                return
             execution = self.execution
             check_control = self.control_armed and not self.stop_event.is_set()
         if check_control:
@@ -785,31 +818,67 @@ class ScoutNavigationAdapter(object):
                 (callable(requested) and requested() is True))
 
     def close(self):
-        self.stop_event.set()
-        client = getattr(self, "client", None)
-        if self.control_safety is not None:
-            try:
-                if client is not None:
+        return self._close_once(shutdown_context=self._ros_shutdown_requested())
+
+    def _close_once(self, shutdown_context, permanent=True):
+        # A coordinator shutdown message can precede this process's ROS signal.
+        # Quiesce before waiting for a terminal operation; never wait holding lock.
+        with self.lock:
+            self.close_permanent = self.close_permanent or permanent
+            self.closing = True
+            self.stop_event.set()
+            timer, self.monitor_timer = self.monitor_timer, None
+        if timer is not None:
+            timer.shutdown()
+        with self.terminal_lock:
+            with self.lock:
+                if self.closed:
+                    return self.close_result
+            errors = []
+            error_code = ""
+            client = self.client
+            if client is not None:
+                try:
                     client.cancel_all_goals()
+                except Exception as exc:
+                    errors.append("goal cancellation failed: %s" % exc)
+            try:
                 self._publish_zero()
             except Exception as exc:
-                self.rospy.logerr("navigation cancellation during shutdown failed: %s", exc)
-            finally:
+                errors.append("zero velocity publication failed: %s" % exc)
+            if self.control_safety is not None:
                 try:
-                    self.control_safety.disarm(
-                        allow_confirmed_disabled=self._ros_shutdown_requested())
+                    self.control_safety.disarm(allow_confirmed_disabled=shutdown_context)
                 except (ValueError, IOError, OSError) as exc:
-                    self.rospy.logerr("control disable during shutdown failed: %s", exc)
-        else:
-            if client is not None:
-                client.cancel_all_goals()
-            self._publish_zero()
-        self._stop_navigation()
-        self.client = None
-        self.prepared = None
-        if self.monitor_timer is not None:
-            self.monitor_timer.shutdown()
-            self.monitor_timer = None
+                    errors.append(str(exc))
+                    error_code = execution_error_code(exc)
+            try:
+                self._stop_navigation()
+            except Exception as exc:
+                errors.append("navigation cleanup failed: %s" % exc)
+            message = "navigation unloaded"
+            state = "unloaded"
+            if errors:
+                state = "failed"
+                message += "; stop: " + "; ".join(errors)
+                error_code = error_code or "CONTROL_STOP_FAILED"
+                if self.control_safety is not None:
+                    try:
+                        self.control_safety.latch(message)
+                    except (ValueError, IOError, OSError) as exc:
+                        message += "; " + str(exc)
+                self.rospy.logerr("navigation shutdown failed: %s", message)
+            with self.lock:
+                self.client = None
+                self.prepared = None
+                self.execution = None
+                self.control_armed = False
+                self.stopping = False
+                result = (state, message, error_code)
+                self.close_result = result
+                self.closed = True
+            return result
+
 
 
 # The implementation is device-neutral; retain the historical name for Scout

@@ -93,10 +93,9 @@ class EdgeDocumentationTests(unittest.TestCase):
         paths = [ROOT / "README.md", ROOT / "docs/USER_GUIDE.md",
                  ROOT / "docs/EDGE_DEVICE_INTERFACES.md", ROOT / "docs/RELEASING.md",
                  EDGE / "README.md", REFERENCE, EDGE / "documents/USER_MANUAL.md"]
-        paths += list(EDGE.glob("*/README.md"))
-        paths += list((EDGE / "deploy").glob("*/DEPLOYMENT.md"))
-        paths += list((EDGE / "documents").glob("*_DEPLOYMENT.md"))
-        for path in paths:
+        # Include the nested device records, redirects and config topic matrix.
+        paths += list(EDGE.rglob("*.md"))
+        for path in sorted(set(paths)):
             source = path.relative_to(ROOT).as_posix()
             text = path.read_text(encoding="utf-8")
             for link in document_links(text):
@@ -110,6 +109,57 @@ class EdgeDocumentationTests(unittest.TestCase):
                     self.assertIn(unquote(parts.fragment),
                                   heading_ids(target_path.read_text(encoding="utf-8")),
                                   f"{source}: {link}")
+
+    def test_profile_topic_matrix_matches_configured_interfaces(self):
+        text = (EDGE / "documents/CONFIG_TOPIC_REFERENCE.md").read_text(encoding="utf-8")
+
+        def interfaces(value, prefix=""):
+            if isinstance(value, list):
+                for index, item in enumerate(value):
+                    name = item.get("name", index) if isinstance(item, dict) else index
+                    yield from interfaces(item, f"{prefix}[{name}]")
+            elif isinstance(value, dict):
+                for key, child in value.items():
+                    path = prefix + "." + key if prefix else key
+                    if isinstance(child, str) and (key in ("topic", "service")
+                            or key.endswith(("_topic", "_service", "_action", "_param"))):
+                        yield path, child, value.get("message_type", value.get("image_message_type"))
+                    else:
+                        yield from interfaces(child, path)
+
+        for config_dir in sorted((EDGE / "deploy").glob("*/config")):
+            profile = config_dir.parent.name
+            match = re.search(r"(?m)^### \w+ / " + re.escape(profile) + r"$", text)
+            self.assertIsNotNone(match, profile)
+            end = text.find("\n### ", match.end())
+            section = text[match.end():end if end != -1 else len(text)]
+            for path in config_dir.glob("*.yaml"):
+                config = yaml.safe_load(path.read_text(encoding="utf-8"))
+                for key, value, message_type in interfaces(config):
+                    expected = f"| `{path.name}: {key}` | `{value}` |"
+                    row = next((line for line in section.splitlines() if line.startswith(expected)), None)
+                    self.assertIsNotNone(row, f"{profile}: {expected}")
+                    if message_type:
+                        self.assertIn(message_type, row, f"{profile}: {key}")
+
+    def test_device_records_have_unique_sources_and_compatible_redirects(self):
+        index = (EDGE / "deploy/README.md").read_text(encoding="utf-8")
+        sources = set()
+        for config in sorted((EDGE / "deploy").glob("*/config/device.yaml")):
+            identity = yaml.safe_load(config.read_text(encoding="utf-8"))["device"]["id"]
+            record = EDGE / "deploy/records" / identity / "DEPLOYMENT.md"
+            self.assertIn(f"records/{identity}/DEPLOYMENT.md", index)
+            content = record.read_text(encoding="utf-8")
+            self.assertIn(f"../../{config.parent.parent.name}/", content)
+            entries = re.findall(r"\| `([^`]+\.md)` \| `([0-9a-f]{64})` \| \[材料 (\d+)\]", content)
+            self.assertTrue(entries, str(record))
+            for source, digest, section in entries:
+                self.assertNotIn(source, sources)
+                sources.add(source)
+                redirect = (EDGE / source).read_text(encoding="utf-8")
+                self.assertIn(f"{identity}/DEPLOYMENT.md#source-{section}", redirect)
+                self.assertIn(f'id="source-{section}"', content)
+        self.assertEqual(len(sources), 22)
 
     def test_script_environment_and_public_launch_arguments_are_described(self):
         text = REFERENCE.read_text(encoding="utf-8")

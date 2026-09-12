@@ -1,13 +1,12 @@
-# Go2 Robot 2 端侧部署
+# QRD_002 文档已合并
 
-本目录只对应 `QRD_002 / 192.168.50.111`，原生工作空间为
-`/home/unitree/go2_nav_ws`，CCS 工作空间为 `/home/unitree/ccs_edge_ws`。
-其他设备继续使用各自 profile，不部署本目录覆盖旧 `go2_edu`。
+原 `deploy/go2_robot2/README.md` 已合入 [QRD_002 部署与验收记录](../records/QRD_002/DEPLOYMENT.md#source-1)。
 
-- [部署结构、日常启动与原生 launch 参数](DEPLOYMENT.md)
-- [本次真实部署结果、增量测试、已知状态与备份校验值](VALIDATION.md)
-- [一次性迁移、最终清理与回滚用法](VALIDATION.md#迁移与回滚用法)
-- [迁移脚本](migrate_workspace.sh)
+新部署使用[从零部署指南](../../documents/DEPLOYMENT_GUIDE.md)；后续只追加按 ID 的记录，配置和脚本路径不变。
 
-当前物理目录迁移与 `vendor/bin` 清理已经完成；日常只需使用工作空间根
-`start_ccs_edge_dev.sh`，不要重复执行一次性迁移。真实运动尚未验收。
+相机行为见[2026-09-11 增量记录](../records/QRD_002/DEPLOYMENT.md#camera-emergency-20260911)；2026-09-12 已部署退出竞态修复、完成生产服务复位与受控重启，联合下发通过，最终 CCS 运行且底盘 disabled、定位 standby。详见[最新验收](../records/QRD_002/DEPLOYMENT.md#joint-shutdown-20260912)。
+
+用户后续已确认落地测试完成，见[2026-09-12 现场确认](../records/QRD_002/DEPLOYMENT.md#field-confirmation-20260912)；排查和后续部署参考 [GO2 经验](../../documents/GO2_DEPLOYMENT_LESSONS.md)。历史运行快照不代表当前实时状态。
+
+<!-- 保留旧锚点；完整内容见上方历史材料。 -->
+<a id="go2-robot-2-端侧部署"></a>
