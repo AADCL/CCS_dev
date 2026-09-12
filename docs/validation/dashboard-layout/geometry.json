@@ -1,0 +1,186 @@
+[
+  {
+    "theme": "night",
+    "requested": [
+      1920,
+      1080
+    ],
+    "actual": [
+      1920,
+      1080
+    ],
+    "split": [
+      240,
+      1290,
+      360
+    ],
+    "vertical": [
+      846,
+      96
+    ],
+    "title_center": 949,
+    "bar_center": 949,
+    "canvas_valid": true
+  },
+  {
+    "theme": "night",
+    "requested": [
+      1440,
+      900
+    ],
+    "actual": [
+      1440,
+      900
+    ],
+    "split": [
+      240,
+      810,
+      360
+    ],
+    "vertical": [
+      666,
+      96
+    ],
+    "title_center": 709,
+    "bar_center": 709,
+    "canvas_valid": true
+  },
+  {
+    "theme": "night",
+    "requested": [
+      1024,
+      768
+    ],
+    "actual": [
+      1024,
+      768
+    ],
+    "split": [
+      240,
+      394,
+      360
+    ],
+    "vertical": [
+      492,
+      138
+    ],
+    "title_center": 501,
+    "bar_center": 501,
+    "canvas_valid": true
+  },
+  {
+    "theme": "night",
+    "requested": [
+      800,
+      600
+    ],
+    "actual": [
+      800,
+      600
+    ],
+    "split": [
+      165,
+      561,
+      44
+    ],
+    "vertical": [
+      324,
+      138
+    ],
+    "title_center": 389,
+    "bar_center": 389,
+    "canvas_valid": true
+  },
+  {
+    "theme": "day",
+    "requested": [
+      1920,
+      1080
+    ],
+    "actual": [
+      1920,
+      1080
+    ],
+    "split": [
+      165,
+      1395,
+      330
+    ],
+    "vertical": [
+      846,
+      96
+    ],
+    "title_center": 949,
+    "bar_center": 949,
+    "canvas_valid": true
+  },
+  {
+    "theme": "day",
+    "requested": [
+      1440,
+      900
+    ],
+    "actual": [
+      1440,
+      900
+    ],
+    "split": [
+      165,
+      915,
+      330
+    ],
+    "vertical": [
+      666,
+      96
+    ],
+    "title_center": 709,
+    "bar_center": 709,
+    "canvas_valid": true
+  },
+  {
+    "theme": "day",
+    "requested": [
+      1024,
+      768
+    ],
+    "actual": [
+      1024,
+      768
+    ],
+    "split": [
+      165,
+      499,
+      330
+    ],
+    "vertical": [
+      492,
+      138
+    ],
+    "title_center": 501,
+    "bar_center": 501,
+    "canvas_valid": true
+  },
+  {
+    "theme": "day",
+    "requested": [
+      800,
+      600
+    ],
+    "actual": [
+      800,
+      600
+    ],
+    "split": [
+      165,
+      561,
+      44
+    ],
+    "vertical": [
+      324,
+      138
+    ],
+    "title_center": 389,
+    "bar_center": 389,
+    "canvas_valid": true
+  }
+]

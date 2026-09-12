@@ -55,6 +55,7 @@ from PySide6.QtWidgets import (
 
 from ..data_source import DeviceDataSource
 from ..app_icons import apply_button_icon
+from ..dashboard_widgets import WrappingLayout
 from ..device_colors import device_display_color
 from ..device_map_context import resolve_local_odom_pose
 from ..map_repository import MapRepository, MapRepositoryError
@@ -1983,6 +1984,7 @@ class PointCloudViewer(QWidget):
     load_failed = Signal(str)
     map_point_picked = Signal(float, float)
     escape_pressed = Signal()
+    layer_mode_changed = Signal(str)
 
     MAP_LAYER_ORDER = 0
     DEVICE_LAYER_ORDER = 100
@@ -2080,8 +2082,9 @@ class PointCloudViewer(QWidget):
         self.trails_check.toggled.connect(self.set_trails_layer_visible)
         self.height_legend = HeightColorLegend()
         self.height_legend.threshold.valueChanged.connect(lambda _value: self._refresh_point_colors())
+        self.layer_caption = QLabel("图层")
         for widget in (
-            QLabel("图层"), *self.layer_buttons.values(), self.grid_check,
+            self.layer_caption, *self.layer_buttons.values(), self.grid_check,
             self.grid_spacing_label, self.grid_spacing_input,
             self.grid_opacity_label, self.grid_opacity_input,
             self.cursor_check, self.devices_check, self.trails_check,
@@ -2129,6 +2132,46 @@ class PointCloudViewer(QWidget):
         )
         self.devices_check.toggled.connect(self.set_devices_layer_visible)
         self._apply_display_settings()
+
+    def enable_dashboard_layout(self) -> None:
+        """Rehouse existing controls for the dashboard only, retaining their signals."""
+        if hasattr(self, "dashboard_footer"):
+            return
+        controls = self.display_toolbar.layout()
+        while controls.count():
+            controls.takeAt(0)
+        # Transfer ownership before replacing the layout; keep all controls alive.
+        obsolete = QWidget()
+        obsolete.setLayout(controls)
+        flow = WrappingLayout(self.display_toolbar, spacing=6)
+        flow.setContentsMargins(4, 4, 4, 4)
+        groups = (
+            [self.layer_caption, *self.layer_buttons.values()],
+            [self.grid_check, self.grid_spacing_label, self.grid_spacing_input,
+             self.grid_opacity_label, self.grid_opacity_input],
+            [self.cursor_check, self.devices_check, self.trails_check],
+        )
+        self.grid_spacing_input.setFixedWidth(78)
+        self.grid_opacity_input.setFixedWidth(66)
+        for members in groups:
+            group = QWidget(self.display_toolbar)
+            row = QHBoxLayout(group)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            for widget in members:
+                row.addWidget(widget)
+            flow.addWidget(group)
+        self.dashboard_footer = QFrame(self)
+        self.dashboard_footer.setObjectName("dashboardMapFooter")
+        footer = WrappingLayout(self.dashboard_footer, spacing=6)
+        footer.align_last_right = True
+        footer.addWidget(self.height_legend)
+        self.layout().addWidget(self.dashboard_footer)
+        self.layout().setStretch(self.layout().indexOf(self._map_overlay), 1)
+        native = getattr(self._canvas, "native", None)
+        if native is not None:
+            native.setMinimumSize(280, 80)
+        obsolete.deleteLater()
 
     def _initialize_canvas(self, canvas_factory: Callable[[], object] | None) -> None:
         if canvas_factory is None:
@@ -2279,6 +2322,7 @@ class PointCloudViewer(QWidget):
     def set_layer_mode(self, mode: str) -> None:
         if mode not in {"pointcloud", "grid", "overlay"}:
             raise ValueError(f"未知地图图层模式：{mode}")
+        changed = self.layer_mode != mode
         self.layer_mode = mode
         for name, button in self.layer_buttons.items():
             button.blockSignals(True)
@@ -2293,6 +2337,8 @@ class PointCloudViewer(QWidget):
                     self._pgm_data.rgba(0.55 if mode == "overlay" else 1.0)
                 )
         self._update_layer_controls()
+        if changed:
+            self.layer_mode_changed.emit(mode)
 
     def clear(self) -> None:
         self._load_generation += 1

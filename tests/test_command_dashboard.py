@@ -12,7 +12,7 @@ PYSIDE_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 if PYSIDE_AVAILABLE:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtCore import QEvent, QSettings, Qt
     from PySide6.QtGui import QKeyEvent
     from PySide6.QtWidgets import QApplication
 
@@ -148,6 +148,11 @@ class CommandDashboardUiTests(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
+        settings = QSettings(str(Path(self.temp_dir.name) / "settings.ini"), QSettings.Format.IniFormat)
+        for target in ("ccs_monitor.main_window.QSettings", "ccs_monitor.pages.map_page.QSettings"):
+            settings_patch = patch(target, return_value=settings)
+            settings_patch.start()
+            self.addCleanup(settings_patch.stop)
         self.source = SimulatedDeviceSource(
             DeviceConfigRepository(Path(self.temp_dir.name) / "devices.json")
         )
@@ -206,7 +211,7 @@ class CommandDashboardUiTests(unittest.TestCase):
         for removed_name in ("animation_timer", "scan_toggle", "scan_overlay"):
             self.assertFalse(hasattr(page, removed_name))
         self.assertEqual(page.top_bar.objectName(), "dashboardTopBar")
-        self.assertEqual(page.dashboard_title.text(), "指挥与控制系统信息总览")
+        self.assertEqual(page.dashboard_title.text(), "指挥与控制系统总览")
         self.assertEqual(page.dashboard_kicker.text(), "COMMAND & CONTROL OVERVIEW")
         with patch.object(self.window, "showFullScreen"), patch.object(self.window, "showNormal"):
             self.window.set_dashboard_fullscreen(True)

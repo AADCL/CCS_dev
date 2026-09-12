@@ -1,0 +1,80 @@
+[
+  {
+    "job": "tests.test_command_dashboard",
+    "exit_code": 0,
+    "tests": 11,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_dashboard_layout",
+    "exit_code": 0,
+    "tests": 9,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_theme_v010",
+    "exit_code": 0,
+    "tests": 4,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_app_icons",
+    "exit_code": 0,
+    "tests": 5,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_point_cloud",
+    "exit_code": 0,
+    "tests": 2,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_pgm_map",
+    "exit_code": 0,
+    "tests": 3,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_task_protocol_service",
+    "exit_code": 0,
+    "tests": 8,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_map_picking",
+    "exit_code": 0,
+    "tests": 15,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_map_device_overlay",
+    "exit_code": 0,
+    "tests": 10,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_multi_device_v024.TrajectoryViewerTests",
+    "exit_code": 0,
+    "tests": 2,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_ui.UiTests.test_navigation_contains_five_pages_and_defaults_home",
+    "exit_code": 0,
+    "tests": 1,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_ui.UiTests.test_theme_button_switches_theme_without_changing_page",
+    "exit_code": 0,
+    "tests": 1,
+    "skipped": []
+  },
+  {
+    "job": "tests.test_ui.UiTests.test_lab_branding_follows_version_and_fits_narrow_navigation",
+    "exit_code": 0,
+    "tests": 1,
+    "skipped": []
+  }
+]
