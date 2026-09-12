@@ -1,6 +1,7 @@
 """Static deployment contracts for the physical-source QRD_002 workspace."""
 
 from pathlib import Path
+import importlib.util
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -17,6 +18,64 @@ def config(name):
 
 
 class Go2Robot2ProfileTests(unittest.TestCase):
+    def test_camera_autoselection_preserves_usb3_profile_and_waits_for_rgb(self):
+        script = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
+        self.assertIn('CAMERA_SERIAL="${CCS_D435_SERIAL:-}"', script)
+        self.assertIn('camera_args+=("serial_no:=${CAMERA_SERIAL}")', script)
+        self.assertNotIn("device_type:=", script)
+        self.assertNotIn("serial_no:=_", script)
+        self.assertIn("color_fps:=30", script)
+        self.assertEqual(config("video")["framerate"], 30)
+        camera = script.index('start_launch 2 --defer-ready "${camera_args[@]}"')
+        fresh = script.index('"${READINESS}" camera --timeout 30 --max-age 3')
+        ready = script.index('report OK "camera is ready."')
+        video = script.index("start_launch 5 epgeneral_video_srt")
+        self.assertLess(camera, fresh)
+        self.assertLess(fresh, ready)
+        self.assertLess(ready, video)
+        self.assertIn("inspect ${LOG_DIR}/camera.log", script)
+
+    def test_camera_observer_rejects_stale_and_repeated_frames(self):
+        path = PROFILE / "scripts/ccs_ros_readiness.py"
+        spec = importlib.util.spec_from_file_location("go2_robot2_readiness", path)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        self.assertEqual(helper.topics_for_mode("camera"),
+                         {"/camera/color/image_raw": "sensor_msgs/Image"})
+        self.assertNotIn("/camera/color/image_raw", helper.topics_for_mode("inputs"))
+        samples = {}
+        record = lambda stamp, now: helper.record_observation(samples, "rgb", stamp, now, 100, 3)
+        self.assertEqual(record(99, 101), 0)
+        self.assertEqual(record(101, 101), 1)
+        self.assertEqual(record(101, 101.5), 0)
+        self.assertEqual(record(102, 102), 1)
+        self.assertEqual(record(103, 103), 2)
+        self.assertEqual(record(104, 108), 0)
+
+    def test_control_gate_and_owned_sessions_protect_task_consumption(self):
+        script = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
+        self.assertIn('setsid roslaunch "$@"', script)
+        self.assertIn('setsid roscore >', script)
+        self.assertIn('ps -o ppid=', script)
+        task = script.index("start_launch 8 epgeneral_task_control")
+        self.assertLess(script.index('"${READINESS}" inputs --timeout 30 --max-age 3'), task)
+        self.assertLess(script.index("Fresh disabled state was lost before task startup"), task)
+        shutdown = script[script.index("shutdown_all() {"):script.index("[[ -r /opt/ros/noetic/setup.bash ]]")]
+        self.assertLess(shutdown.index('stop_process "${PIDS[8]}"'), shutdown.index("data: false"))
+        self.assertLess(shutdown.index('"${READINESS}" disabled'), shutdown.index('stop_process "${ROSCORE_PID}"'))
+        self.assertNotIn("go2_task_safety.json", shutdown)
+        self.assertIn('check_runtime_nodes', script)
+
+    def test_runtime_files_use_lf_and_readonly_check_does_not_start_observers(self):
+        for path in [PROFILE / "start_ccs_edge_dev.sh", PROFILE / "scripts/ccs_ros_readiness.py"]:
+            content = path.read_bytes()
+            self.assertNotIn(b"\r\n", content)
+            self.assertFalse(content.startswith(b"\xef\xbb\xbf"))
+        script = (PROFILE / "start_ccs_edge_dev.sh").read_text(encoding="utf-8")
+        self.assertIn('export PYTHONDONTWRITEBYTECODE=1', script)
+        self.assertIn('if [[ "${CHECK_ONLY}" != true ]]; then\n  run_quiet python3 "${READINESS}" camera', script)
+        self.assertLess(script.index('flock -n 9'), script.index('STARTUP_LOG="${LOG_DIR}/startup.log"'))
+
     def test_identity_and_ground_station_are_consistent(self):
         self.assertEqual(config("device")["device"], {"id": "QRD_002", "ip": "192.168.50.111"})
         for name in ("map_stream", "relocalization", "task_control"):

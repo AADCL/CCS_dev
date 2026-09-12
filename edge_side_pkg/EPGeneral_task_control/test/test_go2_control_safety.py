@@ -154,6 +154,34 @@ class ControlSafetyTests(unittest.TestCase):
             self.control.disarm(allow_confirmed_disabled=True)
         self.assertTrue(self.control.latched)
 
+    def test_shutdown_cannot_skip_pending_rpc_even_with_fresh_false(self):
+        self.control.rpc_lock.acquire()
+        try:
+            with self.assertRaisesRegex(ControlSafetyError, "previous control service call"):
+                self.control.disarm(allow_confirmed_disabled=True)
+            self.assertTrue(self.control.latched)
+            self.control.enable_client.assert_not_called()
+            self.assertFalse(self.control.transition_lock.locked())
+        finally:
+            self.control.rpc_lock.release()
+
+    def test_shutdown_waits_for_pending_rpc_then_confirms_disable(self):
+        self.control.rpc_lock.acquire()
+        released = threading.Event()
+        def finish_pending():
+            time.sleep(0.03)
+            self.control.rpc_lock.release()
+            released.set()
+        worker = threading.Thread(target=finish_pending)
+        worker.start()
+        try:
+            self.control.disarm(allow_confirmed_disabled=True)
+            self.assertTrue(released.is_set())
+            self.control.enable_client.assert_called_once_with(False)
+            self.assertFalse(self.control.latched)
+        finally:
+            worker.join(1)
+
     def test_late_enable_timeout_stays_locked_and_is_compensated(self):
         released = threading.Event()
         entered = threading.Event()
@@ -368,6 +396,126 @@ class Go2AdapterTests(unittest.TestCase):
         self.adapter._unload(self.command)
         self.safety.enable_client.assert_not_called()
         self.assertFalse(self.safety.latched)
+
+    def test_coordinator_shutdown_before_adapter_signal_closes_once(self):
+        self.adapter.rospy.is_shutdown.return_value = False
+        self.adapter.rospy.core.is_shutdown_requested.return_value = False
+        self.command.request_id = "shutdown-unload"
+        self.adapter._unload(self.command)
+        first = self.adapter.close_result
+        self.adapter.close()
+        self.assertEqual(self.adapter.close_result, first)
+        self.safety.enable_client.assert_not_called()
+        self.adapter._publish_zero.assert_called_once()
+        self.assertFalse(self.safety.latched)
+        self.assertTrue(self.adapter.closed)
+        self.assertEqual(self.adapter._feedback.call_args.args[1], "unloaded")
+
+    def test_coordinator_restart_can_prepare_again_and_restore_watchdog(self):
+        self.adapter.rospy.is_shutdown.return_value = False
+        self.adapter.rospy.core.is_shutdown_requested.return_value = False
+        execution = self._execution()
+        command, payload = execution["command"], execution["payload"]
+        client = self.adapter.client
+        client.wait_for_server.return_value = True
+        self.adapter._make_action_client = Mock(return_value=client)
+        previous_timer = Mock()
+        self.adapter.monitor_timer = previous_timer
+        self.command.request_id = "shutdown-unload"
+        self.adapter._unload(self.command)
+        previous_timer.shutdown.assert_called_once()
+        with patch("epgeneral_task_control.scout_adapter.TrajectoryStore") as store, \
+                patch("epgeneral_task_control.scout_adapter.load_localized_map_state", return_value={"map_id": "map-1"}), \
+                patch("epgeneral_task_control.scout_adapter.validate_waypoints_on_navigation_map"), \
+                patch("epgeneral_task_control.scout_adapter.os.path.isfile", return_value=True):
+            store.return_value.load_payload.return_value = payload
+            self.adapter._prepare(command)
+            self.assertIsNotNone(self.adapter.prepare_worker)
+            self.adapter.prepare_worker.join(1.0)
+        self.assertEqual(self.adapter._feedback.call_args.args[1], "ready")
+        self.assertFalse(self.adapter.closing)
+        self.assertFalse(self.adapter.closed)
+        self.assertFalse(self.adapter.stop_event.is_set())
+        self.assertIs(self.adapter.client, client)
+        self.assertIs(self.adapter.monitor_timer, self.adapter.rospy.Timer.return_value)
+        self.adapter.rospy.Timer.assert_called_once()
+        self.assertIsNone(self.adapter.close_result)
+        self.safety.enable_client.assert_not_called()
+        self.adapter.close()
+        self.safety.enable_client.assert_called_once_with(False)
+
+    def test_adapter_shutdown_after_coordinator_unload_blocks_new_preparation(self):
+        self.adapter.rospy.is_shutdown.return_value = False
+        self.adapter.rospy.core.is_shutdown_requested.return_value = False
+        self.command.request_id = "shutdown-unload"
+        self.adapter._unload(self.command)
+        self.adapter.rospy.core.is_shutdown_requested.return_value = True
+        self.adapter.close()
+        self.adapter._prepare(self.command)
+        self.assertEqual(self.adapter._feedback.call_args.args[5], "BUSY")
+        self.assertTrue(self.adapter.close_permanent)
+        self.assertTrue(self.adapter.closing)
+        self.adapter._publish_zero.assert_called_once()
+        self.safety.enable_client.assert_not_called()
+
+    def test_close_then_internal_unload_preserves_failure_without_retry(self):
+        self.adapter.rospy.is_shutdown.return_value = False
+        self.adapter.rospy.core.is_shutdown_requested.return_value = False
+        self.safety.enable_client.side_effect = lambda _: response(False, "cannot stop")
+        result = self.adapter.close()
+        self.command.request_id = "shutdown-unload"
+        self.safety.control_callback(types.SimpleNamespace(data=False))
+        self.adapter._unload(self.command)
+        self.assertEqual(self.adapter.close(), result)
+        self.assertEqual(result[0], "failed")
+        self.assertTrue(self.safety.latched)
+        self.safety.enable_client.assert_called_once_with(False)
+        self.assertEqual(self.adapter._feedback.call_args.args[1], "failed")
+
+    def test_closing_rejects_new_work_and_does_not_restart_watchdog_stop(self):
+        self.adapter.close()
+        calls = self.safety.enable_client.call_count
+        self.adapter._prepare(self.command)
+        self.assertEqual(self.adapter._feedback.call_args.args[5], "BUSY")
+        self.adapter._schedule(self.command)
+        self.assertEqual(self.adapter._feedback.call_args.args[5], "BUSY")
+        with patch.dict(sys.modules, {"std_srvs.srv": types.SimpleNamespace(TriggerResponse=response)}):
+            self.assertFalse(self.adapter._reset_emergency_stop(None).success)
+        self.adapter.watchdog()
+        self.adapter._finish(self.command, "stopped", -1, 0, "late", force=True)
+        self.assertEqual(self.safety.enable_client.call_count, calls)
+        self.assertTrue(self.adapter.stop_event.is_set())
+
+    def test_unload_outside_shutdown_still_requires_rpc(self):
+        self.command.request_id = "ordinary-unload"
+        self.safety.enable_client.side_effect = lambda _: response(False, "refused")
+        self.adapter._unload(self.command)
+        self.safety.enable_client.assert_called_once_with(False)
+        self.assertTrue(self.safety.latched)
+        self.assertEqual(self.adapter._feedback.call_args.args[1], "failed")
+
+    def test_concurrent_closes_are_serialized(self):
+        entered, release = threading.Event(), threading.Event()
+        original = self.safety.enable_client.side_effect
+        def pending(value):
+            entered.set()
+            release.wait(1)
+            return original(value)
+        self.safety.enable_client.side_effect = pending
+        results = []
+        first = threading.Thread(target=lambda: results.append(self.adapter.close()))
+        second = threading.Thread(target=lambda: results.append(self.adapter.close()))
+        first.start()
+        self.assertTrue(entered.wait(1))
+        second.start()
+        release.set()
+        first.join(2)
+        second.join(2)
+        self.assertFalse(first.is_alive() or second.is_alive())
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0], results[1])
+        self.safety.enable_client.assert_called_once_with(False)
+        self.adapter._publish_zero.assert_called_once()
 
     def test_manual_reset_requires_no_active_execution_and_does_not_enable(self):
         self.safety.latch("test")

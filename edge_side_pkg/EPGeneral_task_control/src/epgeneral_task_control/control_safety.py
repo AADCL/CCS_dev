@@ -276,8 +276,12 @@ class NavigationControlSafety(object):
             self.latch("control transition did not finish before disarm")
             raise ControlSafetyError("control transition did not finish before disarm", "CONTROL_SERVICE_TIMEOUT")
         try:
-            if allow_confirmed_disabled and self._control_matches(False):
-                return
+            if allow_confirmed_disabled and self.rpc_lock.acquire(False):
+                try:
+                    if self._control_matches(False):
+                        return
+                finally:
+                    self.rpc_lock.release()
             self._disarm_locked()
         finally:
             self.transition_lock.release()

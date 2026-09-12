@@ -30,17 +30,27 @@ Ground-Air AGV 使用 `ground_air_task_control.launch`。协调器常驻接收�
 
 ## 状态与数据
 
-- 接收状态：`no_task -> receiving -> received（导航准备中） -> ready`，错误进入 `failed` 并自动重试准备，急停依次进入 `emergency_stop -> no_task`。
+- 接收状态：`no_task -> receiving -> received（导航准备中） -> ready`，错误进入 `failed`；可恢复准备错误按周期重试，`EMERGENCY_STOP_LATCHED` 停止自动重试，急停依次进入 `emergency_stop -> no_task`。
 - 执行状态：`scheduling -> scheduled -> running -> completed/stopped/failed`。
 - 轨迹网络内容保持 zlib JSON；v2 清单和子任务 JSON 写入 `~/ccs_edge_ws/mission/<task_id>/`，执行兼容 XML 写入同一 mission 根目录下的 `<ID哈希>/trajectory.xml`。
 - XML 保存任务、子任务、设备、修订、CRC、地图/frame、速度、延迟和有序 XYZ 航点。一次原子替换失败不会破坏旧修订。
 - 同一设备只允许一个 execution；进程重启不会恢复运动，会向 ROS 适配器发布 CANCEL 或 STOP。
-- Scout 默认要求每次准备在 25 秒内连接 `/move_base`，单航点超时 300 秒；准备期间每秒反馈状态，失败后按配置周期重试。
+- Scout 默认要求每次准备在 25 秒内连接 `/move_base`，单航点超时 300 秒；准备期间每秒反馈状态，可恢复失败后按配置周期重试，持久急停拒绝必须人工复位后重新下发。
 - 执行前必须同时存在有效的实时 `/fastlio_odom` 和 `map<-odom` TF；仅有历史 `relocalization.json` 不允许启动导航。TF 查询或位姿转换异常统一反馈 `LOCALIZATION_UNAVAILABLE`，不会从 ROS callback 泄漏异常。
 
 ROS command 包含 `PREPARE/SCHEDULE/CANCEL/STOP/UNLOAD`、request/task/subtask/device/execution ID、revision、XML 路径、map/frame 和 UTC 启动时间。feedback 必须回传相同 ID/revision/request ID；准备阶段返回 preparing/ready/failed，执行阶段返回 scheduled/running/终态、航点和位置。
 
 `ros.status_topic` 额外发布 latched `std_msgs/String`，内容为当前接收或执行状态。Go2 profile 将其设置为 `/qrd/QRD_001/task_status`，供 MQTT 健康状态订阅。
+
+## GO2 恢复与退出
+
+协调器复用 adapter.emergency_stop_state_file，在协商、prepare、commit 检查锁存，传输中新出现或损坏标记也拒绝；适配器保留最终检查。下发/commit 成功不等于导航 ready，更不等于正在执行。
+
+修复根因后，由操作人员在无准备/执行/控制过渡且持续新鲜 disabled 的条件下调用 /epgeneral_navigation_task_adapter/reset_emergency_stop（std_srvs/Trigger），确认 success 后重新下发。重启、新任务和回滚不得删除或覆盖最新安全标记，复位服务不使能。操作命令见[使用手册](../documents/USER_MANUAL.md#go2-人工急停复位)。
+
+根脚本先停止任务再停用底盘，master 最后退出。适配器将内部 UNLOAD/request_id=shutdown-unload 与 ROS shutdown（含 is_shutdown_requested 阶段）统一为幂等关闭；内部卸载消息可以先于本进程的关闭信号到达。关闭先阻止新 PREPARE/SCHEDULE/复位并停止监控，再串行取消目标、发布零速、确认停用和清理自有导航，重复关闭复用首次结果。仅关闭上下文允许复用新鲜 disabled，且必须同时排除未完成的控制过渡及 RPC；普通 STOP/UNLOAD 和非 ROS 关闭仍需服务应答，真实失败继续锁存。见 [QRD_002](../deploy/records/QRD_002/DEPLOYMENT.md)、[QRD_003](../deploy/records/QRD_003/DEPLOYMENT.md) 的部署记录。
+
+当前源码进一步区分协调器卸载后的可恢复状态和永久 close/ROS 退出：前者完成收尾后，新 PREPARE 重新校验急停、地图、定位并恢复监控；后者继续拒绝工作。该后续修订仅本地验证、尚未部署，不属于 2026-09-12 端侧清单哈希。避免把关闭幂等实现成永久 BUSY。联合下发还需在 transfer_seconds 内连续传输并取得本轮 XML committed 证据，不能仅用旧任务幂等 ACK 证明落盘。完整经验及现场确认来源见 [GO2 部署经验](../documents/GO2_DEPLOYMENT_LESSONS.md)。
 
 ## 安装与启动
 

@@ -206,14 +206,18 @@ class ReleaseContentsTests(unittest.TestCase):
                     "EPGeneral_go2_integration/scripts/go2_stack_guard.py",
                     "EPGeneral_map_stream/launch/mapping_prerequisites_go2_robot3.launch",
                     "deploy/go2_robot2/start_ccs_edge_dev.sh",
+                    "deploy/go2_robot2/scripts/ccs_ros_readiness.py",
                     "deploy/go2_robot2/config/udp_telemetry.yaml",
                     "deploy/go2_robot2/DEPLOYMENT.md",
                     "deploy/go2_robot3/start_ccs_edge_dev.sh",
                     "deploy/go2_robot3/config/device.yaml",
                 ):
                     self.assertIn(base + relative, archive.namelist())
-                for document in ("INTERFACE_REFERENCE.md", "USER_MANUAL.md"):
+                for document in ("INTERFACE_REFERENCE.md", "USER_MANUAL.md",
+                                 "CONFIG_TOPIC_REFERENCE.md", "DEPLOYMENT_GUIDE.md"):
                     self.assertIn(base + "documents/" + document, archive.namelist())
+                for device_id in ("QRD_001", "QRD_002", "QRD_003", "UGV_001", "UGV_003", "AGV_001"):
+                    self.assertIn(base + f"deploy/records/{device_id}/DEPLOYMENT.md", archive.namelist())
                 for package in builder.EDGE_PACKAGES:
                     self.assertIn(base + package + "/README.md", archive.namelist())
                 self.assert_documentation_links(archive)

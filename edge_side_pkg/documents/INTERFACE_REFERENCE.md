@@ -1,8 +1,10 @@
 # 端侧设备内接口与配置参考
 
-适用产品：CCS 0.23.1；更新日期：2026-09-05。包版本见[端侧 README](../README.md)，操作步骤见[使用手册](USER_MANUAL.md)。
+适用产品：CCS 0.24.0；更新日期：2026-09-12。包版本见[端侧 README](../README.md)，操作步骤见[使用手册](USER_MANUAL.md)。
 
 本册面向设备集成开发者，描述 CCS 包如何调用设备其他工作空间的功能。MQTT、UDP、SRT 消息格式以[地面站通信协议](../../docs/EDGE_DEVICE_INTERFACES.md)为准。配置 schema、网络 schema 和软件版本是三个独立概念。
+
+填写配置时先查[六套 profile 的完整话题/类型/服务矩阵](CONFIG_TOPIC_REFERENCE.md)，再用本册逐键表检查约束。部署经验及从零流程见[部署指南](DEPLOYMENT_GUIDE.md)，按设备 ID 的历史见[索引](../deploy/README.md)。
 
 ## 1. 工作空间与进程边界
 
@@ -38,7 +40,7 @@
 
 ### 2.1 状态、遥测与视频
 
-MQTT 的 `ros.state/battery` 使用 `package/Message` 动态加载消息类，`mapping` 使用点分字段路径。Scout 来源为 `/scout_status`、`/BMS_status`；Wheeltec 为 `/odom`、`/PowerVoltage`；Go2 用 `/livox/lidar` 新鲜度且禁用电池源；Ground-Air 使用 `/mavros/state`、`/mavros/battery`。没有可确认的数据时不能填造电池或飞控状态。
+MQTT 的 `ros.state/battery` 使用 `package/Message` 动态加载消息类，`mapping` 使用点分字段路径。Scout 来源为 `/scout_status`、`/BMS_status`；Wheeltec 为 `/odom`、`/PowerVoltage`；legacy Go2 用 `/livox/lidar` 新鲜度且禁用电池源；Robot2/Robot3 使用 `/go2/control/enabled`（std_msgs/Bool.data）及 `/go2/battery_state`（sensor_msgs/BatteryState），Robot3 另以周期 `/go2/state/low_state`（go2_control/Go2LowState，3 秒超时）判断连接；Ground-Air 使用 `/mavros/state`、`/mavros/battery`。没有可确认的数据时不能填造电池或飞控状态。
 
 UDP descriptor 的 pose/imu/text_status 加载具体消息；availability/pointcloud_status 使用 AnyMsg 监测到达时间。`pgm_file` 从状态文件取得 map_id，再检查地图根目录内的 `map.pgm`，不是订阅示例 topic。默认诊断输出为 `/epgeneral_udp_telemetry/diagnostics`（diagnostic_msgs/DiagnosticArray），链路状态为 `/epgeneral_udp_telemetry/link/udp_tx`（std_msgs/Bool，latched），可按 launch 覆盖。
 
@@ -50,7 +52,7 @@ UDP descriptor 的 pose/imu/text_status 加载具体消息；availability/pointc
 
 | 后端 | 外部契约 |
 | --- | --- |
-| go2_accumulator | prerequisites/FAST-LIO launch；`/go2_map_accumulator/save`；PCD 转 PGM 工具 |
+| go2_accumulator | prerequisites/FAST-LIO launch；原生 `/go2_map_accumulator/save_map`（legacy 名称按 profile 核验）；PCD 转 PGM 工具 |
 | scout_finalize | Scout FAST-LIO、pointcloud_mapper、TF/pose adapter；`finalize_map.py` 产出 PCD/PGM/YAML |
 | managed_finalize | 与 Scout 生命周期相同，由 `integrations.managed` 指定 Wheeltec 的包、launch 和节点名 |
 | ground_air_service | 阶段服务管理原生建图；`/ground_air/mapping/save` 及 save launch 提供地图成果 |
@@ -67,7 +69,7 @@ Ground-Air 输入 `/cloud_registered` 在 camera_init，预览需转换为 odom�
 
 消息真源为 `EPGeneral_task_control/msg/TaskExecutionCommand.msg` 和 `TaskExecutionFeedback.msg`。command 默认话题 `/epgeneral_task_control/execution_command`，feedback 默认 `/epgeneral_task_control/execution_feedback`，摘要为 `/epgeneral_task_control/task_status`（std_msgs/String）。
 
-命令常量为 SCHEDULE=1、CANCEL=2、STOP=3、PREPARE=4、UNLOAD=5。适配器必须保持 request/task/subtask/device/execution/revision 身份对应，读取协调器持久化 XML，按 UTC scheduled_at 执行并回报真实状态及进度。完整字段及类型以随包 .msg 为准，可用 `rosmsg show epgeneral_task_control/TaskExecutionCommand` 和对应 Feedback 检查构建结果。
+命令常量为 SCHEDULE=1、CANCEL=2、STOP=3、PREPARE=4、UNLOAD=5、EMERGENCY_STOP=6。适配器必须保持 request/task/subtask/device/execution/revision 身份对应，读取协调器持久化 XML，按 UTC scheduled_at 执行并回报真实状态及进度。完整字段及类型以随包 .msg 为准，可用 `rosmsg show epgeneral_task_control/TaskExecutionCommand` 和对应 Feedback 检查构建结果。
 
 导航适配器调用 `move_base_msgs/MoveBaseAction`，读取 nav_msgs/Odometry 和 TF，向配置的 zero_velocity_topic 发布 geometry_msgs/Twist 停车。commit 后准备并常驻导航；常规 stop 复用导航进程，删除/卸载按状态清理。PGM 可通行性、TF、反馈超时和 UTC 校验不应被自定义适配器跳过。
 
@@ -77,7 +79,7 @@ Ground-Air 输入 `/cloud_registered` 在 camera_init，预览需转换为 odom�
 | --- | --- | --- | --- |
 | 两者 | request_id、task_id、subtask_id、device_id、execution_id | string | 请求、任务、子任务、设备和执行身份，反馈必须对应当前请求 |
 | 两者 | revision | uint32 | 任务修订号 |
-| command | action | uint8 | 前述五个命令常量 |
+| command | action | uint8 | 前述六个命令常量 |
 | command | xml_path | string | 协调器持久化的任务 XML 绝对路径，执行器需可读 |
 | command | frame_id、map_id | string | 航点坐标系与地图身份 |
 | command | scheduled_at | time | ROS time 表示的 UTC 计划开始时间，不是本地字符串 |
@@ -86,6 +88,22 @@ Ground-Air 输入 `/cloud_registered` 在 camera_init，预览需转换为 odom�
 | feedback | progress | float64 | 执行进度值，与地面站协议定义一致 |
 | feedback | position | geometry_msgs/Point | x/y/z，任务参考系内位置，m |
 | feedback | error_code、message | string | 结构化失败原因及诊断说明 |
+
+#### 原生 Go2 的控制与恢复
+
+| 配置键/接口 | 名称示例 | 类型及确认条件 |
+| --- | --- | --- |
+| adapter.navigation_reset_service | /go2_navigation_supervisor/reset | std_srvs/Trigger；response.success 必须 true，不能用 Empty |
+| adapter.control_enable_service | /go2_sdk_bridge_real/enable | std_srvs/SetBool；data=false 停用，data=true 仅按调度门控；响应后确认状态 |
+| adapter.control_enabled_topic | /go2/control/enabled | std_msgs/Bool，锁存；data 不作为周期心跳 |
+| adapter.control_diagnostics_topic | /go2/diagnostics | diagnostic_msgs/DiagnosticArray；默认匹配 GO2 SDK bridge 的 motion_enabled，新鲜度由 header/到达检查 |
+| adapter.localization_ok_topic | /localization/ok | std_msgs/Bool，必须新鲜为 true |
+| 私有 reset_emergency_stop 服务 | /epgeneral_navigation_task_adapter/reset_emergency_stop | std_srvs/Trigger；无活动准备/执行/控制过渡且持续 disabled 才清锁，不使能 |
+
+可选 adapter.control_diagnostics_status 与 adapter.control_diagnostics_key 改变诊断匹配名/键，默认 GO2 SDK bridge / motion_enabled，不能选择无关状态来绕过控制确认。持久标记由 adapter.emergency_stop_state_file 指定，协调器和适配器读取同一文件。损坏标记按锁存处理，在协商/下发准备/提交时返回已有 EMERGENCY_STOP_LATCHED；传输期间出现也拒绝。此失败不自动重试，复位成功后重新下发；可恢复定位错误仍可重试。协议格式未改。
+
+普通 STOP/UNLOAD 需要 disable RPC 成功及新鲜状态。内部 UNLOAD/request_id=shutdown-unload 可先于适配器 ROS 关闭信号；它与 close 共用幂等收尾入口，识别 is_shutdown_requested 回调阶段。仅收尾上下文同时取得控制过渡锁和 RPC 锁、确认无未完成调用且 disabled 新鲜时才允许跳过重复 RPC；否则进入有界严格停用，真实失败仍锁存。当前源码允许未永久关闭的适配器在卸载完成后重新 PREPARE，但仍检查锁存/地图/定位；该后续修订尚未部署。以上不新增消息、服务或 YAML 键。排查与验收见 [GO2 经验](GO2_DEPLOYMENT_LESSONS.md)，不能删除文件代替人工复位。
+
 
 ### 2.5 Ground-Air 专属服务
 
@@ -328,7 +346,7 @@ descriptor 的 name/display_name/type/level 共同决定 SHA-256 descriptor_hash
 | `integrations.pgm.generation_timeout_seconds` | number；必填，示例 300 | 正秒数；节点成果生成等待还包含 30 秒余量 |
 | `integrations.pgm.log_path` | string；必填 | 含 {session_dir} 的转换日志 |
 
-建图模板允许 map_id、device_id、session_id、session_dir、pcd_path、pgm_path、yaml_path、map_name；不允许未知模板字段。map_name 使用 YYYYMMDD_HHMMSS。PID、日志和会话成果必须留在 session_dir 内，不得通过 .. 越界。更改 backend 后既要调用 load_config，也要检查 build_integration_commands；专有参数部分在构造命令时才校验。
+建图模板允许 map_id、device_id、session_id、session_dir、pcd_path、pgm_path、yaml_path、map_name；不允许未知模板字段。map_name 使用 YYYYMMDD_HHMMSS。配置模板中的 PID、日志和成果先按 session_dir 校验；启用 launch log_dir 后仅日志映射到受控的 sessions/<session_id>，仍需通过路径边界检查，PID/成果不迁移。不得通过 .. 越界。更改 backend 后既要调用 load_config，也要检查 build_integration_commands；专有参数部分在构造命令时才校验。
 
 ### 8.4 Scout 与 managed 后端专有项
 
@@ -518,7 +536,7 @@ adapter 整段可省略，此时仅运行通用协调器；提供非空 adapter 
 | 同上：maps_root | /home/bitcq/ccs_edge_ws/maps/download | 下载地图根目录 |
 | 同上：service_wait_timeout / relocalize_timeout | 90.0 / 60.0 | 正秒数，外部服务等待/重定位请求超时 |
 
-设备 bringup 的 profile_dir 默认相对 launch 位置，不同安装布局下应显式传绝对路径。Go2 的 enable_task_control 默认 false，仅该 launch 生效，不会启用一键脚本中的任务。Wheeltec 的 enable_video 默认 false。三种 bringup 的 ground_station_ip 默认 192.168.50.101，主要传给 UDP，不会改写 MQTT 等 YAML。
+设备 bringup 的 profile_dir 默认相对 launch 位置，不同安装布局下应显式传绝对路径。legacy Go2 的 enable_task_control 默认 false，仅该 launch 生效，不会启用一键脚本中的任务。Wheeltec 的 enable_video 默认 false。三种 bringup 的 ground_station_ip 默认 192.168.50.101，主要传给 UDP，不会改写 MQTT 等 YAML。
 
 Ground-Air 设备适配 launch 还提供：manual_mapping_control/relocalization_control 的 map_id（必填）、maps_root（默认 /home/bitcq/catkin_ws/maps）、service_wait_timeout（90 秒）及重定位的 relocalize_timeout（60 秒）；override 的 relocalization_system 使用 map_id 和两个超时。mapping_coordinate_transforms 的 odom_frame/camera_init_frame/body_frame/base_frame 默认 odom/camera_init/body/base_link。mavros_base 的 fcu_url 默认串口 by-id 路径加 :57600，gcs_url 默认空；livox_mid360_base 的 msg_frame_id 默认 base_link。
 
@@ -533,7 +551,7 @@ Ground-Air 设备适配 launch 还提供：manual_mapping_control/relocalization
 | bringup.launch：`ground_station_ip` | 192.168.50.101 | UDP 遥测目标，不重写其他 YAML 的地址 |
 | bringup.launch：`log_root` | /home/unitree/ccs_edge_ws/logs | MQTT 与重定位日志根目录 |
 | bringup.launch：`telemetry_namespace` | /qrd/QRD_002 | UDP link 与 diagnostics 话题前缀；Robot3 使用 /qrd/QRD_003 |
-| bringup.launch：`camera_serial` | 空字符串 | RealSense serial_no；Robot3 使用 339222070647 |
+| bringup.launch：`camera_serial` | 空字符串 | 仅该组合 launch 的 serial_no 参数；Robot2/Robot3 根脚本默认自动选择，可选 CCS_D435_SERIAL 原样传入，不能用此参数推断根脚本行为 |
 | bringup.launch：`color_fps` | 30 | RGB 帧率 Hz；Robot3 USB2 配置为 15 |
 | mapping_fast_lio.launch / navigation_guard.launch：`lock_file` | /home/unitree/ccs_edge_ws/run/go2_stack.lock | 建图与导航共用的排他锁；必须在两条生命周期中一致 |
 | navigation.launch：`map_name` | 必填 | 原生定位和导航加载的地图名 |
@@ -550,33 +568,33 @@ Ground-Air 设备适配 launch 还提供：manual_mapping_control/relocalization
 | 环境变量 | 适用 profile / 默认 | 含义 |
 | --- | --- | --- |
 | `CCS_EDGE_WORKSPACE` | 全部；见 README 工作空间表 | CCS 工作空间根目录 |
-| `CCS_EDGE_PROFILE_CONFIG_DIR` | 全部；工作空间/config/profile | 运行 YAML 目录；Go2 未设时先尝试脚本旁 config/device.yaml |
-| `CCS_ROS_IP` | Go2 .100、Scout .120、Wheeltec .122、AGV .130；前缀 192.168.50 | ROS 本机地址 |
+| `CCS_EDGE_PROFILE_CONFIG_DIR` | 全部；工作空间/config/profile | 运行 YAML 目录；仅 legacy Go2 先尝试脚本旁 config/device.yaml，Robot2/3 直接使用各自 profile |
+| `CCS_ROS_IP` | Go2 legacy .100、Robot2 .111、Robot3 .112、Scout .120、Wheeltec .122、AGV .130；前缀 192.168.50 | ROS 本机地址 |
 | `CCS_GROUND_STATION_IP` | Go2/Scout/Wheeltec；192.168.50.101 | 授时默认目标及 UDP 覆盖；Ground-Air 脚本不提供此变量 |
 | `CCS_NTP_SERVER` | 前三者默认地面站变量；AGV 默认 192.168.50.101 | 预检要求的授时服务器 |
 | `CCS_GO2_NAV_SETUP` | Go2；/home/nvidia/go2_mid360_nav/catkin_ws/devel/setup.bash | 算法 underlay |
 | `CCS_GO2_NAV_WORKSPACE` | Go2 Robot2/Robot3；/home/unitree/go2_nav_ws | 原生算法工作空间根目录，脚本 source 其中 devel/setup.bash |
 | `CCS_GO2_NETWORK_INTERFACE` | Go2 Robot2/Robot3；go2dds | 真实 SDK bridge 使用的 DDS 接口 |
-| `CCS_D435_SERIAL` | Go2 Robot3；空字符串 | 可选 RealSense 序列号；空值使用单设备自动选择，非空值原样传给 `serial_no`，不添加前导下划线 |
+| `CCS_D435_SERIAL` | Go2 Robot2/Robot3；空字符串 | 可选 RealSense 序列号；空值使用单设备自动选择，非空值原样传给 `serial_no`，不添加前导下划线；Robot2 保持 RGB 640×480@30，Robot3 为 15 FPS |
 | `CCS_EDGE_LOG_ROOT` | Go2 Robot3；`/home/unitree/.ros/ccs_edge_ws` | 每次正常启动按 UTC 时间、纳秒和 PID 建立独立日志目录；`--check` 不创建目录 |
 | `CCS_GO2_USE_REAL_SDK` | Go2 Robot2；true | SDK 模式开关，仅接受 true/false；Robot3 固定使用真实 SDK，不提供此覆盖 |
 | `CCS_LIVOX_SETUP` | Scout /home/nvidia/livox_fastlio/devel/setup.bash；Wheeltec /home/nrc19/livox_fastlio/devel/setup.bash | 雷达与算法环境 |
 | `CCS_REALSENSE_SETUP` | Scout；/home/nvidia/realsense_ws/devel/setup.bash | 相机环境 |
 | `CCS_NAVIGATION_SETUP` | Scout；/home/nvidia/github_upload/AADCL_UAV_UGV/Scout_mini/devel/setup.bash | 导航环境 |
 | `CCS_DEVICE_UNDERLAY_SETUP` | AGV；/home/bitcq/catkin_ws/devel/setup.bash | Ground-Air 算法环境 |
-| `CCS_EDGE_STATE_DIR` | Go2 ~/.ros/ccs_edge_dev；Scout/Wheeltec 加 _scout_mini / _wheeltec_r550p | 脚本 PID/log 根目录，不自动改变 YAML 内状态文件 |
+| `CCS_EDGE_STATE_DIR` | legacy Go2 ~/.ros/ccs_edge_dev；Scout/Wheeltec 加 _scout_mini / _wheeltec_r550p | 脚本 PID/log 根目录；Robot2 默认工作空间/run/managed（仅 PID），不自动改变 YAML 状态文件 |
 | `CCS_FCU_DEVICE` | AGV；/dev/serial/by-id/usb-CUAV_PX4_CUAV_Nora_0-if00 | 飞控串口设备 |
 | `CCS_FCU_BAUD` | AGV；57600 | 飞控串口波特率 |
 | `CCS_EDGE_LAUNCH_DIR` | AGV；工作空间/launch | 已安装的设备适配 launch |
-| `CCS_EDGE_LOG_DIR` | AGV；工作空间/log/ground_air_agv | 组件日志目录 |
+| `CCS_EDGE_LOG_DIR` | AGV：工作空间/log/ground_air_agv；Robot2：工作空间/logs/managed | 组件日志目录 |
 | `CCS_ROS_HOME` | AGV；工作空间/run/ros_home | ROS 主目录，实际以脚本 PID_DIR 为前缀 |
 | `CCS_ROS_LOG_DIR` | AGV；组件日志目录/ros | ROS 日志目录 |
 
 ### 11.3 timesyncd-ccs.conf
 
-四套配置均包含 [Time]：`NTP=192.168.50.101` 为主授时地址，`FallbackNTP=` 清空回退列表，`RootDistanceMaxSec=5` 为最大根距离秒数，`PollIntervalMinSec=16`、`PollIntervalMaxSec=64` 为轮询间隔秒数。安装到 /etc/systemd/timesyncd.conf.d/ccs.conf 后重启 systemd-timesyncd，并用 timedatectl timesync-status 核实真实 ServerAddress 与同步状态。端口为 UDP 123。
+六套配置均包含 [Time]：`NTP=192.168.50.101` 为主授时地址，`FallbackNTP=` 清空回退列表，`RootDistanceMaxSec=5` 为最大根距离秒数，`PollIntervalMinSec=16`、`PollIntervalMaxSec=64` 为轮询间隔秒数。安装到 /etc/systemd/timesyncd.conf.d/ccs.conf 后重启 systemd-timesyncd，并用 timedatectl timesync-status 核实真实 ServerAddress 与同步状态。端口为 UDP 123。
 
-不要同时引入相互争用的授时服务；已有 chrony 的设备应按现场管理方式配置等价授时并核对一键脚本的预检要求。授时失败会阻止脚本启动新 ROS 组件。
+不要同时引入相互争用的授时服务；已有 chrony 的设备应按现场管理方式配置等价授时并核对一键脚本的预检要求。GO2_3 根脚本只以 SNTP 有效应答判断平台授时可用（--availability-only），不检查时差、不设置时钟；不可用仍阻止启动。任务 timeouts.utc_tolerance_seconds=2.0 独立保留。其余 profile 按各自脚本验证服务器/同步状态。
 
 ## 12. 联调检查清单
 

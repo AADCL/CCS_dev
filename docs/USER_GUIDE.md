@@ -122,15 +122,16 @@ uv run python run.py
 
 ### 2. 从零部署端侧
 
-完整步骤以[端侧使用手册](../edge_side_pkg/documents/USER_MANUAL.md)为准；跨工作空间的 ROS、TF、文件接口和七类配置逐参数说明见[接口参考](../edge_side_pkg/documents/INTERFACE_REFERENCE.md)。
+完整步骤以[端侧从零部署指南](../edge_side_pkg/documents/DEPLOYMENT_GUIDE.md)为准；日常操作见[端侧使用手册](../edge_side_pkg/documents/USER_MANUAL.md)，配置填写查[话题与服务清单](../edge_side_pkg/documents/CONFIG_TOPIC_REFERENCE.md)；跨工作空间的 ROS、TF、文件接口和七类配置逐参数说明见[接口参考](../edge_side_pkg/documents/INTERFACE_REFERENCE.md)。
 
-端侧 ZIP 包含八个 ROS 源码包。常规设备选择七个公共包；Ground-Air 另加专用控制包及外部 ground_air_msgs 依赖。deploy、documents 不放入 catkin src，按所选 profile 安装运行配置、脚本和适配 launch。
+端侧 ZIP 包含九个 ROS 源码包。常规设备选择七个公共包；Ground-Air 加 EPGeneral_ground_air_control 与外部 ground_air_msgs；原生 Go2 Robot2/Robot3 加 EPGeneral_go2_integration 并复用 go2_nav_ws，各构建八包。deploy、documents 不放入 catkin src，按所选 profile 安装运行配置、脚本和适配 launch。
 
 单包 launch 默认读取 epgeneral_device_config/config；设备一键脚本实际读取 <CCS工作空间>/config/<profile>。修改前确认入口、备份实际文件，修改后重启对应节点。默认 YAML 混有不同设备示例，部署必须选择并核对 profile。
 
 公共顺序为 Noetic → 设备 underlay → CCS overlay，Scout 还需要按脚本顺序加载 RealSense/navigation/Livox 工作空间。设置设备身份、各网络目标、ROS 输入、外参、地图状态路径及 NTP 后再构建和启动。
 
-- Go2：重定位功能禁用，一键脚本不启动任务包。
+- Go2 EDU legacy / QRD_001：重定位禁用，根脚本不启动任务。
+- 原生 Go2 Robot2/Robot3：常驻通信/协调器，重定位管理导航，任务 attach，建图/定位互斥；QRD_003 采用独立 RGB 就绪、周期连接判定、持久急停恢复和按启动时间日志。
 - Scout：启用导航适配器和 D435i/SRT，启动时等待硬件实际消息。
 - Wheeltec：启用导航适配器，无相机，不启动视频，停止流程发送零速度。
 - Ground-Air：按[专项指南](../edge_side_pkg/documents/GROUND_AIR_AGV_DEPLOYMENT.md)手动启动用户服务，保持开机自启动 disabled；一键脚本常驻任务协调器、地面任务适配器和急停桥接，导航与任务执行层在 PREPARE 后按需启动。
@@ -145,7 +146,11 @@ roslaunch epgeneral_mqtav epgeneral_mqtav.launch \
 
 设备身份必须与地面站设备表一致；仅设置 CCS_GROUND_STATION_IP 不会改写所有 YAML。网络、授时、单包使用及升级回滚命令详见手册。
 
+设备历史统一在[按 ID 的部署记录](../edge_side_pkg/deploy/README.md)。QRD_003 仅检查平台 SNTP 可用性，不以时差阻止启动；任务 UTC 容差仍为2秒。日志位于 /home/unitree/.ros/ccs_edge_ws/latest，复位/启停方法见端侧手册。
+
 ### 3. 部署后验证
+
+以下为完整开发回归入口；文档或局部部署修复只运行受影响的增量测试，不据此执行全量或 catkin 重建。
 
 ```powershell
 python -m unittest discover -s tests -v
@@ -290,6 +295,13 @@ Open3D ICP 示例需要 `open3d>=0.18`。RANSAC/ICP 均假设用户外参已提�
 ### 任务无法下发或同步执行
 
 确认设备和 IP 有效、UDP 14563/14564 可达、epgeneral_task_control 已启动、子任务已保存且无未处理冲突。共同执行还需两端 NTP 同步；地图变化后必须重新复核航点。
+
+### GO2 子任务下发后提示 EMERGENCY_STOP_LATCHED
+
+下发成功只表示轨迹已保存，仍需等待 ready。历史问题是退出时 master 先于停用 RPC 结束，触发持久急停；重新下发不能解除它。当前端侧在协商、prepare、commit 提前拒绝已知锁存，且不再周期重试该终态。修复根因并确认底盘持续 disabled、无准备/执行/控制过渡后，按[人工复位流程](../edge_side_pkg/documents/USER_MANUAL.md#go2-人工急停复位)调用 Trigger 服务，成功后重新下发。禁止删状态文件或直接使能。
+
+
+联合 prepare 快速拒绝时先核对锁存 recorded_at/reason 与对应退出日志；该拒绝不调用底盘控制服务，不能据此认定同时下发制造了超时。若恢复后变为 LOCALIZATION_UNAVAILABLE，应先完成定位并等待 ready。排查完整传输时需核对请求 ID、分片及本轮 XML 落盘，旧任务的幂等 commit ACK 不足以证明新传输成功。2026-09-12 用户已确认本轮落地测试完成，具体来源与后续版本边界见 [GO2 部署经验](../edge_side_pkg/documents/GO2_DEPLOYMENT_LESSONS.md)。
 
 ### 误删地图或任务
 

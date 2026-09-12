@@ -1,8 +1,10 @@
 # CCS 端侧其他工作空间接入与配置说明
 
-编写日期：2026-09-07。依据本项目 `edge_side_pkg` 中的共享配置、四套设备 profile、launch、消息定义及接口实现编写。当前交付使用 ROS1 Noetic / Ubuntu 20.04 / Python 3；视频节点为 C++。本文件是源码级接入说明，不代表已经对外部设备完成实机验收。
+更新日期：2026-09-11；适用 CCS 0.23.1 当前源码。依据本项目 `edge_side_pkg` 中的共享配置、六套设备 profile、launch、消息定义及接口实现编写。当前交付使用 ROS1 Noetic / Ubuntu 20.04 / Python 3；视频节点为 C++。本文件是源码级接入说明，不代表已经对外部设备完成实机验收。
 
 项目实际源码目录为 `edge_side_pkg`，本文所称“CCS 通用包”指其中的 `EPGeneral_*` 和 `epgeneral_mqtav`；设备运行工作空间通常名为 `ccs_edge_ws`。目录名与 ROS 包名不同，`roslaunch` 使用小写包名，如 `epgeneral_map_stream`。
+
+完整类型/配置键/当前值已集中在[配置话题与服务清单](CONFIG_TOPIC_REFERENCE.md)，新部署执行[从零指南](DEPLOYMENT_GUIDE.md)，历史按[设备 ID](../deploy/README.md)归档。
 
 ## 1. 先明确其他工作空间需要交付什么
 
@@ -18,7 +20,7 @@ CCS 通用包负责通信、会话和任务协调，底盘驱动、传感器驱�
 | 导航任务 | move_base Action 服务端、里程计、TF、速度执行接口；或自行实现通用任务适配器 | `task_control.yaml` |
 | Ground-Air 原生任务 | `ground_air_msgs`、原生任务和急停服务、车辆/任务状态、实时定位参数 | Ground-Air profile 与 `EPGeneral_ground_air_control` |
 
-`EPGeneral_device_config` 只提供七份 YAML，没有常驻节点。普通设备按能力使用公共七包；Ground-Air 增加第八个专用控制包。
+`EPGeneral_device_config` 只提供七份 YAML，没有常驻节点。普通设备使用公共七包；Ground-Air 加阶段控制包，原生 Go2 Robot2/Robot3 加 EPGeneral_go2_integration，各八包。发布归档共有九包，不能混装两个专用适配包。
 
 ## 2. 配置文件在哪里改、怎样生效
 
@@ -62,7 +64,7 @@ rospack find epgeneral_task_control
 | 外部 → CCS | `/mavros/battery` | `sensor_msgs/BatteryState` | `ros.battery.topic/message_type`；mapping 为 `percentage/voltage/current` | 电池源默认启用；没有真实电池接口时设 `ros.battery.enabled: false` |
 | 外部 → CCS | `/mission/status` | `std_msgs/String` | `ros.mission.topic/message_type/field_path: data` | 默认 `enabled: false`，仅启用任务摘要显示时需要 |
 
-`mapping` 的值是消息字段路径，不是常量。对于只有里程计、没有 connected 字段的底盘，可用 `connected_on_message: true` 和 `timeout_seconds: 3.0` 按消息新鲜度判定在线，把不存在的字段显式设为 `null`。此时“在线”仅表示该数据源近期有消息，不代表飞控解锁或导航就绪。电池电压使用 V、电流使用 A；不支持的量应保留未知，不能用常量伪造。
+`mapping` 的值是消息字段路径，不是常量。对于只有里程计、没有 connected 字段的底盘，可用 `connected_on_message: true` 和 `timeout_seconds: 3.0` 按消息新鲜度判定在线，把不存在的字段显式设为 `null`。如果状态源为锁存 Bool（只在变化时发布），应另配置可选 ros.connection.topic/message_type/timeout_seconds 判断连接；QRD_003 为 /go2/state/low_state、go2_control/Go2LowState、3.0 秒，armed 继续读取 /go2/control/enabled 的 data，QRD_002 当前保持未配置 connection 的旧行为。此时“在线”仅表示该数据源近期有消息，不代表飞控解锁或导航就绪。电池电压使用 V、电流使用 A；不支持的量应保留未知，不能用常量伪造。
 
 ### 3.2 UDP 遥测：`udp_telemetry.yaml`
 
@@ -144,7 +146,7 @@ CCS 自己发布以下诊断话题，外部包按需订阅，无需自行提供�
 
 可以使用随包导航适配器，也可以由外部工作空间实现适配器；同一设备不要同时运行多个执行同一命令的适配器。只运行通用协调器不会自动控制底盘或 MAVROS。
 
-当前 [TaskExecutionCommand.msg](../EPGeneral_task_control/msg/TaskExecutionCommand.msg) 包含 **SCHEDULE=1、CANCEL=2、STOP=3、PREPARE=4、UNLOAD=5、EMERGENCY_STOP=6**。旧接口参考仅列到 5，新接入必须以当前 `.msg` 为准。
+当前 [TaskExecutionCommand.msg](../EPGeneral_task_control/msg/TaskExecutionCommand.msg) 包含 **SCHEDULE=1、CANCEL=2、STOP=3、PREPARE=4、UNLOAD=5、EMERGENCY_STOP=6**。接口参考已同步六个常量，新接入仍以当前 `.msg` 为准。
 
 | 消息 | 必须处理的字段 | 说明 |
 | --- | --- | --- |
@@ -178,7 +180,7 @@ CCS 自己发布以下诊断话题，外部包按需订阅，无需自行提供�
 | 后端 | 外部应提供 | 具体配置/约定 |
 | --- | --- | --- |
 | `go2_accumulator` | `go2_tf_manager`、`go2_pose_adapter`、`cloud_frame_adapter`、`go2_map_accumulator` 的被 include launch；`fast_lio/fastlio_mapping` 与 `go2_bringup` 参数文件 | CCS 的 `mapping_prerequisites.launch` 和 `fast_lio_mapping.launch` 仍依赖外部包；修改 `integrations.mapping_prerequisites.*`、`integrations.fast_lio.*` |
-| `go2_accumulator` | `/go2_map_accumulator/save`，以及 `go2_map_tools/pcd_to_pgm.launch` | `integrations.map_accumulator.service/setup_file`、`integrations.pgm.*`；保存脚本无请求参数调用服务，外部必须提供兼容调用契约 |
+| `go2_accumulator` | legacy profile 的 /go2_map_accumulator/save 与 go2_map_tools/pcd_to_pgm.launch；Robot2/Robot3 为 /go2_map_accumulator/save_map 与 go2_mapping/export_occupancy.launch | `integrations.map_accumulator.service/setup_file`、`integrations.pgm.*`；保存脚本无请求参数调用服务，外部必须提供兼容调用契约 |
 | `scout_finalize` | Scout 的 FAST-LIO、pointcloud_mapper、TF/pose adapter 及 `scout_map_tools/finalize_map.py` | `integrations.scout` 下的 `*_package/*_launch`、`finalize_executable/map_root/filtered_pcd_filename` |
 | `managed_finalize` | Wheeltec 或其他匹配生命周期的 FAST-LIO、mapper、TF/pose adapter、finalizer | `integrations.managed` 同类字段，另须配置实际 `fast_lio_node/mapper_node/tf_node/geometry_tf_node/pose_node` |
 | `ground_air_service` | 原生建图阶段、保存 launch 和地图文件 | `integrations.ground_air.expected_nodes/save_package/save_launch/map_root/saved_*_filename`；当前为 `car_bringup/save_mapping.launch` |
@@ -248,7 +250,9 @@ Scout/Wheeltec finalizer 要兼容 `rosrun <package> <executable> <map_name> --r
 
 Ground-Air 重定位 profile 使用局部 `ros_package_path_prepend/exclude` 和 `cmake_prefix_path_exclude` 选择 CCS override 的 `car_bringup/relocalization_system.launch`，须按 [Ground-Air 部署资料](GROUND_AIR_AGV_DEPLOYMENT.md) 安装配套 override，不能只复制 YAML 或全局改写 ROS_PACKAGE_PATH。
 
-## 7. 四套设备 profile 的实际话题差异
+## 7. 六套设备 profile 的实际话题差异
+
+下表保留四类平台的摘要，Go2 EDU 列仅指 legacy QRD_001；原生 Robot2/Robot3 的差异另见下表，逐配置完整键/类型见[配置话题清单](CONFIG_TOPIC_REFERENCE.md)。
 
 以下为仓库配置值，不代表已在线探测。完整原件分别见 [Go2](../deploy/go2_edu/config/)、[Scout](../deploy/scout_mini/config/)、[Wheeltec](../deploy/wheeltec_r550p/config/)、[Ground-Air](../deploy/ground_air_agv/config/)。
 
@@ -268,7 +272,16 @@ Ground-Air 重定位 profile 使用局部 `ros_package_path_prepend/exclude` 和
 
 Scout 的状态 mapping 为 `system_status: fault_code`、`mode: control_mode`；电池只取电压，其他量为 null。需要匹配驱动提供的 `scout_msgs/ScoutBmsStatus`，相关补丁见 `deploy/scout_mini/patches`。
 
-Scout 的 UDP 位姿 `/scout/odom` 与建图/任务 `/fastlio_odom` 不同；Scout/Wheeltec 的 FAST-LIO 可用性监测仍指向 `/Odometry`。这些不是同一键的别名，外部应提供各自接口，或经核实后分别修改相关 source。Go2 未启用的任务配置仍留有 `192.168.151.100`，未来启用前必须补齐设备适配器并改为实际地面站地址。
+Scout 的 UDP 位姿 `/scout/odom` 与建图/任务 `/fastlio_odom` 不同；Scout/Wheeltec 的 FAST-LIO 可用性监测仍指向 `/Odometry`。这些不是同一键的别名，外部应提供各自接口，或经核实后分别修改相关 source。legacy Go2 未启用的任务配置仍留有 `192.168.151.100`，未来启用前必须补齐设备适配器并改为实际地面站地址。
+
+| 原生 Go2 项目 | Robot2 / QRD_002 | Robot3 / QRD_003 |
+| --- | --- | --- |
+| 状态 / 连接 | /go2/control/enabled，Bool.data，未设置独立 connection | 同 armed；connection=/go2/state/low_state，Go2LowState，3秒 |
+| 电池 / 遥测 IMU / 位姿 | /go2/battery_state；/go2/imu；/odom_nav | 相同，BatteryState / Imu / Odometry |
+| 建图 | /livox/imu + /lio/cloud_registered_body + /lio/odometry | 相同，算法 IMU 与遥测不同 |
+| 相机 | profile RGB 640×480@30；以本机脚本驱动参数为准 | 自动选择，可选原样序列号；640×480@15，新鲜帧后启动 SRT |
+| 重定位 / 任务 | enabled=true；健康 Bool + TF；任务 attach | 相同，独立急停文件，人工复位后重新下发 |
+| 根脚本授时 / 日志 | Robot2 原脚本策略，workspace/logs/managed | SNTP只测可用，任务UTC仍2秒；~/.ros/ccs_edge_ws/启动时间_纳秒_PID |
 
 ## 8. 配置示例与实施步骤
 
@@ -376,7 +389,8 @@ ss -lntup
 
 ```bash
 # 仅 Go2 保存后端
-rosservice type /go2_map_accumulator/save
+# 原生 Robot2/Robot3；legacy 使用其 config 指定名称
+rosservice type /go2_map_accumulator/save_map
 # 仅 Ground-Air
 rosservice type /ground_air/system/set_stage
 rossrv show ground_air_msgs/SetSystemStage
@@ -403,7 +417,17 @@ rosparam get /ground_air/localized
 | PGM 状态异常 | 是话题模式还是 pgm_file 模式；状态文件和 map_root 是否一致 |
 | 任务收到了但车辆不执行 | 是否有且仅有一个适配器、反馈身份、Action/原生服务、地图/实时定位、UTC |
 
-## 10. 依据与后续维护
+## 10. 新修复的集成要求
+
+原生 Go2 导航 reset 为 std_srvs/Trigger，SDK enable/disable 为 std_srvs/SetBool；不要换成 Empty。调用成功与新鲜 disabled 状态须同时确认。MQTT armed 的锁存状态不能当周期心跳；定位 TF 也不能代替新鲜 /localization/ok。
+
+GO2_3 的根脚本隔离终端进程组，先停任务消费/适配器，再停用底盘、逆序清组件，最后只停自建 master。协调器读同一急停文件，在协商/prepare/commit 拒绝已知或传输中新产生的锁存；损坏文件同样拒绝。锁存失败不自动重试，定位临时失败继续重试；人工复位不使能、不自动执行旧任务。
+
+建图保存链路为 accumulator → 本次 session PCD 快照 → 原子发布 source_pcd_path → PGM/YAML。首次 export 不存在不应阻止转换，也不能用旧 PCD 顶替。所有间接调用的 Shell 必须 LF 无 BOM；此前 bash\r 错误发生在协商阶段。配置模板日志路径仍在 session_dir 通过校验，可选 epgeneral_map_stream.launch 的 log_dir 将日志映射到受控 sessions/<session_id>，地图/任务/锁/安全文件不迁移。存储目录 OSError 返回 ARTIFACT_STORAGE_UNAVAILABLE 并释放会话，修复目录后重试。
+
+新增设备同步修改脚本、预检中的固定 ID/网卡/IP/路径及平台记录，仅 export CCS_GROUND_STATION_IP 不会重写 MQTT 等 YAML。GO2_3 授时只检测 SNTP 可用、不设时钟；任务 UTC 容差独立保留为2秒。首次和增量验收、部署清单及回滚边界见从零指南。
+
+## 11. 依据与后续维护
 
 主要依据为 [共享 YAML](../EPGeneral_device_config/config/)、[各设备部署配置](../deploy/)、[ROS 任务消息](../EPGeneral_task_control/msg/)、[UDP 节点](../EPGeneral_udp_telemetry/src/epgeneral_udp_telemetry/node.py)、[建图节点](../EPGeneral_map_stream/src/epgeneral_map_stream/node.py)、[重定位桥接](../EPGeneral_relocalization/src/epgeneral_relocalization/ros_bridge.py)、[导航适配器](../EPGeneral_task_control/src/epgeneral_task_control/scout_adapter.py)、[Ground-Air 任务适配器](../EPGeneral_ground_air_control/src/epgeneral_ground_air_control/task_adapter.py) 及相应 launch/scripts。
 

@@ -1,89 +1,14 @@
-# 空地 AGV 端侧部署说明
+# AGV_001 文档已合并
 
-CCS 0.23.1 当前入口：[使用手册](USER_MANUAL.md) · [接口与配置](INTERFACE_REFERENCE.md)。本页保留设备专项步骤；运行配置以脚本传入的工作空间 config/profile 为准，不能只修改包内默认 YAML。
+原 `documents/GROUND_AIR_AGV_DEPLOYMENT.md` 已合入 [AGV_001 部署与验收记录](../deploy/records/AGV_001/DEPLOYMENT.md#source-2)。
 
-## 设备与边界
+新部署使用[从零部署指南](DEPLOYMENT_GUIDE.md)；后续只追加按 ID 的记录，配置和脚本路径不变。
 
-- 设备：`AGV_001`，端侧 IP `192.168.50.130`
-- 地面站：`192.168.50.101`
-- 系统：Jetson ARM64、Ubuntu 20.04、ROS Noetic
-- CCS 工作空间：`/home/bitcq/ccs_edge_ws`
-- 车辆工作空间：`/home/bitcq/catkin_ws`
-
-部署过程不修改原始 `car_bringup/manual_mapping.launch` 或 `save_mapping.launch`，不使用明文凭据，不发送任何运动、解锁、模式或航点指令。
-
-## 一键启动组件
-
-`start_ccs_edge_dev.sh` 依次启动 MAVROS、Livox MID-360、MQTT、UDP 遥测、map-stream、A8 Mini、SRT、工作区 stage manager 和重定位协调器，最后执行：
-
-```bash
-roslaunch car_bringup mapping_coordinate_transforms.launch
-```
-
-该 launch 只常驻 `/odom_camera_init_broadcaster` 与 `/base_link_body_broadcaster`，统一发布 `odom -> camera_init` 和 `body -> base_link`。FAST-LIO 不在一键脚本启动阶段启动，收到建图或重定位阶段指令后才由 stage manager 启动。
-
-stage manager 由 `ccs_edge_ws` 内的设备专属控制包提供，启动命令为：
-
-```bash
-rosrun epgeneral_ground_air_control ground_air_stage_manager_node.py
-```
-
-它发布 `ccs_session_guard_version=2`，只管理建图/重定位阶段、互斥 owner 和所属进程组，不持有静态 TF。重定位协调器 `/epgeneral_relocalization` 在最终 TF launch 之前启动；A8/SRT 可降级，其余必需节点或任一静态 TF 节点退出会触发 supervisor 失败处理。
-
-## 服务管理
-
-用户服务文件为 `~/.config/systemd/user/ccs-edge-dev.service`。`AGV_001` 已取消上电自启动，服务保持 `disabled`；需要运行时手动启动。禁用上电自启动不会停止当前服务，手动启动后仍保留既有故障重启和清理机制。
-
-```bash
-systemctl --user start ccs-edge-dev.service
-systemctl --user status ccs-edge-dev.service --no-pager
-systemctl --user is-enabled ccs-edge-dev.service
-```
-
-最后一条预期输出 `disabled`（systemctl 对该状态返回非零是正常行为）。只更新源码、元数据和文档的部署不修改 unit、linger 或上电启动设置；确需重新加载常驻节点时才手动 `restart`。
-
-`KillMode=mixed` 允许主脚本按“stage manager/阶段进程 -> 静态 TF -> 其他服务”的顺序清理。统一服务重启会短暂中断 MAVROS、Livox、MQTT、UDP、map-stream 和视频链。
-
-## 建图与重定位响应
-
-指控准备建图时，map-stream 的短期客户端先验证 stage service、会话归属保护、外部 TF 模式和两个 TF 节点；开始建图时才请求 `stage=1`。v0.13.2 明确支持整数 guard `1`、`2`，当前 manager 发布 `2`；缺失、类型错误和未知版本继续拒绝并输出实际值与支持范围。manager 通过 `manual_mapping_control.launch` 启动 FAST-LIO、滤地、动态栅格、地图记录器和建图态 `map -> odom`；重复开始保持幂等。该入口不引用旧 `mapping_system.launch`，不会重复启动静态 TF。
-
-结束建图仍运行 `roslaunch car_bringup save_mapping.launch`。地图文件验证成功后请求 BASE 并停止建图专用进程；保存失败时保持建图运行。TF 故障不能阻止所属会话执行停止或取消。
-
-实时预览使用端侧真实坐标转换：`/cloud_registered` 的 `camera_init` 点云通过常驻 `odom <- camera_init` TF 转换到 `odom`。端侧返回 `prepare_result.frame_id=odom`，预览分片返回 `frame_id=odom/source_frame_id=camera_init`，最终成果保持 `frame_id=map`。指控端只同步 `AGV_001` 的 `remote_mapping=odom`、`preview_source=camera_init`、`remote_artifact=map` 配置，不修改建图协调器代码。
-
-重定位 stage 使用 `relocalization_control.launch` 启动 FAST-LIO 与定位层，同样复用两条常驻静态 TF。原始建图与重定位 launch 均保留为历史/整套回滚参考，但旧入口依赖已变化，当前架构不保证其可独立完成阶段启动；统一服务运行时不得人工执行会间接包含 `mapping_coordinate_transforms.launch` 的旧入口。
-
-完整细节见 [GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md](GROUND_AIR_AGV_MAPPING_DEPLOYMENT.md)。
-
-## 构建与日志
-
-```bash
-cd /home/bitcq/ccs_edge_ws
-source /opt/ros/noetic/setup.bash
-source /home/bitcq/catkin_ws/devel/setup.bash --extend
-catkin_make --pkg epgeneral_map_stream -DCMAKE_BUILD_TYPE=Release -j1
-```
-
-增量部署脚本在检查 launch 和构建前严格按 ROS Noetic、车辆 `catkin_ws`、CCS `ccs_edge_ws` 的顺序加载 overlay，后两项使用 `--extend`。只加载 CCS overlay 会使 `fast_lio_open3d` 等车辆包不可见，必须在服务重启前中止部署并修正环境。
-
-日志默认位于 `/home/bitcq/ccs_edge_ws/log/ground_air_agv/`；其中 `startup.log` 记录启动顺序，`stage_manager.log` 记录阶段切换，`mapping_tf.log` 记录静态 TF launch，`map_stream.log` 记录响应栈输出。ROS 节点日志位于其 `ros/latest/` 下，例如 `epgeneral_map_stream-1.log`；ROS home 为 `/home/bitcq/ccs_edge_ws/run/ros_home`，PID 位于 `/home/bitcq/ccs_edge_ws/run/`。
-
-Ground-Air `map_stream.yaml` 部署到 `/home/bitcq/ccs_edge_ws/config/ground_air_agv/map_stream.yaml`。变更实时预览帧时必须同时更新指控运行配置和发布默认镜像中的 `config/map_building.json`，然后分别重启 `ccs-edge-dev.service` 与 CCS；回滚也必须恢复同一批次的两端配置。
-
-## 静态验收
-
-```bash
-systemctl --user is-enabled ccs-edge-dev.service
-systemctl --user is-active ccs-edge-dev.service
-rostopic echo -n 1 /ground_air/system/stage
-rosparam get /ground_air_stage_manager/ccs_session_guard_version
-rosrun epgeneral_map_stream ground_air_stage_client.py --check
-rosnode list
-rostopic echo -n 1 /livox/lidar
-rostopic echo -n 1 /livox/imu
-rosrun tf tf_echo odom camera_init
-rosrun tf tf_echo body base_link
-```
-
-确认服务上电启动状态仍为 `disabled`，客户端 `--check` 成功且阶段仍为 BASE；TF 只有一套发布者，启动日志中 TF launch 最后出现，建图开始/重复开始/结束闭环后静态 TF PID 不变，FAST-LIO、world-TF owner 和建图节点退出而基础服务继续运行。端侧仅评价流程、接口和产物，不评价车辆移动后的建图精度。
+<!-- 保留旧锚点；完整内容见上方历史材料。 -->
+<a id="一键启动组件"></a>
+<a id="建图与重定位响应"></a>
+<a id="服务管理"></a>
+<a id="构建与日志"></a>
+<a id="空地-agv-端侧部署说明"></a>
+<a id="设备与边界"></a>
+<a id="静态验收"></a>
