@@ -1,0 +1,19 @@
+{
+  "baseline": "cd9686b9df405f6e67a72ffdf6ff8880d23cca45",
+  "python": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "packages": {
+    "PySide6": "6.11.1",
+    "vispy": "0.16.2",
+    "numpy": "2.5.1"
+  },
+  "sha256": {
+    "ccs_monitor/dashboard_widgets.py": "617bbdf4212b2b9814fbf54d0d1ccc5e68e532c0ec32b0470ec5ac6a3abd04f0",
+    "ccs_monitor/pages/command_dashboard_page.py": "89db6584b2a1fccfd47b05972e4fef41757ce03a5461857f86286e0919cf8155",
+    "ccs_monitor/pages/map_page.py": "3a966ed9cb1ab496106e1f2d1956d4a4f76130cae0083322da2606be4b652995",
+    "ccs_monitor/styles.py": "bc6240545b452f7269f5b6457382286eb8fa13fcd7e13784e31d3c56acca9481",
+    "tests/test_command_dashboard.py": "0c0ce0c20cdec2d7db4f217f8d89f1689ce618959fa8f56eee5971a9df8edfa9",
+    "tests/test_dashboard_layout.py": "6bf287c44c222803945907e25242ad1c5dedaf1825a5dbb851b13afa2b872b82",
+    "scripts/validate_dashboard_layout.py": "3ae4007273062d7811ebe2dfdf8a635472cf47826fee3053f98f37c64b8d55c8"
+  }
+}

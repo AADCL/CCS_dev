@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Callable
 
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
-from PySide6.QtCore import QMargins, QPointF, Signal, Qt, QTimer
+from PySide6.QtCore import QMargins, QPointF, QSize, Signal, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QComboBox,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QInputDialog,
+    QLayout,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from ..data_source import DeviceDataSource
 from ..app_icons import apply_button_icon
+from ..dashboard_widgets import BalancedDashboardHeader, ElidingLabel, WrappingLayout
 from ..device_colors import device_display_color
 from ..device_map_context import resolve_local_odom_pose
 from ..map_repository import MapRepository, MapRepositoryError
@@ -147,7 +149,7 @@ class CollapsibleDevicePanel(QFrame):
         self.setObjectName("dashboardSidePanel")
         self.mode = DevicePanelMode.SUMMARY
         self._previous_mode = DevicePanelMode.SUMMARY
-        self._expanded_width = 180
+        self._expanded_width = 240
         self.devices: list[DeviceSnapshot] = []
         self.selected_device_id: str | None = None
         self.root = QVBoxLayout(self)
@@ -295,7 +297,7 @@ class CollapsibleDevicePanel(QFrame):
             self.detail_button.setToolTip("收起设备详细摘要")
         else:
             self.setMinimumWidth(165)
-            self.setMaximumWidth(205)
+            self.setMaximumWidth(260)
             self.detail_button.setToolTip("展开设备详细摘要")
         self.detail_button.setAccessibleName(self.detail_button.toolTip())
         self.collapse_button.setAccessibleName(self.collapse_button.toolTip())
@@ -333,7 +335,7 @@ class CollapsibleDevicePanel(QFrame):
         elif self.mode == DevicePanelMode.DETAIL:
             target = max(280, self._expanded_width)
         else:
-            target = min(205, max(165, self._expanded_width))
+            target = min(260, max(165, self._expanded_width))
         delta = sizes[index] - target
         sizes[index] = target
         center_index = 1 if index != 1 else 0
@@ -467,6 +469,7 @@ class TelemetryStatusPanel(QFrame):
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.setObjectName("dashboardSidePanel")
         self.expanded = False
+        self._expanded_width = 360
         self.user_collapsed = False
         self.device: DeviceSnapshot | None = None
         root = QVBoxLayout(self)
@@ -497,14 +500,29 @@ class TelemetryStatusPanel(QFrame):
         content_layout.addWidget(self.identity)
         fields_widget = QWidget()
         fields = QGridLayout(fields_widget)
-        fields.setContentsMargins(0, 0, 0, 0)
-        fields.setHorizontalSpacing(10)
-        fields.setVerticalSpacing(5)
+        fields.setContentsMargins(2, 4, 2, 8)
+        fields.setHorizontalSpacing(12)
+        fields.setVerticalSpacing(8)
         self.fields: dict[str, QLabel] = {}
-        for index, label in enumerate((
-            "MQTT", "UDP", "健康", "电量", "任务", "运行模式",
-            "位置 X/Y/Z", "姿态 R/P/Y", "最后数据",
-        )):
+        summary = QWidget()
+        summary_row = QHBoxLayout(summary)
+        summary_row.setContentsMargins(2, 8, 2, 8)
+        summary_row.setSpacing(12)
+        for label in ("电量", "MQTT", "UDP", "健康"):
+            group = QWidget()
+            column = QVBoxLayout(group)
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(4)
+            caption = QLabel(label)
+            caption.setObjectName("dashboardFieldLabel")
+            value = QLabel("--")
+            value.setObjectName("dashboardBattery" if label == "电量" else "dashboardFieldValue")
+            column.addWidget(caption)
+            column.addWidget(value)
+            summary_row.addWidget(group)
+            self.fields[label] = value
+        content_layout.addWidget(summary)
+        for index, label in enumerate(("任务", "运行模式", "位置 X/Y/Z", "姿态 R/P/Y", "最后数据")):
             caption = QLabel(label)
             caption.setObjectName("dashboardFieldLabel")
             value = QLabel("--")
@@ -516,9 +534,8 @@ class TelemetryStatusPanel(QFrame):
         content_layout.addWidget(fields_widget)
         self.position_chart = TelemetryChart("位置数据", ("X", "Y", "Z"), "m")
         self.attitude_chart = TelemetryChart("姿态数据", ("Roll", "Pitch", "Yaw"), "deg")
-        content_layout.addWidget(self.position_chart)
-        content_layout.addWidget(self.attitude_chart)
-        content_layout.addStretch()
+        content_layout.addWidget(self.position_chart, 1)
+        content_layout.addWidget(self.attitude_chart, 1)
         self.scroll.setWidget(content)
         root.addWidget(self.scroll, 1)
         self._apply_width()
@@ -529,8 +546,28 @@ class TelemetryStatusPanel(QFrame):
         self.set_expanded(expanded)
 
     def set_expanded(self, expanded: bool) -> None:
-        self.expanded = bool(expanded)
+        target = bool(expanded)
+        if target == self.expanded:
+            return
+        splitter = self.parentWidget()
+        if self.expanded and isinstance(splitter, QSplitter):
+            self._expanded_width = max(330, splitter.sizes()[splitter.indexOf(self)])
+        self.expanded = target
         self._apply_width()
+        self._sync_splitter_width()
+        QTimer.singleShot(0, self._sync_splitter_width)
+
+    def _sync_splitter_width(self) -> None:
+        splitter = self.parentWidget()
+        if not isinstance(splitter, QSplitter):
+            return
+        sizes = splitter.sizes()
+        index = splitter.indexOf(self)
+        target = min(410, self._expanded_width) if self.expanded else 44
+        delta = sizes[index] - target
+        sizes[index] = target
+        sizes[1] = max(1, sizes[1] + delta)
+        splitter.setSizes(sizes)
 
     def set_device(self, device: DeviceSnapshot | None) -> None:
         self.device = device
@@ -631,7 +668,7 @@ class CollapsibleConsolePanel(QFrame):
         self.theme_palette = theme_palette(ThemeMode.NIGHT)
         self.setObjectName("dashboardConsole")
         self.collapsed = False
-        self._expanded_height = 165
+        self._expanded_height = 96
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 4, 10, 7)
         root.setSpacing(4)
@@ -639,7 +676,7 @@ class CollapsibleConsolePanel(QFrame):
         header.setContentsMargins(0, 0, 0, 0)
         self.title = QLabel("COMMAND CONSOLE / 控制台")
         self.title.setObjectName("dashboardPanelTitle")
-        self.status_label = QLabel("等待地图与设备数据")
+        self.status_label = ElidingLabel("等待地图与设备数据")
         self.status_label.setObjectName("dashboardConsoleStatus")
         self.toggle_button = QPushButton()
         self.toggle_button.setObjectName("dashboardIconButton")
@@ -647,15 +684,12 @@ class CollapsibleConsolePanel(QFrame):
         self.toggle_button.setAccessibleName("完全收起控制台")
         self.toggle_button.clicked.connect(self.toggle_collapsed)
         header.addWidget(self.title)
-        header.addStretch()
-        header.addWidget(self.status_label)
+        header.addWidget(self.status_label, 1)
         header.addWidget(self.toggle_button)
         root.addLayout(header)
         self.content_widget = QWidget()
-        self.content_layout = QGridLayout(self.content_widget)
+        self.content_layout = WrappingLayout(self.content_widget, spacing=10)
         self.content_layout.setContentsMargins(2, 2, 2, 0)
-        self.content_layout.setHorizontalSpacing(9)
-        self.content_layout.setVerticalSpacing(6)
         root.addWidget(self.content_widget, 1)
         self._refresh_icon()
 
@@ -671,7 +705,7 @@ class CollapsibleConsolePanel(QFrame):
             sizes = splitter.sizes()
             index = splitter.indexOf(self)
             if 0 <= index < len(sizes):
-                self._expanded_height = max(110, sizes[index])
+                self._expanded_height = max(96, sizes[index])
         self.collapsed = target
         self._apply_state()
         self.collapsed_changed.emit(self.collapsed)
@@ -687,7 +721,7 @@ class CollapsibleConsolePanel(QFrame):
             self.setMinimumHeight(self.COLLAPSED_HEIGHT)
             self.setMaximumHeight(self.COLLAPSED_HEIGHT)
         else:
-            self.setMinimumHeight(110)
+            self.setMinimumHeight(96)
             self.setMaximumHeight(16777215)
 
     def set_theme(self, palette: ThemePalette) -> None:
@@ -714,7 +748,7 @@ class CollapsibleConsolePanel(QFrame):
             return
         total = max(sum(sizes), self.COLLAPSED_HEIGHT + 1)
         target = self.COLLAPSED_HEIGHT if self.collapsed else min(
-            self._expanded_height, max(110, total - 120)
+            self._expanded_height, max(96, total - 120)
         )
         sizes[index] = target
         remaining = max(1, total - target)
@@ -779,54 +813,47 @@ class CommandDashboardPage(QWidget):
             chart.set_theme(palette)
         self.update()
 
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(560, 400)
+
     def _build(self) -> None:
         root = QVBoxLayout(self)
+        root.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         root.setContentsMargins(10, 6, 10, 10)
         root.setSpacing(7)
-        self.top_bar = QFrame()
+        self.top_bar = BalancedDashboardHeader()
         self.top_bar.setObjectName("dashboardTopBar")
-        top = QHBoxLayout(self.top_bar)
-        top.setContentsMargins(10, 7, 10, 7)
-        top.setSpacing(12)
         status_pill = QFrame()
         status_pill.setObjectName("dashboardHeaderPill")
         status_layout = QHBoxLayout(status_pill)
-        status_layout.setContentsMargins(11, 6, 11, 6)
+        status_layout.setContentsMargins(0, 3, 0, 3)
         self.system_status = QLabel("MQTT --  |  UDP --")
         self.system_status.setObjectName("dashboardSystemStatus")
         status_layout.addWidget(self.system_status)
-        top.addWidget(status_pill)
-        top.addStretch(1)
         title_box = QWidget()
         title_layout = QVBoxLayout(title_box)
-        title_layout.setContentsMargins(8, 0, 8, 0)
+        title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(1)
-        self.dashboard_title = QLabel("指挥与控制系统信息总览")
+        self.dashboard_title = QLabel("指挥与控制系统总览")
         self.dashboard_title.setObjectName("dashboardMainTitle")
         self.dashboard_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.dashboard_kicker = QLabel("COMMAND & CONTROL OVERVIEW")
         self.dashboard_kicker.setObjectName("dashboardTitleKicker")
         self.dashboard_kicker.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        accent = QFrame()
-        accent.setObjectName("dashboardTitleAccent")
-        accent.setFixedSize(72, 2)
         title_layout.addWidget(self.dashboard_title)
         title_layout.addWidget(self.dashboard_kicker)
-        title_layout.addWidget(accent, 0, Qt.AlignmentFlag.AlignHCenter)
-        top.addWidget(title_box, 3)
-        top.addStretch(1)
         right_pill = QFrame()
         right_pill.setObjectName("dashboardHeaderPill")
         right_header = QHBoxLayout(right_pill)
-        right_header.setContentsMargins(11, 6, 11, 6)
-        right_header.setSpacing(10)
+        right_header.setContentsMargins(0, 3, 0, 3)
+        right_header.setSpacing(12)
         self.online_count = QLabel("ONLINE DEVICE 00")
         self.online_count.setObjectName("dashboardOnlineCount")
         self.clock_label = QLabel("--:--:--")
         self.clock_label.setObjectName("dashboardClock")
         right_header.addWidget(self.online_count)
         right_header.addWidget(self.clock_label)
-        top.addWidget(right_pill)
+        self.top_bar.set_sections(status_pill, title_box, right_pill)
         root.addWidget(self.top_bar)
 
         self.vertical_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -846,13 +873,13 @@ class CommandDashboardPage(QWidget):
         center_layout.setContentsMargins(7, 7, 7, 7)
         center_layout.setSpacing(5)
         center_header = QHBoxLayout()
-        center_title = QLabel("DIGITAL TWIN / 三维态势")
+        center_title = QLabel("三维态势 / DIGITAL TWIN")
         center_title.setObjectName("dashboardPanelTitle")
-        self.map_state = QLabel("未选择地图")
+        self.map_state = ElidingLabel("未选择地图")
         self.map_state.setObjectName("dashboardMapState")
+        self.map_state.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         center_header.addWidget(center_title)
-        center_header.addStretch()
-        center_header.addWidget(self.map_state)
+        center_header.addWidget(self.map_state, 1)
         center_layout.addLayout(center_header)
         center_layout.addWidget(self.viewer, 1)
         self.upper_splitter.addWidget(center)
@@ -862,16 +889,18 @@ class CommandDashboardPage(QWidget):
         self.upper_splitter.setStretchFactor(0, 0)
         self.upper_splitter.setStretchFactor(1, 1)
         self.upper_splitter.setStretchFactor(2, 0)
-        self.upper_splitter.setSizes([180, 800, 44])
+        self.upper_splitter.setSizes([240, 1200, 360])
         self.vertical_splitter.addWidget(self.upper_splitter)
 
         self.console_panel = CollapsibleConsolePanel()
+        self.console_panel.collapsed_changed.connect(lambda _collapsed: self._reflow_console())
         self.console_layout = self.console_panel.content_layout
         self.console_status = self.console_panel.status_label
         self.map_combo = QComboBox()
         self.map_combo.setObjectName("dashboardCombo")
         self.map_combo.currentIndexChanged.connect(self._map_changed)
-        self.layer_combo = QComboBox()
+        self.layer_combo = QComboBox(self)
+        self.layer_combo.hide()
         self.layer_combo.setObjectName("dashboardCombo")
         self.layer_combo.addItem("点云", "pointcloud")
         self.layer_combo.addItem("栅格", "grid")
@@ -888,31 +917,68 @@ class CommandDashboardPage(QWidget):
         self.fullscreen_button.setObjectName("dashboardPrimaryButton")
         self.fullscreen_button.clicked.connect(self._toggle_fullscreen)
         self.start_button = QPushButton("开始任务")
+        self.start_button.setObjectName("dashboardPrimaryButton")
         self.start_button.clicked.connect(self._start_task)
         self.stop_button = QPushButton("终止任务")
         self.stop_button.setObjectName("dangerButton")
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self._stop_task)
-        controls = (
-            (QLabel("地图"), self.map_combo),
-            (QLabel("图层"), self.layer_combo),
-            (QLabel("任务"), self.task_combo),
-        )
-        column = 0
-        for caption, control in controls:
-            caption.setObjectName("dashboardFieldLabel")
-            self.console_layout.addWidget(caption, 0, column)
-            self.console_layout.addWidget(control, 0, column + 1)
-            column += 2
-        self.console_layout.addWidget(self.reset_button, 0, 6)
-        self.console_layout.addWidget(self.fullscreen_button, 0, 7)
-        self.console_layout.addWidget(self.fit_button, 1, 0, 1, 2)
-        self.console_layout.addWidget(self.start_button, 1, 6)
-        self.console_layout.addWidget(self.stop_button, 1, 7)
+        self.current_device = ElidingLabel("未选择设备")
+        self.current_device.setObjectName("dashboardCurrentDevice")
+        self.current_device.setMinimumWidth(120)
+        self.current_device.setMaximumWidth(180)
+        for caption, control, width in (
+            ("地图", self.map_combo, 330),
+            ("任务", self.task_combo, 220),
+            ("当前设备", self.current_device, 180),
+        ):
+            group = QWidget()
+            row = QHBoxLayout(group)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(8)
+            label = QLabel(caption)
+            label.setObjectName("dashboardFieldLabel")
+            label.setFixedWidth(label.sizeHint().width())
+            row.addWidget(label)
+            control.setMinimumWidth(0)
+            if isinstance(control, QComboBox):
+                control.setObjectName("dashboardCombo")
+                control.setFixedWidth(width)
+                control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+                control.setMinimumContentsLength(8)
+            else:
+                control.setFixedWidth(width)
+            row.addWidget(control, 1)
+            group.setFixedWidth(width + label.sizeHint().width() + 8)
+            self.console_layout.addWidget(group)
+        task_actions = QWidget()
+        actions = QHBoxLayout(task_actions)
+        actions.setContentsMargins(0, 0, 0, 0)
+        for button in (self.start_button, self.stop_button):
+            button.setMinimumWidth(108)
+            actions.addWidget(button)
+        self.console_layout.addWidget(task_actions)
+        self.console_layout.align_last_right = True
+        map_actions = QWidget()
+        map_actions.setObjectName("dashboardMapActions")
+        actions = QHBoxLayout(map_actions)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(6)
+        for button in (self.fit_button, self.reset_button, self.fullscreen_button):
+            actions.addWidget(button)
+        configure = getattr(self.viewer, "enable_dashboard_layout", None)
+        if configure is not None:
+            configure()
+            self.viewer.dashboard_footer.layout().addWidget(map_actions)
+        else:
+            center_layout.addWidget(map_actions)
+        layer_signal = getattr(self.viewer, "layer_mode_changed", None)
+        if layer_signal is not None:
+            layer_signal.connect(self._viewer_layer_changed)
         self.vertical_splitter.addWidget(self.console_panel)
-        self.vertical_splitter.setStretchFactor(0, 3)
-        self.vertical_splitter.setStretchFactor(1, 1)
-        self.vertical_splitter.setSizes([620, 165])
+        self.vertical_splitter.setStretchFactor(0, 1)
+        self.vertical_splitter.setStretchFactor(1, 0)
+        self.vertical_splitter.setSizes([800, 96])
         root.addWidget(self.vertical_splitter, 1)
 
     def _connect_sources(self) -> None:
@@ -1104,6 +1170,18 @@ class CommandDashboardPage(QWidget):
             self.map_combo.blockSignals(False)
         self._load_selected_map()
 
+    def _viewer_layer_changed(self, mode: str) -> None:
+        index = self.layer_combo.findData(mode)
+        if index >= 0:
+            self.layer_combo.blockSignals(True)
+            self.layer_combo.setCurrentIndex(index)
+            self.layer_combo.blockSignals(False)
+        state = self.map_state.text().split("  ·  ")
+        if len(state) >= 3:
+            state[2] = mode.upper()
+            self.map_state.setText("  ·  ".join(state))
+        self._update_console_status()
+
     def _layer_changed(self) -> None:
         mode = self.layer_combo.currentData()
         if mode:
@@ -1197,6 +1275,7 @@ class CommandDashboardPage(QWidget):
 
     def _update_clock(self) -> None:
         self.clock_label.setText(datetime.now().astimezone().strftime("%Y-%m-%d  %H:%M:%S"))
+        self.top_bar._arrange()
 
     def _module_status_changed(self, message: str, healthy: bool) -> None:
         self._update_system_status()
@@ -1220,6 +1299,7 @@ class CommandDashboardPage(QWidget):
             (item for item in self.devices if item.device_id == self.selected_device_id), None
         )
         device_name = device.device_name if device else "未选择设备"
+        self.current_device.setText(device_name)
         layer = self.layer_combo.currentText() or "--"
         task_name = self.task_combo.currentText() if self.task_combo.currentData() else "未选择任务"
         suffix = f"  |  {task_message}" if task_message else ""
@@ -1236,15 +1316,24 @@ class CommandDashboardPage(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
+        if not hasattr(self, "console_panel"):
+            return
+        self._reflow_console()
         if event.size().width() < 1000:
             self.device_panel.force_compact()
             self.status_panel.set_expanded(False)
         elif self.selected_device_id and not self.status_panel.user_collapsed:
             self.status_panel.set_expanded(True)
 
+    def _reflow_console(self) -> None:
+        if not self.console_panel.collapsed:
+            width = max(1, self.console_panel.width() - 24)
+            self.console_panel.setMinimumHeight(max(96, self.console_layout.heightForWidth(width) + 44))
+
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         self.set_active(True)
+        QTimer.singleShot(0, self._reflow_console)
 
     def hideEvent(self, event) -> None:  # noqa: N802
         self.set_active(False)

@@ -321,7 +321,8 @@ def _replace_style_colors(style: str, palette: ThemePalette) -> str:
 
 def build_stylesheet(mode: ThemeMode | str) -> str:
     palette = theme_palette(mode)
-    return _replace_style_colors(BASE_STYLE, palette) + _compact_list_styles(palette)
+    return (_replace_style_colors(BASE_STYLE, palette) + _compact_list_styles(palette)
+            + _dashboard_styles(palette))
 
 
 def _compact_list_styles(palette: ThemePalette) -> str:
@@ -1370,6 +1371,51 @@ QSplitter#dashboardUpperSplitter::handle, QSplitter#dashboardVerticalSplitter::h
     width: 5px;
     height: 5px;
 }
+"""
+
+
+def _dashboard_styles(palette: ThemePalette) -> str:
+    return f"""
+QWidget#commandDashboard {{ background: {palette.dashboard_background}; }}
+QWidget#commandDashboard QFrame#dashboardTopBar {{
+    background: {palette.dashboard_panel}; border: 1px solid {palette.dashboard_border}; border-radius: 6px;
+}}
+QWidget#commandDashboard QFrame#dashboardHeaderPill {{ background: transparent; border: none; }}
+QWidget#commandDashboard QLabel#dashboardMainTitle {{ font-size: 18px; color: {palette.dashboard_text}; }}
+QWidget#commandDashboard QLabel#dashboardTitleKicker {{ font-size: 9px; color: {palette.dashboard_muted}; }}
+QWidget#commandDashboard QLabel#dashboardPanelTitle {{ font-size: 14px; color: {palette.dashboard_text}; }}
+QWidget#commandDashboard QFrame#dashboardSidePanel,
+QWidget#commandDashboard QFrame#digitalTwinPanel,
+QWidget#commandDashboard QFrame#dashboardConsole {{
+    background: {palette.dashboard_panel}; border: 1px solid {palette.dashboard_border}; border-radius: 6px;
+}}
+QWidget#commandDashboard QListWidget#dashboardDeviceList {{ background: transparent; border: none; }}
+QWidget#commandDashboard QListWidget#dashboardDeviceList::item {{
+    font-size: 14px; padding: 14px 10px; margin: 3px 0;
+    border: 1px solid {palette.dashboard_border}; border-radius: 5px;
+}}
+QWidget#commandDashboard QListWidget#dashboardDeviceList::item:selected {{
+    background: {palette.selected_background}; border: 1px solid {palette.primary}; border-left: 3px solid {palette.primary};
+}}
+QWidget#commandDashboard QLabel#dashboardDeviceIdentity {{ font-size: 17px; padding: 10px 8px; }}
+QWidget#commandDashboard QLabel#dashboardBattery {{ font-size: 20px; font-weight: 700; color: {palette.dashboard_text}; }}
+QWidget#commandDashboard QLabel#dashboardFieldLabel {{ font-size: 12px; color: {palette.dashboard_muted}; }}
+QWidget#commandDashboard QLabel#dashboardFieldValue,
+QWidget#commandDashboard QLabel#dashboardCurrentDevice {{ font-size: 13px; color: {palette.dashboard_text}; }}
+QWidget#commandDashboard QLabel#dashboardChartTitle {{ font-size: 12px; }}
+QWidget#commandDashboard QLabel#dashboardChartUnit,
+QWidget#commandDashboard QLabel#dashboardChartLegend {{ font-size: 10px; }}
+QWidget#commandDashboard QFrame#dashboardChartPanel {{ border-radius: 4px; }}
+QWidget#commandDashboard QComboBox#dashboardCombo {{ min-width: 0; font-size: 13px; min-height: 30px; }}
+QWidget#commandDashboard QFrame#mapViewerToolbar {{ background: transparent; border: none; }}
+QWidget#commandDashboard QPushButton {{ font-size: 12px; }}
+QWidget#commandDashboard QPushButton#mapLayerSegment:checked {{ color: {palette.dashboard_text}; background: {palette.selected_background}; border-color: {palette.primary}; }}
+QWidget#commandDashboard QWidget#dashboardMapActions QPushButton {{ min-width: 72px; padding: 5px 8px; }}
+QWidget#commandDashboard QFrame#dashboardMapFooter {{ background: transparent; border: none; }}
+QWidget#commandDashboard QPushButton#dashboardPrimaryButton {{
+    color: {palette.dashboard_text}; background: {palette.selected_background}; border: 1px solid {palette.primary};
+}}
+QWidget#commandDashboard QPushButton:disabled {{ color: {palette.dashboard_muted}; background: {palette.dashboard_panel}; border-color: {palette.dashboard_border}; }}
 """
 
 
