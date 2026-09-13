@@ -28,6 +28,7 @@ class AppIconTests(unittest.TestCase):
         for name in (
             "back", "expand", "close", "home", "device", "map", "mission", "bev", "upload",
             "mapStorage", "taskStorage", "realTimeMapping", "UDPtask", "localization", "tasks", "time", "mqttbroker", "mqtt", "UDP", "camera",
+            "health", "battery", "fit_all", "reset_view", "fullscreen", "exit_fullscreen", "start_task", "stop_task",
         ):
             for mode in (ThemeMode.DAY, ThemeMode.NIGHT):
                 self.assertTrue(icon_path(name, mode).is_file())
@@ -48,7 +49,8 @@ class AppIconTests(unittest.TestCase):
             self.assertTrue(asset_icon_path("devices_online.svg").is_file())
             self.assertFalse(asset_icon("devices_offline.svg").isNull())
             for name in ("mapStorage", "taskStorage", "realTimeMapping", "UDPtask", "localization",
-                         "device", "camera", "mqtt", "mqttbroker", "tasks", "time", "UDP"):
+                         "device", "camera", "mqtt", "mqttbroker", "tasks", "time", "UDP",
+                         "health", "battery", "fit_all", "reset_view", "fullscreen", "exit_fullscreen", "start_task", "stop_task"):
                 for mode in ThemeMode:
                     self.assertFalse(app_icon(name, mode).pixmap(28, 28).isNull())
             self.assertFalse(QPixmap(str(lab_logo_path())).isNull())
@@ -60,7 +62,8 @@ class AppIconTests(unittest.TestCase):
         root = icon_path("mapStorage", ThemeMode.DAY).parent
         names = {path.name for path in root.iterdir()}
         for name in ("mapStorage", "taskStorage", "realTimeMapping", "UDPtask", "localization",
-                     "device", "camera", "mqtt", "mqttbroker", "tasks", "time", "UDP"):
+                     "device", "camera", "mqtt", "mqttbroker", "tasks", "time", "UDP",
+                         "health", "battery", "fit_all", "reset_view", "fullscreen", "exit_fullscreen", "start_task", "stop_task"):
             for mode in ThemeMode:
                 filename = f"{name}_{mode.value}.svg"
                 self.assertIn(filename, names)

@@ -128,7 +128,7 @@ wheels = [
 
 [[package]]
 name = "ccs-monitor"
-version = "0.24.0"
+version = "0.24.1"
 source = { virtual = "." }
 dependencies = [
     { name = "amqtt" },

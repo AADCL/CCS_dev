@@ -1391,13 +1391,14 @@ QWidget#commandDashboard QFrame#dashboardConsole {{
 }}
 QWidget#commandDashboard QListWidget#dashboardDeviceList {{ background: transparent; border: none; }}
 QWidget#commandDashboard QListWidget#dashboardDeviceList::item {{
-    font-size: 14px; padding: 14px 10px; margin: 3px 0;
-    border: 1px solid {palette.dashboard_border}; border-radius: 5px;
+    font-size: 13px; padding: 0; margin: 0; border: none; background: transparent;
 }}
 QWidget#commandDashboard QListWidget#dashboardDeviceList::item:selected {{
-    background: {palette.selected_background}; border: 1px solid {palette.primary}; border-left: 3px solid {palette.primary};
+    background: transparent; border: none;
 }}
 QWidget#commandDashboard QLabel#dashboardDeviceIdentity {{ font-size: 17px; padding: 10px 8px; }}
+QWidget#commandDashboard QFrame#dashboardStatusBadge {{ background: {palette.surface_alt}; border: 1px solid {palette.dashboard_border}; border-radius: 5px; }}
+QWidget#commandDashboard QLabel#dashboardConsoleLabel {{ font-size: 13px; color: {palette.dashboard_muted}; }}
 QWidget#commandDashboard QLabel#dashboardBattery {{ font-size: 20px; font-weight: 700; color: {palette.dashboard_text}; }}
 QWidget#commandDashboard QLabel#dashboardFieldLabel {{ font-size: 12px; color: {palette.dashboard_muted}; }}
 QWidget#commandDashboard QLabel#dashboardFieldValue,
@@ -1406,7 +1407,7 @@ QWidget#commandDashboard QLabel#dashboardChartTitle {{ font-size: 12px; }}
 QWidget#commandDashboard QLabel#dashboardChartUnit,
 QWidget#commandDashboard QLabel#dashboardChartLegend {{ font-size: 10px; }}
 QWidget#commandDashboard QFrame#dashboardChartPanel {{ border-radius: 4px; }}
-QWidget#commandDashboard QComboBox#dashboardCombo {{ min-width: 0; font-size: 13px; min-height: 30px; }}
+QWidget#commandDashboard QComboBox#dashboardCombo {{ min-width: 0; font-size: 13px; min-height: 22px; max-height: 22px; padding: 6px 10px; }}
 QWidget#commandDashboard QFrame#mapViewerToolbar {{ background: transparent; border: none; }}
 QWidget#commandDashboard QPushButton {{ font-size: 12px; }}
 QWidget#commandDashboard QPushButton#mapLayerSegment:checked {{ color: {palette.dashboard_text}; background: {palette.selected_background}; border-color: {palette.primary}; }}

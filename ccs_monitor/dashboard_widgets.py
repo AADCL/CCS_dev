@@ -1,7 +1,23 @@
 """Presentation helpers for the command dashboard; no device or map state."""
 from PySide6.QtCore import QPoint, QRect, QSize, Qt
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QFrame, QLabel, QLayout, QSizePolicy
+from PySide6.QtWidgets import QFrame, QLabel, QLayout, QSizePolicy, QWidget
+
+
+class ConsoleField(QWidget):
+    """Measure the final caption font while reserving a useful control width."""
+
+    def __init__(self, control_width):
+        super().__init__()
+        self.control_width = control_width
+
+    def sizeHint(self):  # noqa: N802
+        natural = super().sizeHint()
+        if self.layout() is None or not self.layout().count():
+            return natural
+        caption = self.layout().itemAt(0).widget()
+        width = max(caption.sizeHint().width(), caption.fontMetrics().horizontalAdvance(caption.text()))
+        return QSize(width + self.layout().spacing() + self.control_width, max(36, natural.height()))
 
 
 class ElidingLabel(QLabel):

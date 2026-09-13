@@ -1,0 +1,666 @@
+{
+  "date": "2026-09-13",
+  "base_commit": "184575bb5ca99a014cf7d6088aa019092fd2a52d",
+  "version": "0.24.1",
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "PySide6": "6.11.1",
+    "vispy": "0.16.2",
+    "numpy": "2.5.1"
+  },
+  "baseline": [
+    {
+      "job": "tests.test_dashboard_layout",
+      "exit_code": 0,
+      "tests": 9,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_all_online_device_types_are_listed_and_task_controls_are_disabled",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_page_timers_scan_removal_and_manual_fullscreen_lifecycle",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_status_panel_responds_to_width_without_overriding_user_choice",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_chart_header_device_panel_and_console_collapsing",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_selecting_device_seeds_latest_telemetry_and_hides_cursor_coordinates",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_app_icons.AppIconTests.test_required_theme_icons_exist_and_load",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_app_icons.AppIconTests.test_icon_resolution_does_not_depend_on_working_directory",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_app_icons.AppIconTests.test_application_assets_have_exact_names_single_svg_and_render",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_theme_v010.DayThemeTests.test_all_base_style_colors_are_translated_for_day_theme",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_theme_v010.DayThemeTests.test_selected_device_card_uses_day_palette",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_ui.UiTests.test_theme_button_switches_theme_without_changing_page",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_version",
+      "exit_code": 0,
+      "tests": 5,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_release_engineering.RuntimePathsTests.test_frozen_data_and_resources_are_separate",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_release_engineering.ReleaseContentsTests.test_portable_uses_clean_defaults_and_contains_no_live_data",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_task_system.TaskSystemTests.test_conflict_detector_respects_time_altitude_and_delay",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_task_map",
+      "exit_code": 0,
+      "tests": 2,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_task_page_ui",
+      "exit_code": 0,
+      "tests": 5,
+      "skipped": []
+    }
+  ],
+  "increment": [
+    {
+      "job": "tests.test_dashboard_layout",
+      "exit_code": 0,
+      "tests": 9,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_all_online_device_types_are_listed_and_task_controls_are_disabled",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_page_timers_scan_removal_and_manual_fullscreen_lifecycle",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_status_panel_responds_to_width_without_overriding_user_choice",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_chart_header_device_panel_and_console_collapsing",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_command_dashboard.CommandDashboardUiTests.test_selecting_device_seeds_latest_telemetry_and_hides_cursor_coordinates",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_app_icons.AppIconTests.test_required_theme_icons_exist_and_load",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_app_icons.AppIconTests.test_icon_resolution_does_not_depend_on_working_directory",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_app_icons.AppIconTests.test_application_assets_have_exact_names_single_svg_and_render",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_theme_v010.DayThemeTests.test_all_base_style_colors_are_translated_for_day_theme",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_theme_v010.DayThemeTests.test_selected_device_card_uses_day_palette",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_ui.UiTests.test_theme_button_switches_theme_without_changing_page",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_version",
+      "exit_code": 0,
+      "tests": 5,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_release_engineering.RuntimePathsTests.test_frozen_data_and_resources_are_separate",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_release_engineering.ReleaseContentsTests.test_portable_uses_clean_defaults_and_contains_no_live_data",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_task_system.TaskSystemTests.test_conflict_detector_respects_time_altitude_and_delay",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_task_map",
+      "exit_code": 0,
+      "tests": 2,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_task_page_ui",
+      "exit_code": 0,
+      "tests": 5,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_dashboard_polish",
+      "exit_code": 0,
+      "tests": 9,
+      "skipped": []
+    }
+  ],
+  "dpi": {
+    "1.25": [
+      {
+        "job": "tests.test_dashboard_polish.DashboardPolishTests.test_main_window_labels_icons_and_long_device_at_all_sizes",
+        "exit_code": 0,
+        "tests": 1,
+        "skipped": []
+      }
+    ],
+    "1.5": [
+      {
+        "job": "tests.test_dashboard_polish.DashboardPolishTests.test_main_window_labels_icons_and_long_device_at_all_sizes",
+        "exit_code": 0,
+        "tests": 1,
+        "skipped": []
+      }
+    ],
+    "2": [
+      {
+        "job": "tests.test_dashboard_polish.DashboardPolishTests.test_main_window_labels_icons_and_long_device_at_all_sizes",
+        "exit_code": 0,
+        "tests": 1,
+        "skipped": []
+      }
+    ]
+  },
+  "native_opengl": [
+    {
+      "theme": "night",
+      "requested": [
+        1920,
+        1080
+      ],
+      "actual": [
+        1920,
+        1080
+      ],
+      "split": [
+        240,
+        1290,
+        360
+      ],
+      "vertical": [
+        846,
+        96
+      ],
+      "canvas_valid": true,
+      "task_routes": 2
+    },
+    {
+      "theme": "night",
+      "requested": [
+        1440,
+        900
+      ],
+      "actual": [
+        1440,
+        900
+      ],
+      "split": [
+        240,
+        810,
+        360
+      ],
+      "vertical": [
+        666,
+        96
+      ],
+      "canvas_valid": true,
+      "task_routes": 2
+    },
+    {
+      "theme": "night",
+      "requested": [
+        1024,
+        768
+      ],
+      "actual": [
+        1024,
+        768
+      ],
+      "split": [
+        240,
+        394,
+        360
+      ],
+      "vertical": [
+        496,
+        134
+      ],
+      "canvas_valid": true,
+      "task_routes": 2
+    },
+    {
+      "theme": "night",
+      "requested": [
+        800,
+        600
+      ],
+      "actual": [
+        800,
+        600
+      ],
+      "split": [
+        165,
+        561,
+        44
+      ],
+      "vertical": [
+        328,
+        134
+      ],
+      "canvas_valid": true,
+      "task_routes": 2
+    },
+    {
+      "theme": "day",
+      "requested": [
+        1920,
+        1080
+      ],
+      "actual": [
+        1920,
+        1080
+      ],
+      "split": [
+        240,
+        1290,
+        360
+      ],
+      "vertical": [
+        846,
+        96
+      ],
+      "canvas_valid": true,
+      "task_routes": 2
+    },
+    {
+      "theme": "day",
+      "requested": [
+        1440,
+        900
+      ],
+      "actual": [
+        1440,
+        900
+      ],
+      "split": [
+        240,
+        810,
+        360
+      ],
+      "vertical": [
+        666,
+        96
+      ],
+      "canvas_valid": true,
+      "task_routes": 2
+    },
+    {
+      "theme": "day",
+      "requested": [
+        1024,
+        768
+      ],
+      "actual": [
+        1024,
+        768
+      ],
+      "split": [
+        240,
+        394,
+        360
+      ],
+      "vertical": [
+        496,
+        134
+      ],
+      "canvas_valid": true,
+      "task_routes": 2
+    },
+    {
+      "theme": "day",
+      "requested": [
+        800,
+        600
+      ],
+      "actual": [
+        800,
+        600
+      ],
+      "split": [
+        165,
+        561,
+        44
+      ],
+      "vertical": [
+        328,
+        134
+      ],
+      "canvas_valid": true,
+      "task_routes": 2
+    },
+    {
+      "layer": "pointcloud",
+      "overlay_changed_pixels": 278
+    },
+    {
+      "layer": "grid",
+      "overlay_changed_pixels": 3882
+    },
+    {
+      "layer": "overlay",
+      "overlay_changed_pixels": 278
+    }
+  ],
+  "native_baseline": [
+    {
+      "theme": "night",
+      "requested": [
+        1920,
+        1080
+      ],
+      "actual": [
+        1920,
+        1080
+      ],
+      "split": [
+        240,
+        1290,
+        360
+      ],
+      "vertical": [
+        846,
+        96
+      ],
+      "canvas_valid": true,
+      "task_routes": 0
+    },
+    {
+      "theme": "night",
+      "requested": [
+        1440,
+        900
+      ],
+      "actual": [
+        1440,
+        900
+      ],
+      "split": [
+        240,
+        810,
+        360
+      ],
+      "vertical": [
+        666,
+        96
+      ],
+      "canvas_valid": true,
+      "task_routes": 0
+    },
+    {
+      "theme": "night",
+      "requested": [
+        1024,
+        768
+      ],
+      "actual": [
+        1024,
+        768
+      ],
+      "split": [
+        240,
+        394,
+        360
+      ],
+      "vertical": [
+        492,
+        138
+      ],
+      "canvas_valid": true,
+      "task_routes": 0
+    },
+    {
+      "theme": "night",
+      "requested": [
+        800,
+        600
+      ],
+      "actual": [
+        800,
+        600
+      ],
+      "split": [
+        165,
+        561,
+        44
+      ],
+      "vertical": [
+        324,
+        138
+      ],
+      "canvas_valid": true,
+      "task_routes": 0
+    },
+    {
+      "theme": "day",
+      "requested": [
+        1920,
+        1080
+      ],
+      "actual": [
+        1920,
+        1080
+      ],
+      "split": [
+        240,
+        1290,
+        360
+      ],
+      "vertical": [
+        846,
+        96
+      ],
+      "canvas_valid": true,
+      "task_routes": 0
+    },
+    {
+      "theme": "day",
+      "requested": [
+        1440,
+        900
+      ],
+      "actual": [
+        1440,
+        900
+      ],
+      "split": [
+        240,
+        810,
+        360
+      ],
+      "vertical": [
+        666,
+        96
+      ],
+      "canvas_valid": true,
+      "task_routes": 0
+    },
+    {
+      "theme": "day",
+      "requested": [
+        1024,
+        768
+      ],
+      "actual": [
+        1024,
+        768
+      ],
+      "split": [
+        240,
+        394,
+        360
+      ],
+      "vertical": [
+        492,
+        138
+      ],
+      "canvas_valid": true,
+      "task_routes": 0
+    },
+    {
+      "theme": "day",
+      "requested": [
+        800,
+        600
+      ],
+      "actual": [
+        800,
+        600
+      ],
+      "split": [
+        165,
+        561,
+        44
+      ],
+      "vertical": [
+        324,
+        138
+      ],
+      "canvas_valid": true,
+      "task_routes": 0
+    }
+  ],
+  "native_fullscreen_escape_return": true,
+  "synthetic_point_count": 28752,
+  "hardware_commands_sent": 0,
+  "full_suite_run": false,
+  "final_recheck": [
+    {
+      "job": "tests.test_dashboard_polish",
+      "exit_code": 0,
+      "tests": 9,
+      "skipped": []
+    },
+    {
+      "job": "tests.test_release_engineering.ReleaseContentsTests.test_portable_uses_clean_defaults_and_contains_no_live_data",
+      "exit_code": 0,
+      "tests": 1,
+      "skipped": []
+    }
+  ],
+  "tested_file_sha256": {
+    "ccs_monitor/dashboard_presentation.py": "866a1db4def5f9d5cf4d98502ac82cc493ba9db45219ced0b6d7b4d66e529fac",
+    "ccs_monitor/dashboard_widgets.py": "addd0ea344fbdfe1b10966e46cb404ed7912be7c681b9f402ec7d6a02d3ca29f",
+    "ccs_monitor/pages/command_dashboard_page.py": "719ff81f0d97af6f68899049a4cebbba3420fb2ab5b0d5d48f05e2add437d280",
+    "ccs_monitor/styles.py": "47a9192372e4f45a5f657d0b9e14bb1a2bf3960a101bc46adf81103263cc4472",
+    "ccs_monitor/version.py": "5682857c5d409a2e2f8be38b4c137fe68a9580b5395a3ba4a695fe1bbce55f50",
+    "pyproject.toml": "afcdc9f8d853a8d57de5ee04512d37c4cbe1b548393ca06a671a105b99b42704",
+    "uv.lock": "77b4774a73fa3db3626ec286fe367195ffc5e53fa4b4fe93b31e59a743e21b15",
+    "tests/test_dashboard_polish.py": "7f061ebdb4ac2168864580fcc7fd25945672ffc5e79b682d375586924f19106f",
+    "tests/test_app_icons.py": "595733266ed0b43e315444ddb955308e49bfcc4c5cda48f8f207231dc4b17b16",
+    "tests/test_release_engineering.py": "f93e9340287077ef5bedc12438c7d2baeb2779041a6bf597a53da3408632308b",
+    "tests/test_version.py": "24bc89db4847fb899a23d8257604d0bbd296f8844a964497b9a58c08d2436368",
+    "scripts/validate_dashboard_polish.py": "544c93163f5ed6b13c92ea6d3748b52f84bec9c0280d275da553046786155527",
+    "scripts/capture_dashboard_polish.py": "997d87cf755c74860dc73aac94f1a1976aaf3e39913914b454e9796ca14f78d9"
+  },
+  "hash_newlines": "LF-normalized"
+}
