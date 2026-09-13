@@ -7,7 +7,7 @@
 <p align="center">设备监测 · 联合建图 · 重定位 · 任务编排 · 指控大屏</p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-0.24.0-1677ff">
+  <img alt="版本" src="https://img.shields.io/badge/version-0.24.1-1677ff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%E2%80%933.13-3776AB">
   <img alt="Qt" src="https://img.shields.io/badge/PySide6-6.8.3-41CD52">
   <img alt="许可证" src="https://img.shields.io/badge/license-Apache--2.0-blue">
@@ -102,6 +102,12 @@ Input 部分应包含 srt。设备地址、端口、MQTT 和 NTP 参数位于 co
 
 Windows 需要 Inno Setup 6；Linux 使用 Ubuntu 20.04 构建基线。
 构建环境、Docker 命令和第三方组件来源详见 [发布指南](docs/RELEASING.md#本地构建)。
+
+## v0.24.1
+
+指控大屏设备卡片显示上传图标和电池电量，实时状态采用紧凑徽标；控制台标签与选择框统一尺寸并适配窄屏。
+选中任务后显示同地图全部设备的路线、任务点和冲突点，切换地图及删除任务时清理旧图层。
+保留导航图标、居中标题、点云高度条和原任务交互。见 [增量验证与截图](docs/validation/dashboard-polish/README.md)。
 
 ## v0.24.0
 

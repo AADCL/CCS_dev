@@ -173,6 +173,9 @@ class ReleaseContentsTests(unittest.TestCase):
                 devices = json.loads(archive.read(base + "config/devices.json"))
                 self.assertEqual(devices["devices"], [])
                 self.assertIn(base + "uv.lock", names)
+                for icon in ("health", "battery", "fit_all", "reset_view", "fullscreen", "exit_fullscreen", "start_task", "stop_task"):
+                    for theme in ("day", "night"):
+                        self.assertIn(base + f"icons/app_icons/{icon}_{theme}.svg", names)
                 self.assertIn(base + "scripts/setup_env.sh", names)
                 self.assertFalse(any("/edge_side_pkg/" in n or "/map_server/" in n or "/task_server/" in n or "/__pycache__/" in n for n in names))
                 self.assertIn(base + "ccs_monitor/runtime_paths.py", names)

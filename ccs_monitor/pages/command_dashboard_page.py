@@ -31,8 +31,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..data_source import DeviceDataSource
-from ..app_icons import apply_button_icon
-from ..dashboard_widgets import BalancedDashboardHeader, ElidingLabel, WrappingLayout
+from ..app_icons import app_icon, apply_button_icon
+from ..dashboard_widgets import BalancedDashboardHeader, ConsoleField, ElidingLabel, WrappingLayout
+from ..dashboard_presentation import BatteryLabel, StatusLabel, DeviceCardDelegate, DEVICE_SNAPSHOT_ROLE
 from ..device_colors import device_display_color
 from ..device_map_context import resolve_local_odom_pose
 from ..map_repository import MapRepository, MapRepositoryError
@@ -180,6 +181,9 @@ class CollapsibleDevicePanel(QFrame):
         self.root.addWidget(self.header_widget)
         self.list = QListWidget()
         self.list.setObjectName("dashboardDeviceList")
+        self.card_delegate = DeviceCardDelegate(self)
+        self.list.setItemDelegate(self.card_delegate)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.currentItemChanged.connect(self._selection_changed)
         self.root.addWidget(self.list, 1)
         self._apply_width()
@@ -244,6 +248,9 @@ class CollapsibleDevicePanel(QFrame):
         self.list.setCurrentRow(-1)
 
     def _render(self) -> None:
+        layout_changed = self.list.count() != len(self.devices) or getattr(self, "_rendered_mode", None) != self.mode
+        self._rendered_mode = self.mode
+        self.card_delegate.cache_icons(self.devices)
         self.list.blockSignals(True)
         items = {self.list.item(row).data(Qt.ItemDataRole.UserRole): self.list.item(row) for row in range(self.list.count())}
         ids = {device.device_id for device in self.devices}
@@ -267,11 +274,15 @@ class CollapsibleDevicePanel(QFrame):
                 self.list.addItem(item)
             item.setText(text)
             item.setData(Qt.ItemDataRole.UserRole, device.device_id)
+            item.setData(DEVICE_SNAPSHOT_ROLE, device)
             item.setToolTip(f"{device.device_name} / {device.device_id}")
             item.setForeground(QColor(device_display_color(device.device_id)))
             if device.device_id == self.selected_device_id:
                 self.list.setCurrentItem(item)
         self.list.blockSignals(False)
+        if layout_changed:
+            self.list.doItemsLayout()
+
     def _selection_changed(self, current: QListWidgetItem | None, previous) -> None:
         if current is None:
             return
@@ -505,22 +516,52 @@ class TelemetryStatusPanel(QFrame):
         fields.setVerticalSpacing(8)
         self.fields: dict[str, QLabel] = {}
         summary = QWidget()
-        summary_row = QHBoxLayout(summary)
-        summary_row.setContentsMargins(2, 8, 2, 8)
-        summary_row.setSpacing(12)
-        for label in ("电量", "MQTT", "UDP", "健康"):
-            group = QWidget()
+        summary_row = QVBoxLayout(summary)
+        summary_row.setContentsMargins(0, 0, 0, 0)
+        summary_row.setSpacing(8)
+        battery_row = QHBoxLayout()
+        battery_icon = QLabel()
+        battery_icon.setFixedSize(16, 16)
+        battery_icon.setPixmap(app_icon("battery", self.theme_palette).pixmap(16, 16))
+        battery_icon.setAccessibleName("电量图标")
+        battery_row.addWidget(battery_icon)
+        battery_caption = QLabel("电量")
+        battery_caption.setObjectName("dashboardFieldLabel")
+        battery_row.addWidget(battery_caption)
+        self.battery = BatteryLabel(self.theme_palette)
+        self.battery.setObjectName("dashboardBattery")
+        battery_row.addWidget(self.battery, 1)
+        self.fields["电量"] = self.battery
+        summary_row.addLayout(battery_row)
+        badges = QWidget()
+        badges_row = WrappingLayout(badges, spacing=8)
+        self.status_icons = {"battery": battery_icon}
+        for label, icon_name in (("MQTT", "mqtt"), ("UDP", "UDP"), ("健康", "health")):
+            group = QFrame()
+            group.setObjectName("dashboardStatusBadge")
+            group.setMinimumWidth(92)
             column = QVBoxLayout(group)
-            column.setContentsMargins(0, 0, 0, 0)
+            column.setContentsMargins(8, 6, 8, 6)
             column.setSpacing(4)
+            header = QHBoxLayout()
+            header.setSpacing(5)
+            icon = QLabel()
+            icon.setFixedSize(16, 16)
+            icon.setPixmap(app_icon(icon_name, self.theme_palette).pixmap(16, 16))
+            icon.setAccessibleName(label + "图标")
+            self.status_icons[icon_name] = icon
+            header.addWidget(icon)
             caption = QLabel(label)
             caption.setObjectName("dashboardFieldLabel")
-            value = QLabel("--")
-            value.setObjectName("dashboardBattery" if label == "电量" else "dashboardFieldValue")
-            column.addWidget(caption)
+            header.addWidget(caption)
+            header.addStretch()
+            value = StatusLabel(self.theme_palette)
+            value.setObjectName("dashboardFieldValue")
+            column.addLayout(header)
             column.addWidget(value)
-            summary_row.addWidget(group)
+            badges_row.addWidget(group)
             self.fields[label] = value
+        summary_row.addWidget(badges)
         content_layout.addWidget(summary)
         for index, label in enumerate(("任务", "运行模式", "位置 X/Y/Z", "姿态 R/P/Y", "最后数据")):
             caption = QLabel(label)
@@ -576,6 +617,7 @@ class TelemetryStatusPanel(QFrame):
             self.identity.setStyleSheet("")
             for value in self.fields.values():
                 value.setText("--")
+            self.battery.set_value(None)
             return
         self.identity.setText(f"{device.device_name}\n{device.device_id}")
         color = device_display_color(device.device_id)
@@ -591,7 +633,7 @@ class TelemetryStatusPanel(QFrame):
             HealthStatus.ABNORMAL: "异常",
             HealthStatus.UNKNOWN: "未知",
         }[device.health_status])
-        self.fields["电量"].setText("--" if device.battery_percent is None else f"{device.battery_percent:.1f}%")
+        self.battery.set_value(device.battery_percent)
         self.fields["任务"].setText(device.task_status.value)
         self.fields["运行模式"].setText(device.flight_mode)
 
@@ -648,6 +690,13 @@ class TelemetryStatusPanel(QFrame):
         self._refresh_icon()
         self.position_chart.set_theme(palette)
         self.attitude_chart.set_theme(palette)
+        self.battery.theme_palette = palette
+        self.battery.update()
+        for name, icon in self.status_icons.items():
+            icon.setPixmap(app_icon(name, palette).pixmap(16, 16))
+        for label in ("MQTT", "UDP", "健康"):
+            self.fields[label].theme_palette = palette
+            self.fields[label].setText(self.fields[label].text())
         self.update()
 
     def _refresh_icon(self) -> None:
@@ -778,6 +827,11 @@ class CommandDashboardPage(QWidget):
         self.task_repository = task_repository
         self.execution_service = execution_service
         self.active_execution_id: str | None = None
+        self._task_cache_key = None
+        self._task_conflict_positions = []
+        self._task_overlay_key = None
+        self._task_overlay_note = ""
+        self._loading_map = False
         self.viewer = viewer_factory() if viewer_factory else PointCloudViewer()
         self.viewer.set_cursor_coordinates_enabled(False)
         self.viewer.escape_pressed.connect(self._viewer_escape_pressed)
@@ -809,6 +863,9 @@ class CommandDashboardPage(QWidget):
         self.device_panel.set_theme(palette)
         self.status_panel.set_theme(palette)
         self.console_panel.set_theme(palette)
+        self._refresh_action_icons()
+        self.console_layout.invalidate()
+        QTimer.singleShot(0, self._reflow_console)
         for chart in self.findChildren(TelemetryChart):
             chart.set_theme(palette)
         self.update()
@@ -925,40 +982,44 @@ class CommandDashboardPage(QWidget):
         self.stop_button.clicked.connect(self._stop_task)
         self.current_device = ElidingLabel("未选择设备")
         self.current_device.setObjectName("dashboardCurrentDevice")
-        self.current_device.setMinimumWidth(120)
-        self.current_device.setMaximumWidth(180)
+        self.console_layout.setSpacing(16)
+        self.console_fields = []
         for caption, control, width in (
             ("地图", self.map_combo, 330),
             ("任务", self.task_combo, 220),
             ("当前设备", self.current_device, 180),
         ):
-            group = QWidget()
+            group = ConsoleField(width)
             row = QHBoxLayout(group)
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(8)
-            label = QLabel(caption)
-            label.setObjectName("dashboardFieldLabel")
-            label.setFixedWidth(label.sizeHint().width())
+            label = QLabel(caption, group)
+            label.setObjectName("dashboardConsoleLabel")
+            label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+            label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             row.addWidget(label)
             control.setMinimumWidth(0)
             if isinstance(control, QComboBox):
                 control.setObjectName("dashboardCombo")
                 control.setFixedWidth(width)
+                control.setFixedHeight(36)
                 control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
                 control.setMinimumContentsLength(8)
             else:
                 control.setFixedWidth(width)
             row.addWidget(control, 1)
-            group.setFixedWidth(width + label.sizeHint().width() + 8)
+            self.console_fields.append((label, control))
             self.console_layout.addWidget(group)
         task_actions = QWidget()
         actions = QHBoxLayout(task_actions)
         actions.setContentsMargins(0, 0, 0, 0)
         for button in (self.start_button, self.stop_button):
             button.setMinimumWidth(108)
+            button.setFixedHeight(36)
             actions.addWidget(button)
         self.console_layout.addWidget(task_actions)
         self.console_layout.align_last_right = True
+        self._refresh_action_icons()
         map_actions = QWidget()
         map_actions.setObjectName("dashboardMapActions")
         actions = QHBoxLayout(map_actions)
@@ -981,7 +1042,17 @@ class CommandDashboardPage(QWidget):
         self.vertical_splitter.setSizes([800, 96])
         root.addWidget(self.vertical_splitter, 1)
 
+    def _refresh_action_icons(self) -> None:
+        for button, icon in ((self.fit_button, "fit_all"), (self.reset_button, "reset_view"),
+                             (self.fullscreen_button, "exit_fullscreen" if self.fullscreen else "fullscreen"),
+                             (self.start_button, "start_task"), (self.stop_button, "stop_task")):
+            apply_button_icon(button, icon, self.theme_palette)
+
     def _connect_sources(self) -> None:
+        for name in ("static_loaded", "load_failed"):
+            signal = getattr(self.viewer, name, None)
+            if signal is not None:
+                signal.connect(self._refresh_task_overlay)
         self.source.devices_updated.connect(self._update_devices)
         self.repository.maps_updated.connect(self._update_maps)
         self.repository.active_map_changed.connect(self._active_map_changed)
@@ -1015,6 +1086,44 @@ class CommandDashboardPage(QWidget):
         self._task_changed()
 
     def _task_changed(self) -> None:
+        self._refresh_task_overlay()
+
+    def _clear_task_overlay(self) -> None:
+        # clear() only owns base-map state; explicitly clear both overlay caches.
+        self.viewer.set_task_paths({})
+        self.viewer.set_task_conflicts([])
+        self._task_overlay_key = None
+
+    def _refresh_task_overlay(self, *_args) -> None:
+        if self._loading_map:
+            return
+        task = self.task_repository.task_by_id(self.task_combo.currentData()) if self.task_repository else None
+        self._task_overlay_note = ""
+        valid = task is not None and task.status != TaskDefinitionStatus.ERROR and task.is_ready
+        if valid and task.map_id != self.selected_map_id:
+            self._task_overlay_note = f"任务属于〈{task.map_name}〉，请切换地图"
+            valid = False
+        if not valid or not (self.viewer.pointcloud_loaded or self.viewer.pgm_loaded):
+            self._clear_task_overlay()
+            self._update_console_status()
+            return
+        key = (task.task_id, task.safety, tuple(
+            (item.device_id, item.waypoints, item.cruise_speed_mps, item.start_delay_seconds)
+            for item in task.subtasks
+        ))
+        if key != self._task_cache_key:
+            self._task_conflict_positions = [
+                (item.x, item.y, item.z)
+                for item in TaskConflictDetector().detect(task.subtasks, task.safety)
+            ]
+            self._task_cache_key = key
+        if self._task_overlay_key != key:
+            self.viewer.set_task_paths({
+                item.device_id: [(point.x, point.y, point.z) for point in item.waypoints]
+                for item in task.subtasks if item.waypoints
+            })
+            self.viewer.set_task_conflicts(self._task_conflict_positions)
+            self._task_overlay_key = key
         self._update_console_status()
 
     def _task_service_available(self, available: bool, message: str) -> None:
@@ -1069,6 +1178,7 @@ class CommandDashboardPage(QWidget):
         if method and (not active or self.viewer.isVisible()):
             method()
         if self._active:
+            self._refresh_task_overlay()
             self.clock_timer.start(1000)
             self.render_timer.start(100)
             self._render_realtime()
@@ -1079,6 +1189,7 @@ class CommandDashboardPage(QWidget):
     def set_fullscreen_state(self, enabled: bool) -> None:
         self.fullscreen = bool(enabled)
         self.fullscreen_button.setText("退出全屏" if self.fullscreen else "进入全屏")
+        self._refresh_action_icons()
 
     def _update_devices(self, devices: object) -> None:
         self.devices = list(devices)
@@ -1189,6 +1300,15 @@ class CommandDashboardPage(QWidget):
         self._update_console_status()
 
     def _load_selected_map(self) -> None:
+        self._clear_task_overlay()
+        self._loading_map = True
+        try:
+            self._load_selected_map_content()
+        finally:
+            self._loading_map = False
+            self._refresh_task_overlay()
+
+    def _load_selected_map_content(self) -> None:
         self.viewer.clear()
         definition = self.repository.map_by_id(self.selected_map_id) if self.selected_map_id else None
         if definition is None:
@@ -1303,8 +1423,9 @@ class CommandDashboardPage(QWidget):
         layer = self.layer_combo.currentText() or "--"
         task_name = self.task_combo.currentText() if self.task_combo.currentData() else "未选择任务"
         suffix = f"  |  {task_message}" if task_message else ""
+        prefix = f"{self._task_overlay_note}  |  " if self._task_overlay_note else ""
         self.console_status.setText(
-            f"地图 {map_name}  |  设备 {device_name}  |  图层 {layer}  |  任务 {task_name}{suffix}"
+            f"{prefix}地图 {map_name}  |  设备 {device_name}  |  图层 {layer}  |  任务 {task_name}{suffix}"
         )
 
     def _toggle_fullscreen(self) -> None:

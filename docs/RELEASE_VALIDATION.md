@@ -1,5 +1,11 @@
 # 发布验证记录
 
+## v0.24.1 指控大屏增量验证
+
+日期：2026-09-13。基于 main `184575bb5ca99a014cf7d6088aa019092fd2a52d`，在独立分支 `codex/dashboard-visual-polish` 实施设备卡片、实时状态、控制台和任务图层修复。
+
+本轮仅运行相关增量测试与合成数据的原生 OpenGL 检查，不执行全量测试、不升级依赖、不连接真实设备。环境版本、基线、逐项结果、复现命令和前后截图统一记录于 [dashboard-polish](validation/dashboard-polish/README.md)。
+
 ## v0.24.0 源码迭代验证
 
 日期：2026-09-11。基线 `aa55385e6d4bd90f32463b6ddccf5bdb59faa369`，独立分支 `codex/v0.24.0-multi-device-tasks`；现场设备配置和其他任务的工作树未纳入变更。
